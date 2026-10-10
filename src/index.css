@@ -1,0 +1,223 @@
+@import "tailwindcss";
+
+html,
+body,
+#root {
+  min-height: 100%;
+  width: 100%;
+  margin: 0;
+}
+
+body {
+  min-width: 320px;
+  overflow-x: hidden;
+}
+
+.app-theme {
+  min-height: 100vh;
+  width: 100%;
+  font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+}
+
+.theme-light {
+  --app-bg: #F5F7FA;
+  --app-surface: #FFFFFF;
+  --app-border: #E2E8F0;
+  --app-text: #1F2937;
+  --app-muted: #64748B;
+  --app-action: #365F91;
+  --app-brass: #A8782C;
+  color-scheme: light;
+  color: var(--app-text);
+  background: var(--app-bg);
+}
+
+.theme-dark {
+  color-scheme: dark;
+}
+
+.theme-light .workspace-shell {
+  color: var(--app-text) !important;
+  background: var(--app-bg) !important;
+}
+
+/* The app's original pages use dark Tailwind colors directly. These scoped
+   overrides give those same components a cohesive light palette without
+   changing any color in dark mode. */
+.theme-light [class*="bg-[#"],
+.theme-light [class~="bg-slate-950"],
+.theme-light [class~="bg-slate-900"],
+.theme-light [class~="bg-slate-800"],
+.theme-light [class~="bg-gray-800"] {
+  background-color: var(--app-surface) !important;
+  background-image: none !important;
+}
+
+.theme-light [class*="border-[#"],
+.theme-light [class~="border-slate-800"],
+.theme-light [class~="border-slate-700"],
+.theme-light [class~="border-gray-700"] {
+  border-color: var(--app-border) !important;
+}
+
+.theme-light [class~="text-white"],
+.theme-light [class~="text-slate-100"],
+.theme-light [class~="text-slate-200"],
+.theme-light [class~="text-gray-300"] {
+  color: var(--app-text) !important;
+}
+
+.theme-light [class~="text-slate-300"],
+.theme-light [class~="text-slate-400"],
+.theme-light [class~="text-slate-500"],
+.theme-light [class~="text-slate-600"],
+.theme-light [class~="text-gray-400"] {
+  color: var(--app-muted) !important;
+}
+
+.theme-light [class~="text-blue-400"],
+.theme-light [class~="text-blue-300"],
+.theme-light [class~="text-cyan-400"],
+.theme-light [class~="text-cyan-300"] {
+  color: var(--app-action) !important;
+}
+
+.theme-light [class~="text-amber-400"],
+.theme-light [class~="text-amber-300"] {
+  color: var(--app-brass) !important;
+}
+
+.theme-light [class~="bg-blue-600"],
+.theme-light [class~="bg-blue-500"] {
+  background-color: var(--app-action) !important;
+}
+
+.theme-light [class~="bg-amber-500"] {
+  background-color: var(--app-brass) !important;
+}
+
+.theme-light [class~="bg-blue-600"][class~="text-white"],
+.theme-light [class~="bg-blue-500"][class~="text-white"],
+.theme-light [class~="bg-amber-500"][class~="text-white"],
+.theme-light [class~="bg-amber-500"][class~="text-slate-950"] {
+  color: #FFFFFF !important;
+}
+
+.theme-light input:not([type="checkbox"]):not([type="radio"]),
+.theme-light select,
+.theme-light textarea {
+  color: var(--app-text);
+  background-color: #FFFFFF;
+  border-color: var(--app-border);
+}
+
+.theme-light input::placeholder,
+.theme-light textarea::placeholder {
+  color: #94A3B8;
+}
+
+.theme-light .app-sidebar {
+  width: clamp(164px, 17vw, 232px);
+  flex: 0 0 clamp(164px, 17vw, 232px);
+  background: #FFFFFF !important;
+  border-color: var(--app-border) !important;
+  box-shadow: 1px 0 0 rgb(15 23 42 / 2%);
+}
+
+.theme-light .app-sidebar > div:first-child,
+.theme-light .app-sidebar > div:last-child {
+  background: #FFFFFF !important;
+  border-color: var(--app-border) !important;
+}
+
+.theme-light .app-sidebar-nav {
+  background: #FFFFFF;
+}
+
+.theme-light .app-nav-item {
+  border: 1px solid transparent;
+  color: #475569 !important;
+}
+
+.theme-light .app-nav-item:hover:not(.bg-blue-600) {
+  color: var(--app-text) !important;
+  background: #F1F5F9 !important;
+}
+
+.theme-light .app-nav-item.bg-blue-600,
+.theme-light .app-nav-item.bg-blue-600 span,
+.theme-light .app-nav-item.bg-blue-600 svg {
+  color: var(--app-action) !important;
+}
+
+.theme-light .app-nav-item.bg-blue-600 {
+  background: #EEF3F8 !important;
+  border-color: #E2E8F0 !important;
+  border-left: 3px solid var(--app-action) !important;
+  box-shadow: none !important;
+}
+
+.theme-light .app-nav-badge {
+  background: #F1F5F9;
+  color: #64748B;
+}
+
+.theme-light .workspace-header {
+  background: #FFFFFF !important;
+  border-color: var(--app-border) !important;
+}
+
+.theme-light .app-header-action {
+  color: #475569 !important;
+  background: #FFFFFF !important;
+  border-color: var(--app-border) !important;
+}
+
+.theme-light .app-header-action:hover {
+  color: var(--app-action) !important;
+  background: #F1F5F9 !important;
+}
+
+.theme-light .workspace-content {
+  padding: clamp(12px, 2vw, 24px);
+}
+
+.theme-light table {
+  min-width: 620px;
+}
+
+.theme-light :where([class*="divide-"]) > :not(:last-child) {
+  border-color: var(--app-border) !important;
+}
+
+.theme-light [class*="shadow-"] {
+  box-shadow: 0 1px 3px rgb(15 23 42 / 6%), 0 1px 2px rgb(15 23 42 / 4%) !important;
+}
+
+@media (max-width: 767px) {
+  .app-sidebar {
+    width: min(84vw, 280px) !important;
+    flex-basis: min(84vw, 280px) !important;
+    height: 100vh;
+    height: 100dvh;
+  }
+
+  .workspace-content {
+    padding: 12px !important;
+  }
+
+  .workspace-header {
+    min-height: 56px;
+  }
+}
+
+@media (max-width: 420px) {
+  .workspace-content {
+    padding: 10px !important;
+  }
+
+  .app-sidebar-nav {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+}

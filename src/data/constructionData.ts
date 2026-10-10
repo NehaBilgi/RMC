@@ -1,0 +1,241 @@
+import { ConstructionSite, InventoryMaterialProduct, MaterialTransactionVoucher, SiteAttendanceEmployee } from '../types/construction';
+
+export const INITIAL_SITES: ConstructionSite[] = [
+  {
+    id: 'site-mulwad',
+    name: 'MULWAD',
+    code: 'site-1789399407383',
+    clientName: 'Mulwad Infrastructure & Irrigation EPC',
+    location: 'Mulwad Canal Sector B, Pipeline Rd',
+    assignedUnits: 8,
+    status: 'active',
+    totalBudgetINR: 45000000,
+    totalSpentINR: 18450000,
+    totalBilledINR: 22800000,
+    holdingValueINR: 8425000,
+    lowStockAlertsCount: 2,
+    registeredProductsCount: 14,
+    transfersCount: 28
+  },
+  {
+    id: 'site-fatima',
+    name: 'FATIMA COMPLEX',
+    code: 'site-1789881335720',
+    clientName: 'Fatima Real Estate & Developers Pvt Ltd',
+    location: 'Plot 44, Metro High Street Extension',
+    assignedUnits: 5,
+    status: 'active',
+    totalBudgetINR: 65000000,
+    totalSpentINR: 29800000,
+    totalBilledINR: 38400000,
+    holdingValueINR: 12650000,
+    lowStockAlertsCount: 1,
+    registeredProductsCount: 18,
+    transfersCount: 42
+  },
+  {
+    id: 'site-grand-horizon',
+    name: 'GRAND HORIZON TOWER',
+    code: 'site-1789445129031',
+    clientName: 'Apex Infra & Skyline Towers',
+    location: 'Sector 65 Expressway Corner',
+    assignedUnits: 7,
+    status: 'active',
+    totalBudgetINR: 82000000,
+    totalSpentINR: 41200000,
+    totalBilledINR: 52100000,
+    holdingValueINR: 15800000,
+    lowStockAlertsCount: 0,
+    registeredProductsCount: 22,
+    transfersCount: 56
+  }
+];
+
+export const INITIAL_PRODUCTS: InventoryMaterialProduct[] = [
+  {
+    id: 'prod-1',
+    siteId: 'site-mulwad',
+    name: 'Ready-Mix Concrete Grade M35',
+    category: 'Ready-Mix Concrete',
+    currentStock: 120,
+    unit: 'm³',
+    reorderLevel: 50,
+    unitPriceINR: 4850,
+    totalValueINR: 582000,
+    storageLocation: 'Batching Silo 2 to Site Chute',
+    status: 'In Stock',
+    lastUpdated: '2026-09-24'
+  },
+  {
+    id: 'prod-2',
+    siteId: 'site-mulwad',
+    name: 'OPC 53 Grade Cement',
+    category: 'Cement & Binder',
+    currentStock: 350,
+    unit: 'Bags',
+    reorderLevel: 500,
+    unitPriceINR: 420,
+    totalValueINR: 147000,
+    storageLocation: 'Covered Cement Warehouse Bay A',
+    status: 'Low Stock',
+    lastUpdated: '2026-09-24'
+  },
+  {
+    id: 'prod-3',
+    siteId: 'site-mulwad',
+    name: '20mm Graded Basalt Aggregate',
+    category: 'Aggregates & Sand',
+    currentStock: 410,
+    unit: 'Metric Tons (MT)',
+    reorderLevel: 150,
+    unitPriceINR: 1250,
+    totalValueINR: 512500,
+    storageLocation: 'Primary Stockpile Yard Pit 1',
+    status: 'In Stock',
+    lastUpdated: '2026-09-24'
+  },
+  {
+    id: 'prod-4',
+    siteId: 'site-mulwad',
+    name: 'Manufactured M-Sand (Fine Agg)',
+    category: 'Aggregates & Sand',
+    currentStock: 180,
+    unit: 'Metric Tons (MT)',
+    reorderLevel: 250,
+    unitPriceINR: 1450,
+    totalValueINR: 261000,
+    storageLocation: 'M-Sand Bunker Bin 3',
+    status: 'Low Stock',
+    lastUpdated: '2026-09-24'
+  },
+  {
+    id: 'prod-5',
+    siteId: 'site-mulwad',
+    name: 'TMT Steel Fe550D (16mm & 20mm)',
+    category: 'Reinforcement Steel',
+    currentStock: 48,
+    unit: 'Metric Tons (MT)',
+    reorderLevel: 20,
+    unitPriceINR: 64500,
+    totalValueINR: 3096000,
+    storageLocation: 'Rebar Fabrication Yard',
+    status: 'In Stock',
+    lastUpdated: '2026-09-24'
+  },
+  {
+    id: 'prod-6',
+    siteId: 'site-mulwad',
+    name: 'MasterSet 300 Superplasticizer Admixture',
+    category: 'Chemical Admixtures',
+    currentStock: 1200,
+    unit: 'Liters',
+    reorderLevel: 400,
+    unitPriceINR: 190,
+    totalValueINR: 228000,
+    storageLocation: 'Chemical Storage Tank 1',
+    status: 'In Stock',
+    lastUpdated: '2026-09-24'
+  }
+];
+
+export const INITIAL_TRANSACTIONS: MaterialTransactionVoucher[] = [
+  {
+    id: 'trx-1',
+    voucherNumber: 'VCH-2026-0891',
+    siteId: 'site-mulwad',
+    type: 'Stock In',
+    date: '2026-09-24',
+    time: '09:30 AM',
+    materialName: '20mm Graded Basalt Aggregate',
+    quantity: 65,
+    unit: 'Metric Tons (MT)',
+    unitPriceINR: 1250,
+    totalAmountINR: 81250,
+    supplierOrParty: 'Shree Balaji Stone Crusher Yard',
+    vehicleNumber: 'KA-28-TR-9011',
+    gatePassNumber: 'GP-88912',
+    authorizedBy: 'adminbilgi',
+    remarks: 'Weighbridge pass verified at gate. Zero fines, clean sample.'
+  },
+  {
+    id: 'trx-2',
+    voucherNumber: 'VCH-2026-0892',
+    siteId: 'site-mulwad',
+    type: 'Stock Out',
+    date: '2026-09-24',
+    time: '11:15 AM',
+    materialName: 'Ready-Mix Concrete Grade M35',
+    quantity: 85,
+    unit: 'm³',
+    unitPriceINR: 4850,
+    totalAmountINR: 412250,
+    supplierOrParty: 'Tower B Podium Slab Pouring',
+    vehicleNumber: 'TM-101 / TM-104 Schwing Mixers',
+    gatePassNumber: 'DC-2026-0842',
+    authorizedBy: 'adminbilgi',
+    remarks: 'Dispatched to Boom Pump (42m). Slump maintained 160mm.'
+  },
+  {
+    id: 'trx-3',
+    voucherNumber: 'VCH-2026-0893',
+    siteId: 'site-mulwad',
+    type: 'Inter-Site Transfer',
+    date: '2026-09-23',
+    time: '03:45 PM',
+    materialName: 'OPC 53 Grade Cement',
+    quantity: 150,
+    unit: 'Bags',
+    unitPriceINR: 420,
+    totalAmountINR: 63000,
+    supplierOrParty: 'Transferred to FATIMA COMPLEX',
+    vehicleNumber: 'KA-29-B-4402',
+    gatePassNumber: 'TR-PASS-042',
+    authorizedBy: 'adminbilgi',
+    remarks: 'Emergency transfer for Fatima Complex raft casting.'
+  }
+];
+
+export const INITIAL_EMPLOYEES: SiteAttendanceEmployee[] = [
+  {
+    id: 'emp-1',
+    siteId: 'site-mulwad',
+    empCode: 'EMP-014',
+    name: 'Habibullah Bilgi (Store Lead)',
+    role: 'Site Supervisor',
+    dailyWageINR: 1800,
+    monthlySalaryINR: 48000,
+    daysPresentThisMonth: 23,
+    overtimeHours: 14,
+    earnedSalaryINR: 46200,
+    status: 'Present Today',
+    phone: '+91 98451 23049'
+  },
+  {
+    id: 'emp-2',
+    siteId: 'site-mulwad',
+    empCode: 'EMP-028',
+    name: 'Ramesh Patil',
+    role: 'Batch Operator',
+    dailyWageINR: 1200,
+    monthlySalaryINR: 32000,
+    daysPresentThisMonth: 22,
+    overtimeHours: 18,
+    earnedSalaryINR: 31400,
+    status: 'Present Today',
+    phone: '+91 94482 11928'
+  },
+  {
+    id: 'emp-3',
+    siteId: 'site-mulwad',
+    empCode: 'EMP-035',
+    name: 'Vikram Singh',
+    role: 'Mixer Driver',
+    dailyWageINR: 950,
+    monthlySalaryINR: 26000,
+    daysPresentThisMonth: 24,
+    overtimeHours: 28,
+    earnedSalaryINR: 28900,
+    status: 'Field Duty',
+    phone: '+91 88921 44520'
+  }
+];
