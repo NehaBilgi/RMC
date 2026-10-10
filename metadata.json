@@ -1,0 +1,6 @@
+{
+  "name": "CONCRETE360 - RMC Field Sales & Site Measurement Suite",
+  "description": "Comprehensive Ready-Mix Concrete sales execution app for field reps: real-time order dispatch, interactive site inventory and structural volume measurement, transit mixer tracking, and analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,25 @@
+{
+  "id": "/",
+  "short_name": "CONCRETE360",
+  "name": "CONCRETE 360 - RMC Field ERP",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "scope": "/",
+  "background_color": "#F5F7FA",
+  "theme_color": "#F5F7FA",
+  "display": "standalone",
+  "orientation": "any"
+}
