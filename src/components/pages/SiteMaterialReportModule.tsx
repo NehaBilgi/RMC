@@ -7,7 +7,7 @@ import {
   SlidersHorizontal,
   Filter,
   Lock,
-  Eye
+  Zap
 } from 'lucide-react';
 
 export interface MixRecipe {
@@ -15,6 +15,8 @@ export interface MixRecipe {
   name?: string;
   cementKgPerM3: number;
   flyAshKgPerM3: number;
+  ggbsKgPerM3?: number;
+  mineralAdmixtureKg?: number;
   waterLitresPerM3: number;
   mSandKgPerM3: number;
   agg20mmKgPerM3: number;
@@ -22,12 +24,24 @@ export interface MixRecipe {
   admixtureKgPerM3: number;
 }
 
-const FALLBACK_RECIPES: Record<string, MixRecipe> = {
-  'M20': { grade: 'M20', cementKgPerM3: 320, flyAshKgPerM3: 75, waterLitresPerM3: 165, mSandKgPerM3: 726, agg20mmKgPerM3: 726, agg10mmKgPerM3: 388, admixtureKgPerM3: 0 },
-  'M25': { grade: 'M25', cementKgPerM3: 350, flyAshKgPerM3: 60, waterLitresPerM3: 165, mSandKgPerM3: 720, agg20mmKgPerM3: 680, agg10mmKgPerM3: 450, admixtureKgPerM3: 3.5 },
-  'M30': { grade: 'M30', cementKgPerM3: 380, flyAshKgPerM3: 70, waterLitresPerM3: 160, mSandKgPerM3: 700, agg20mmKgPerM3: 700, agg10mmKgPerM3: 460, admixtureKgPerM3: 4.0 },
-  'M35': { grade: 'M35', cementKgPerM3: 410, flyAshKgPerM3: 80, waterLitresPerM3: 155, mSandKgPerM3: 680, agg20mmKgPerM3: 710, agg10mmKgPerM3: 470, admixtureKgPerM3: 4.5 },
-  'M40': { grade: 'M40', cementKgPerM3: 440, flyAshKgPerM3: 90, waterLitresPerM3: 150, mSandKgPerM3: 660, agg20mmKgPerM3: 720, agg10mmKgPerM3: 480, admixtureKgPerM3: 5.2 }
+const FALLBACK_RECIPES_FLY_ASH: Record<string, MixRecipe> = {
+  'M15': { grade: 'M15', cementKgPerM3: 250, flyAshKgPerM3: 75, ggbsKgPerM3: 0, waterLitresPerM3: 165, mSandKgPerM3: 815, agg20mmKgPerM3: 645, agg10mmKgPerM3: 430, admixtureKgPerM3: 2.0 },
+  'M20': { grade: 'M20', cementKgPerM3: 300, flyAshKgPerM3: 90, ggbsKgPerM3: 0, waterLitresPerM3: 170, mSandKgPerM3: 780, agg20mmKgPerM3: 635, agg10mmKgPerM3: 425, admixtureKgPerM3: 3.0 },
+  'M25': { grade: 'M25', cementKgPerM3: 350, flyAshKgPerM3: 105, ggbsKgPerM3: 0, waterLitresPerM3: 172, mSandKgPerM3: 740, agg20mmKgPerM3: 630, agg10mmKgPerM3: 420, admixtureKgPerM3: 3.0 },
+  'M30': { grade: 'M30', cementKgPerM3: 380, flyAshKgPerM3: 115, ggbsKgPerM3: 0, waterLitresPerM3: 170, mSandKgPerM3: 720, agg20mmKgPerM3: 635, agg10mmKgPerM3: 425, admixtureKgPerM3: 4.0 },
+  'M35': { grade: 'M35', cementKgPerM3: 400, flyAshKgPerM3: 120, ggbsKgPerM3: 0, waterLitresPerM3: 165, mSandKgPerM3: 705, agg20mmKgPerM3: 640, agg10mmKgPerM3: 425, admixtureKgPerM3: 4.0 },
+  'M40': { grade: 'M40', cementKgPerM3: 420, flyAshKgPerM3: 125, ggbsKgPerM3: 0, waterLitresPerM3: 160, mSandKgPerM3: 690, agg20mmKgPerM3: 645, agg10mmKgPerM3: 430, admixtureKgPerM3: 5.0 },
+  'M45': { grade: 'M45', cementKgPerM3: 440, flyAshKgPerM3: 130, ggbsKgPerM3: 0, waterLitresPerM3: 155, mSandKgPerM3: 675, agg20mmKgPerM3: 650, agg10mmKgPerM3: 435, admixtureKgPerM3: 5.0 }
+};
+
+const FALLBACK_RECIPES_GGBS: Record<string, MixRecipe> = {
+  'M15': { grade: 'M15', cementKgPerM3: 250, flyAshKgPerM3: 0, ggbsKgPerM3: 100, waterLitresPerM3: 170, mSandKgPerM3: 795, agg20mmKgPerM3: 640, agg10mmKgPerM3: 430, admixtureKgPerM3: 2.0 },
+  'M20': { grade: 'M20', cementKgPerM3: 300, flyAshKgPerM3: 0, ggbsKgPerM3: 120, waterLitresPerM3: 175, mSandKgPerM3: 760, agg20mmKgPerM3: 635, agg10mmKgPerM3: 425, admixtureKgPerM3: 3.0 },
+  'M25': { grade: 'M25', cementKgPerM3: 350, flyAshKgPerM3: 0, ggbsKgPerM3: 140, waterLitresPerM3: 175, mSandKgPerM3: 720, agg20mmKgPerM3: 630, agg10mmKgPerM3: 420, admixtureKgPerM3: 3.0 },
+  'M30': { grade: 'M30', cementKgPerM3: 380, flyAshKgPerM3: 0, ggbsKgPerM3: 150, waterLitresPerM3: 172, mSandKgPerM3: 700, agg20mmKgPerM3: 635, agg10mmKgPerM3: 425, admixtureKgPerM3: 4.0 },
+  'M35': { grade: 'M35', cementKgPerM3: 400, flyAshKgPerM3: 0, ggbsKgPerM3: 160, waterLitresPerM3: 168, mSandKgPerM3: 685, agg20mmKgPerM3: 640, agg10mmKgPerM3: 425, admixtureKgPerM3: 4.0 },
+  'M40': { grade: 'M40', cementKgPerM3: 420, flyAshKgPerM3: 0, ggbsKgPerM3: 170, waterLitresPerM3: 162, mSandKgPerM3: 670, agg20mmKgPerM3: 645, agg10mmKgPerM3: 430, admixtureKgPerM3: 5.0 },
+  'M45': { grade: 'M45', cementKgPerM3: 440, flyAshKgPerM3: 0, ggbsKgPerM3: 180, waterLitresPerM3: 156, mSandKgPerM3: 655, agg20mmKgPerM3: 650, agg10mmKgPerM3: 435, admixtureKgPerM3: 5.0 }
 };
 
 const extractCleanSiteName = (name: string): string => {
@@ -40,7 +54,6 @@ const extractCleanSiteName = (name: string): string => {
 };
 
 export const SiteMaterialReportModule: React.FC = () => {
-  // Retrieve Active User Role
   const getUserRole = (): 'ADMIN' | 'EMPLOYEE' | 'READ_ONLY' => {
     try {
       const userRaw = sessionStorage.getItem('concrete360_user');
@@ -83,35 +96,57 @@ export const SiteMaterialReportModule: React.FC = () => {
 
   const [truckCapacityM3, setTruckCapacityM3] = useState<number>(9);
   const [wastagePercent, setWastagePercent] = useState<number>(5);
-  const [mixRecipes, setMixRecipes] = useState<Record<string, MixRecipe>>(FALLBACK_RECIPES);
-  const [selectedGrade, setSelectedGrade] = useState<string>('M25');
+  const [admixtureMode, setAdmixtureMode] = useState<'FLY_ASH' | 'GGBS'>('FLY_ASH');
+  const [mixRecipes, setMixRecipes] = useState<Record<string, MixRecipe>>(FALLBACK_RECIPES_FLY_ASH);
+  const [selectedGrade, setSelectedGrade] = useState<string>('M20');
 
   const syncMixDesigns = () => {
     try {
+      let mode: 'FLY_ASH' | 'GGBS' = 'FLY_ASH';
+      const savedMode = localStorage.getItem('concrete360_admixture_mode');
+      if (savedMode === 'GGBS' || savedMode === 'FLY_ASH') {
+        mode = savedMode;
+      }
+      setAdmixtureMode(mode);
+
       const keysToCheck = ['concrete360_mix_designs', 'concrete360_mix_design_recipes', 'concrete360_mixes', 'pave_mix_designs'];
+      let foundList: any[] = [];
       for (const key of keysToCheck) {
         const raw = localStorage.getItem(key);
         if (raw) {
           const parsed = JSON.parse(raw);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            const recipeMap: Record<string, MixRecipe> = {};
-            parsed.forEach((d: any) => {
-              const code = String(d.grade || d.code || 'M25').trim().toUpperCase();
-              recipeMap[code] = {
-                grade: code,
-                cementKgPerM3: Number(d.cementKgPerM3 ?? d.cement ?? 350),
-                flyAshKgPerM3: Number(d.flyAshKgPerM3 ?? d.flyAsh ?? 60),
-                waterLitresPerM3: Number(d.waterLitresPerM3 ?? d.water ?? 165),
-                mSandKgPerM3: Number(d.mSandKgPerM3 ?? d.sand ?? 720),
-                agg20mmKgPerM3: Number(d.agg20mmKgPerM3 ?? d.agg20 ?? 680),
-                agg10mmKgPerM3: Number(d.agg10mmKgPerM3 ?? d.agg10 ?? 450),
-                admixtureKgPerM3: Number(d.admixtureKgPerM3 ?? d.admixture ?? d.plasticizer ?? 0)
-              };
-            });
-            setMixRecipes(recipeMap);
+            foundList = parsed;
             break;
           }
         }
+      }
+
+      if (foundList.length > 0) {
+        const recipeMap: Record<string, MixRecipe> = {};
+        foundList.forEach((d: any) => {
+          const code = String(d.grade || d.code || 'M20').trim().toUpperCase();
+          const cement = Number(d.cementKgPerM3 ?? d.cement ?? 300);
+          const flyAsh = Number(d.flyAshKgPerM3 ?? d.flyAsh ?? (mode === 'FLY_ASH' ? 90 : 0));
+          const ggbs = Number(d.ggbsKgPerM3 ?? d.ggbs ?? (mode === 'GGBS' ? 120 : 0));
+          const mineral = Number(d.mineralAdmixtureKg ?? (mode === 'GGBS' ? ggbs : flyAsh));
+
+          recipeMap[code] = {
+            grade: code,
+            cementKgPerM3: cement,
+            flyAshKgPerM3: flyAsh,
+            ggbsKgPerM3: ggbs,
+            mineralAdmixtureKg: mineral,
+            waterLitresPerM3: Number(d.waterLitresPerM3 ?? d.water ?? 170),
+            mSandKgPerM3: Number(d.mSandKgPerM3 ?? d.sand ?? 780),
+            agg20mmKgPerM3: Number(d.agg20mmKgPerM3 ?? d.agg20 ?? 635),
+            agg10mmKgPerM3: Number(d.agg10mmKgPerM3 ?? d.agg10 ?? 425),
+            admixtureKgPerM3: Number(d.admixtureKgPerM3 ?? d.admixture ?? d.plasticizer ?? 3.0)
+          };
+        });
+        setMixRecipes(recipeMap);
+      } else {
+        setMixRecipes(mode === 'FLY_ASH' ? FALLBACK_RECIPES_FLY_ASH : FALLBACK_RECIPES_GGBS);
       }
     } catch {}
   };
@@ -208,13 +243,22 @@ export const SiteMaterialReportModule: React.FC = () => {
     return Math.ceil(targetVolumeM3 / truckCapacityM3);
   }, [targetVolumeM3, truckCapacityM3]);
 
-  const activeRecipe = mixRecipes[selectedGrade] || FALLBACK_RECIPES[selectedGrade] || FALLBACK_RECIPES['M25'];
+  const activeRecipe = mixRecipes[selectedGrade] || 
+    (admixtureMode === 'FLY_ASH' ? FALLBACK_RECIPES_FLY_ASH[selectedGrade] : FALLBACK_RECIPES_GGBS[selectedGrade]) || 
+    FALLBACK_RECIPES_FLY_ASH['M20'];
+
+  const mineralPerM3 = useMemo(() => {
+    if (admixtureMode === 'GGBS') {
+      return Number(activeRecipe.ggbsKgPerM3 ?? activeRecipe.mineralAdmixtureKg ?? 120);
+    }
+    return Number(activeRecipe.flyAshKgPerM3 ?? activeRecipe.mineralAdmixtureKg ?? 90);
+  }, [admixtureMode, activeRecipe]);
 
   const materials = useMemo(() => {
     const vol = Number(targetVolumeM3) || 0;
     const cementTotalKg = vol * (Number(activeRecipe.cementKgPerM3) || 0);
     const cementBags = Math.round(cementTotalKg / 50);
-    const flyAshTotalKg = vol * (Number(activeRecipe.flyAshKgPerM3) || 0);
+    const mineralTotalKg = vol * mineralPerM3;
     const waterTotalLitres = vol * (Number(activeRecipe.waterLitresPerM3) || 0);
     const mSandTotalKg = vol * (Number(activeRecipe.mSandKgPerM3) || 0);
     const agg20mmTotalKg = vol * (Number(activeRecipe.agg20mmKgPerM3) || 0);
@@ -224,23 +268,33 @@ export const SiteMaterialReportModule: React.FC = () => {
     return {
       cementTotalKg,
       cementBags,
-      flyAshTotalKg,
+      mineralTotalKg,
       waterTotalLitres,
       mSandTotalKg,
       agg20mmTotalKg,
       agg10mmTotalKg,
       admixtureTotalKg
     };
-  }, [targetVolumeM3, activeRecipe]);
+  }, [targetVolumeM3, activeRecipe, mineralPerM3]);
 
   return (
     <div className="space-y-6 font-sans text-slate-100 w-full max-w-full overflow-hidden">
-      {/* Top Controls Bar with Structural Work Filter & Mix Grade Selector */}
+      {/* Top Controls Bar with Structural Work Filter, Mix Grade & Mode Indicator */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-blue-400 bg-blue-500/10 border border-blue-500/30 px-2.5 py-0.5 rounded-full">
-            REAL-TIME BATCH CONSUMPTION ({currentSiteKey})
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-blue-400 bg-blue-500/10 border border-blue-500/30 px-2.5 py-0.5 rounded-full">
+              REAL-TIME BATCH CONSUMPTION ({currentSiteKey})
+            </span>
+            <span className={`text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border flex items-center gap-1 ${
+              admixtureMode === 'FLY_ASH' 
+                ? 'text-purple-400 bg-purple-500/10 border-purple-500/30' 
+                : 'text-indigo-400 bg-indigo-500/10 border-indigo-500/30'
+            }`}>
+              <Zap className="w-3 h-3" />
+              <span>{admixtureMode === 'FLY_ASH' ? 'FLY ASH MODE' : 'GGBS MODE'}</span>
+            </span>
+          </div>
           <h2 className="text-xl font-black text-white mt-1">Material Consumption &amp; Reports</h2>
         </div>
 
@@ -361,12 +415,12 @@ export const SiteMaterialReportModule: React.FC = () => {
           <div className="flex items-center gap-2.5">
             <div className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse" />
             <h3 className="text-sm font-black text-white uppercase tracking-wider truncate">
-              Material Consumption Breakdown
+              Material Consumption Breakdown ({admixtureMode === 'FLY_ASH' ? 'Fly Ash Mix' : 'GGBS Mix'})
             </h3>
           </div>
           <div className="flex items-center gap-2">
             <span className="text-xs font-mono text-slate-400 shrink-0">
-              Volume: <strong className="text-cyan-400">{targetVolumeM3.toFixed(2)} m³</strong> (Net: {netTargetVolumeM3.toFixed(2)} m³ + {wastagePercent}% Wastage) | Grade: <strong className="text-white">{selectedGrade}</strong>
+              Volume: <strong className="text-cyan-400">{targetVolumeM3.toFixed(2)} m³</strong> (Net: {netTargetVolumeM3.toFixed(2)} m³ + {wastagePercent}%) | Grade: <strong className="text-white">{selectedGrade}</strong>
             </span>
             {isReadOnly && (
               <span className="text-slate-500 text-[10px] inline-flex items-center gap-1 font-mono border border-slate-700 px-2 py-0.5 rounded-md">
@@ -378,44 +432,63 @@ export const SiteMaterialReportModule: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 font-mono">
+          {/* OPC 53 Cement */}
           <div className="bg-[#0b1322] border border-[#1b273d] p-5 rounded-2xl space-y-1">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Cement (OPC / PPC)</span>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Cement (OPC 53)</span>
             <div className="text-2xl font-extrabold text-blue-400">{Math.round(materials.cementTotalKg).toLocaleString('en-IN')} <span className="text-xs font-sans text-slate-400">kg</span></div>
             <span className="text-xs text-slate-500 block">({materials.cementBags.toLocaleString('en-IN')} Bags @ 50kg) • @ {activeRecipe.cementKgPerM3} kg/m³</span>
           </div>
 
-          <div className="bg-[#0b1322] border border-[#1b273d] p-5 rounded-2xl space-y-1">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Fly Ash / GGBS</span>
-            <div className="text-2xl font-extrabold text-purple-400">{Math.round(materials.flyAshTotalKg).toLocaleString('en-IN')} <span className="text-xs font-sans text-slate-400">kg</span></div>
-            <span className="text-xs text-slate-500 block">Pozzolanic Modifier • @ {activeRecipe.flyAshKgPerM3} kg/m³</span>
+          {/* Active Mineral Admixture: Either Fly Ash or GGBS */}
+          <div className={`bg-[#0b1322] border p-5 rounded-2xl space-y-1 ${
+            admixtureMode === 'FLY_ASH' ? 'border-purple-500/30 bg-purple-950/10' : 'border-indigo-500/30 bg-indigo-950/10'
+          }`}>
+            <span className={`text-[10px] font-bold uppercase tracking-wider block ${
+              admixtureMode === 'FLY_ASH' ? 'text-purple-400' : 'text-indigo-400'
+            }`}>
+              {admixtureMode === 'FLY_ASH' ? 'Class F Fly Ash' : 'GGBS (Slag Binder)'}
+            </span>
+            <div className={`text-2xl font-extrabold ${
+              admixtureMode === 'FLY_ASH' ? 'text-purple-300' : 'text-indigo-300'
+            }`}>
+              {Math.round(materials.mineralTotalKg).toLocaleString('en-IN')} <span className="text-xs font-sans text-slate-400">kg</span>
+            </div>
+            <span className="text-xs text-slate-500 block">
+              {admixtureMode === 'FLY_ASH' ? 'Pozzolanic Modifier (IS 3812)' : 'Slag Micro-Binder (IS 12089)'} • @ {mineralPerM3} kg/m³
+            </span>
           </div>
 
+          {/* Batching Water */}
           <div className="bg-[#0b1322] border border-[#1b273d] p-5 rounded-2xl space-y-1">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Batching Water</span>
             <div className="text-2xl font-extrabold text-cyan-400">{Math.round(materials.waterTotalLitres).toLocaleString('en-IN')} <span className="text-xs font-sans text-slate-400">Litres</span></div>
             <span className="text-xs text-slate-500 block">Density 1.0 kg/L • @ {activeRecipe.waterLitresPerM3} L/m³</span>
           </div>
 
+          {/* M-Sand */}
           <div className="bg-[#0b1322] border border-[#1b273d] p-5 rounded-2xl space-y-1">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">M-Sand (Fine Aggregate)</span>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">M-Sand (Zone II)</span>
             <div className="text-2xl font-extrabold text-amber-400">{Math.round(materials.mSandTotalKg).toLocaleString('en-IN')} <span className="text-xs font-sans text-slate-400">kg</span></div>
-            <span className="text-xs text-slate-500 block">Zone II Sand • @ {activeRecipe.mSandKgPerM3} kg/m³</span>
+            <span className="text-xs text-slate-500 block">Manufactured Sand • @ {activeRecipe.mSandKgPerM3} kg/m³</span>
           </div>
 
+          {/* 20 MM Aggregate */}
           <div className="bg-[#0b1322] border border-[#1b273d] p-5 rounded-2xl space-y-1">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">20 MM Aggregate</span>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">20 MM Aggregate (60%)</span>
             <div className="text-2xl font-extrabold text-emerald-400">{Math.round(materials.agg20mmTotalKg).toLocaleString('en-IN')} <span className="text-xs font-sans text-slate-400">kg</span></div>
             <span className="text-xs text-slate-500 block">Coarse Fraction A • @ {activeRecipe.agg20mmKgPerM3} kg/m³</span>
           </div>
 
+          {/* 10 MM Aggregate */}
           <div className="bg-[#0b1322] border border-[#1b273d] p-5 rounded-2xl space-y-1">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">10 MM Aggregate</span>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">10 MM Aggregate (40%)</span>
             <div className="text-2xl font-extrabold text-emerald-400">{Math.round(materials.agg10mmTotalKg).toLocaleString('en-IN')} <span className="text-xs font-sans text-slate-400">kg</span></div>
             <span className="text-xs text-slate-500 block">Coarse Fraction B • @ {activeRecipe.agg10mmKgPerM3} kg/m³</span>
           </div>
 
+          {/* PCE Admixture */}
           <div className="sm:col-span-3 bg-[#0b1322] border border-[#1b273d] p-5 rounded-2xl space-y-1">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Superplasticizer Admixture</span>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">PCE Superplasticizer</span>
             <div className="text-2xl font-extrabold text-rose-400">{materials.admixtureTotalKg.toFixed(1)} <span className="text-xs font-sans text-slate-400">kg</span></div>
             <span className="text-xs text-slate-500 block">High-Range Water Reducer • @ {activeRecipe.admixtureKgPerM3} kg/m³</span>
           </div>
