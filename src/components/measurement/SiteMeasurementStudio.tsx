@@ -40,7 +40,7 @@ export interface StructuralDimensionsSnapshot {
 
 export interface ConcreteItem {
   id: string;
-  siteKey?: string;
+  siteKey: string;
   mixGrade?: string;
   date?: string;
   categories: StructuralType[];
@@ -63,7 +63,7 @@ const CATEGORY_DEFINITIONS: { id: StructuralType; label: string; icon: React.Com
 ];
 
 const extractCleanSiteName = (name: string): string => {
-  if (!name) return 'DEFAULT';
+  if (!name) return 'MBBILGI';
   let clean = String(name).trim();
   if (clean.includes('(')) {
     clean = clean.split('(')[0].trim();
@@ -90,7 +90,6 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
   session,
   onUpdateSession
 }) => {
-  // Retrieve Active User Role
   const getUserRole = (): 'ADMIN' | 'EMPLOYEE' | 'READ_ONLY' => {
     try {
       const userRaw = sessionStorage.getItem('concrete360_user');
@@ -125,7 +124,7 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
       const selected = sessionStorage.getItem('concrete360_selected_site');
       if (selected) return extractCleanSiteName(selected);
     } catch {}
-    return 'DEFAULT';
+    return 'MBBILGI';
   };
 
   const [currentSiteKey, setCurrentSiteKey] = useState<string>(getActiveSiteKey());
@@ -149,19 +148,22 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) {
-          setItems(parsed.map((it: any) => ({
-            id: String(it.id || `RCC-${Math.floor(1000 + Math.random() * 9000)}`),
-            siteKey: String(it.siteKey || siteKey),
-            mixGrade: String(it.mixGrade || 'M25'),
-            date: String(it.date || new Date().toISOString().split('T')[0]),
-            categories: Array.isArray(it.categories) && it.categories.length > 0 ? it.categories : ['SLAB'],
-            label: String(it.label || it.name || 'Structural Work'),
-            breakdownText: String(it.breakdownText || ''),
-            volumeM3: Number(it.volumeM3) || 0,
-            volumeCft: Number(it.volumeCft) || (Number(it.volumeM3) || 0) * 35.3146667,
-            unitSystem: it.unitSystem === 'IMPERIAL' ? 'IMPERIAL' : 'METRIC',
-            dimensionsSnapshot: it.dimensionsSnapshot || {}
-          })));
+          const filtered = parsed
+            .filter((it: any) => extractCleanSiteName(it.siteKey || siteKey) === siteKey)
+            .map((it: any) => ({
+              id: String(it.id || `RCC-${Math.floor(1000 + Math.random() * 9000)}`),
+              siteKey: siteKey,
+              mixGrade: String(it.mixGrade || 'M25'),
+              date: String(it.date || new Date().toISOString().split('T')[0]),
+              categories: Array.isArray(it.categories) && it.categories.length > 0 ? it.categories : ['SLAB'],
+              label: String(it.label || it.name || 'Structural Work'),
+              breakdownText: String(it.breakdownText || ''),
+              volumeM3: Number(it.volumeM3) || 0,
+              volumeCft: Number(it.volumeCft) || (Number(it.volumeM3) || 0) * 35.3146667,
+              unitSystem: it.unitSystem === 'IMPERIAL' ? 'IMPERIAL' : 'METRIC',
+              dimensionsSnapshot: it.dimensionsSnapshot || {}
+            }));
+          setItems(filtered);
           return;
         }
       }
@@ -617,6 +619,11 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
           dimensionsSnapshot: snapshot
         };
         localStorage.setItem(targetStorageKey, JSON.stringify([newItem, ...existingParsed]));
+        
+        // If editing an item that got moved to another site, remove from current site
+        if (editingItem) {
+          setItems((prev) => prev.filter((it) => it.id !== editingItem.id));
+        }
       } catch {}
     } else {
       if (editingItem) {
@@ -860,7 +867,7 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
               {filteredItems.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="py-12 text-center text-slate-500 font-sans text-xs">
-                    No structural concrete works logged for this site. Click &quot;+ Add Structural Work&quot; to add.
+                    No structural concrete works logged for site <strong>{currentSiteKey}</strong>. Click &quot;+ Add Structural Work&quot; to add.
                   </td>
                 </tr>
               ) : (
@@ -970,7 +977,7 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
                 <div>
                   <h3 className="text-sm font-black text-white uppercase tracking-wider">
                     {blueprintFilterId === 'ALL' 
-                      ? 'Combined CAD Blueprint' 
+                      ? `Combined CAD Blueprint (${currentSiteKey})` 
                       : (items.find(i => i.id === blueprintFilterId)?.label || 'Isolated Element View')}
                   </h3>
                   <p className="text-xs text-slate-400 font-mono">
@@ -1104,11 +1111,13 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
                     onChange={(e) => setModalMixGrade(e.target.value)}
                     className="w-full px-3 py-2 bg-[#0F172B] border border-[#1E2E4E] rounded-xl text-amber-300 font-bold outline-none cursor-pointer text-xs"
                   >
+                    <option value="M15">M15 Grade Design</option>
                     <option value="M20">M20 Grade Design</option>
                     <option value="M25">M25 Grade Design</option>
                     <option value="M30">M30 Grade Design</option>
                     <option value="M35">M35 Grade Design</option>
                     <option value="M40">M40 Grade Design</option>
+                    <option value="M45">M45 Grade Design</option>
                     <option value="M50">M50 Grade Design</option>
                   </select>
                 </div>
