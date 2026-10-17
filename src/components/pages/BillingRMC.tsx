@@ -44,11 +44,13 @@ interface MaterialCategoryItem {
 }
 
 const DEFAULT_RECIPES: Record<string, any> = {
-  'M20': { rate: 4200, cementKgPerM3: 320, flyAshKgPerM3: 75, waterLitresPerM3: 165, mSandKgPerM3: 726, agg20mmKgPerM3: 726, agg10mmKgPerM3: 388 },
-  'M25': { rate: 4500, cementKgPerM3: 350, flyAshKgPerM3: 60, waterLitresPerM3: 165, mSandKgPerM3: 720, agg20mmKgPerM3: 680, agg10mmKgPerM3: 450 },
-  'M30': { rate: 4800, cementKgPerM3: 380, flyAshKgPerM3: 70, waterLitresPerM3: 160, mSandKgPerM3: 700, agg20mmKgPerM3: 700, agg10mmKgPerM3: 460 },
-  'M35': { rate: 5200, cementKgPerM3: 410, flyAshKgPerM3: 80, waterLitresPerM3: 155, mSandKgPerM3: 680, agg20mmKgPerM3: 710, agg10mmKgPerM3: 470 },
-  'M40': { rate: 5600, cementKgPerM3: 440, flyAshKgPerM3: 90, waterLitresPerM3: 150, mSandKgPerM3: 660, agg20mmKgPerM3: 720, agg10mmKgPerM3: 480 }
+  'M15': { rate: 3900, cementKgPerM3: 250, flyAshKgPerM3: 75, ggbsKgPerM3: 100, waterLitresPerM3: 165, mSandKgPerM3: 815, agg20mmKgPerM3: 645, agg10mmKgPerM3: 430 },
+  'M20': { rate: 4200, cementKgPerM3: 300, flyAshKgPerM3: 90, ggbsKgPerM3: 120, waterLitresPerM3: 170, mSandKgPerM3: 780, agg20mmKgPerM3: 635, agg10mmKgPerM3: 425 },
+  'M25': { rate: 4500, cementKgPerM3: 350, flyAshKgPerM3: 105, ggbsKgPerM3: 140, waterLitresPerM3: 172, mSandKgPerM3: 740, agg20mmKgPerM3: 630, agg10mmKgPerM3: 420 },
+  'M30': { rate: 4800, cementKgPerM3: 380, flyAshKgPerM3: 115, ggbsKgPerM3: 150, waterLitresPerM3: 170, mSandKgPerM3: 720, agg20mmKgPerM3: 635, agg10mmKgPerM3: 425 },
+  'M35': { rate: 5200, cementKgPerM3: 400, flyAshKgPerM3: 120, ggbsKgPerM3: 160, waterLitresPerM3: 165, mSandKgPerM3: 705, agg20mmKgPerM3: 640, agg10mmKgPerM3: 425 },
+  'M40': { rate: 5600, cementKgPerM3: 420, flyAshKgPerM3: 125, ggbsKgPerM3: 170, waterLitresPerM3: 160, mSandKgPerM3: 690, agg20mmKgPerM3: 645, agg10mmKgPerM3: 430 },
+  'M45': { rate: 6000, cementKgPerM3: 440, flyAshKgPerM3: 130, ggbsKgPerM3: 180, waterLitresPerM3: 155, mSandKgPerM3: 675, agg20mmKgPerM3: 650, agg10mmKgPerM3: 435 }
 };
 
 const extractCleanSiteName = (name: string): string => {
@@ -87,7 +89,6 @@ const getCurrentMonthBounds = () => {
 };
 
 export const BillingRMC: React.FC = () => {
-  // Retrieve Active User Role
   const getUserRole = (): 'ADMIN' | 'EMPLOYEE' | 'READ_ONLY' => {
     try {
       const userRaw = sessionStorage.getItem('concrete360_user');
@@ -105,7 +106,7 @@ export const BillingRMC: React.FC = () => {
   const userRole = getUserRole();
   const canCreate = userRole === 'ADMIN' || userRole === 'EMPLOYEE';
   const canEditOrDelete = userRole === 'ADMIN';
-  const canPrint = userRole === 'ADMIN' || userRole === 'EMPLOYEE'; // READ_ONLY disabled from printing
+  const canPrint = userRole === 'ADMIN' || userRole === 'EMPLOYEE';
 
   const getActiveSiteKey = () => {
     try {
@@ -149,7 +150,6 @@ export const BillingRMC: React.FC = () => {
   const [materialGrades, setMaterialGrades] = useState<MaterialCategoryItem[]>([]);
   const [mixGrade, setMixGrade] = useState('M20');
 
-  // Transit Mixer state loaded from TransitMixerPage storage
   const [transitTrucks, setTransitTrucks] = useState<TransitMixerTruck[]>([]);
   const [selectedVehicleNo, setSelectedVehicleNo] = useState<string>('');
   
@@ -176,11 +176,13 @@ export const BillingRMC: React.FC = () => {
     } catch {}
 
     setMaterialGrades([
+      { grade: 'M15', rate: 3900 },
       { grade: 'M20', rate: 4200 },
       { grade: 'M25', rate: 4500 },
       { grade: 'M30', rate: 4800 },
       { grade: 'M35', rate: 5200 },
-      { grade: 'M40', rate: 5600 }
+      { grade: 'M40', rate: 5600 },
+      { grade: 'M45', rate: 6000 }
     ]);
   };
 
@@ -190,7 +192,7 @@ export const BillingRMC: React.FC = () => {
     if (found && (found.rate || found.unitRate || found.price)) {
       return Number(found.rate || found.unitRate || found.price);
     }
-    return DEFAULT_RECIPES[code]?.rate || 4500;
+    return DEFAULT_RECIPES[code]?.rate || 4200;
   };
 
   const handleMixGradeChange = (newGrade: string) => {
@@ -306,7 +308,6 @@ export const BillingRMC: React.FC = () => {
 
       const loadedTrucks = loadTransitMixers(siteKey);
 
-      // Load Invoices for active normalized site
       const savedInvoices = localStorage.getItem(`concrete360_site_invoices_${siteKey}`);
       let existingInvoices: RMCInvoice[] = [];
       if (savedInvoices) {
@@ -321,7 +322,6 @@ export const BillingRMC: React.FC = () => {
         setInvoices([]);
       }
 
-      // Load Measurements & Remaining Volumes
       let measurementsRaw = localStorage.getItem(`concrete360_advanced_measurements_${siteKey}`);
       let parsedM: any[] = [];
       if (measurementsRaw) {
@@ -385,12 +385,14 @@ export const BillingRMC: React.FC = () => {
     window.addEventListener('concrete360_site_switched', handleSync);
     window.addEventListener('concrete360_transit_mixer_updated', handleSync);
     window.addEventListener('concrete360_fleet_updated', handleSync);
+    window.addEventListener('concrete360_mix_designs_updated', handleSync);
     window.addEventListener('storage', handleSync);
     window.addEventListener('focus', handleSync);
     return () => {
       window.removeEventListener('concrete360_site_switched', handleSync);
       window.removeEventListener('concrete360_transit_mixer_updated', handleSync);
       window.removeEventListener('concrete360_fleet_updated', handleSync);
+      window.removeEventListener('concrete360_mix_designs_updated', handleSync);
       window.removeEventListener('storage', handleSync);
       window.removeEventListener('focus', handleSync);
     };
@@ -559,44 +561,11 @@ export const BillingRMC: React.FC = () => {
     const sgst = isGstActive ? sub * 0.09 : 0;
     const calculatedGrandTotal = sub + cgst + sgst;
 
-    const gradeKey = (inv.mixGrade || 'M20').substring(0, 3).toUpperCase();
-    let recipe = DEFAULT_RECIPES[gradeKey] || DEFAULT_RECIPES['M20'];
-
-    try {
-      const keysToCheck = ['concrete360_mix_designs', 'concrete360_mix_design_recipes', 'concrete360_mixes', 'pave_mix_designs'];
-      for (const key of keysToCheck) {
-        const raw = localStorage.getItem(key);
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed)) {
-            const found = parsed.find((d: any) => String(d.grade || d.code || '').toUpperCase().includes(gradeKey));
-            if (found) {
-              recipe = {
-                cementKgPerM3: Number(found.cementKgPerM3 ?? found.cement ?? recipe.cementKgPerM3),
-                flyAshKgPerM3: Number(found.flyAshKgPerM3 ?? found.flyAsh ?? recipe.flyAshKgPerM3),
-                waterLitresPerM3: Number(found.waterLitresPerM3 ?? found.water ?? recipe.waterLitresPerM3),
-                mSandKgPerM3: Number(found.mSandKgPerM3 ?? found.sand ?? recipe.mSandKgPerM3),
-                agg20mmKgPerM3: Number(found.agg20mmKgPerM3 ?? found.agg20 ?? recipe.agg20mmKgPerM3),
-                agg10mmKgPerM3: Number(found.agg10mmKgPerM3 ?? found.agg10 ?? recipe.agg10mmKgPerM3)
-              };
-              break;
-            }
-          }
-        }
-      }
-    } catch {}
-
     let linkedReport = null;
     if (inv.workElementId && measurementItems.length > 0) {
       linkedReport = measurementItems.find(it => it.id === inv.workElementId);
     }
 
-    const cementKg = Math.round(inv.volumeM3 * recipe.cementKgPerM3);
-    const flyAshKg = Math.round(inv.volumeM3 * recipe.flyAshKgPerM3);
-    const mSandKg = Math.round(inv.volumeM3 * recipe.mSandKgPerM3);
-    const agg20Kg = Math.round(inv.volumeM3 * recipe.agg20mmKgPerM3);
-    const agg10Kg = Math.round(inv.volumeM3 * recipe.agg10mmKgPerM3);
-    const waterLtr = Math.round(inv.volumeM3 * recipe.waterLitresPerM3);
     const formattedPrintDate = formatDateDDMMYYYY(inv.date);
 
     printWindow.document.write(`
@@ -627,8 +596,6 @@ export const BillingRMC: React.FC = () => {
             .totals-box { width: 42%; border: 1px solid #cbd5e1; }
             .totals-row { display: flex; justify-content: space-between; padding: 5px 8px; border-bottom: 1px solid #cbd5e1; font-size: 10px; }
             .totals-row:last-child { border-bottom: none; font-weight: bold; background: #f1f5f9; font-size: 11px; color: #0f172a; }
-            .material-breakdown { border: 1px solid #cbd5e1; background: #f8fafc; padding: 10px; font-size: 10px; margin-bottom: 20px; }
-            .material-breakdown-title { font-weight: bold; color: #0f172a; margin-bottom: 6px; text-transform: uppercase; font-size: 10px; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; }
             .signatures { display: flex; justify-content: space-between; margin-top: 25px; font-size: 9px; }
             .sig-line { width: 160px; border-top: 1px dashed #64748b; text-align: center; padding-top: 4px; }
           </style>
@@ -681,9 +648,9 @@ export const BillingRMC: React.FC = () => {
               <tr>
                 <td>1</td>
                 <td>
-                  <strong>Ready-Mix Grade: ${inv.mixGrade}</strong><br/>
+                  <strong>Ready-Mix Concrete: ${inv.mixGrade} Grade</strong><br/>
                   <span style="font-size:10px; font-weight:bold; color:#0f172a;">Vehicle No (Transit Mixer): ${inv.vehicleNo || 'N/A'}</span><br/>
-                  <span style="font-size:9px; color:#555;">Batch delivery as per IS 4926 / ASTM C94 quality dockets</span>
+                  <span style="font-size:9px; color:#555;">Commercial RMC supply as per IS 4926 / IS 456 delivery docket standards</span>
                 </td>
                 <td>38245010</td>
                 <td>${inv.volumeM3.toFixed(2)} m³</td>
@@ -709,27 +676,6 @@ export const BillingRMC: React.FC = () => {
               ` : ''}
               <div class="totals-row" style="font-weight: bold; background: #f1f5f9; color: #0f172a; font-size: 11px;"><span>PAYABLE AMOUNT:</span><span>₹${Math.round(calculatedGrandTotal).toLocaleString('en-IN')}</span></div>
             </div>
-          </div>
-
-          <div class="material-breakdown">
-            <div class="material-breakdown-title">BATCH MATERIAL BREAKDOWN TABLE (LINKED REPORT CONSUMPTION FOR ${inv.volumeM3} M³):</div>
-            <table>
-              <thead>
-                <tr>
-                  <th>Material Component</th>
-                  <th class="text-right">Proportion per m³</th>
-                  <th class="text-right">Total Quantity (${inv.volumeM3} m³)</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr><td>Cement (OPC)</td><td class="text-right">${recipe.cementKgPerM3} kg/m³</td><td class="text-right"><strong>${cementKg.toLocaleString('en-IN')} kg</strong></td></tr>
-                <tr><td>Fly Ash</td><td class="text-right">${recipe.flyAshKgPerM3} kg/m³</td><td class="text-right"><strong>${flyAshKg.toLocaleString('en-IN')} kg</strong></td></tr>
-                <tr><td>M-Sand</td><td class="text-right">${recipe.mSandKgPerM3} kg/m³</td><td class="text-right"><strong>${mSandKg.toLocaleString('en-IN')} kg</strong></td></tr>
-                <tr><td>20MM Aggregate</td><td class="text-right">${recipe.agg20mmKgPerM3} kg/m³</td><td class="text-right"><strong>${agg20Kg.toLocaleString('en-IN')} kg</strong></td></tr>
-                <tr><td>10MM Aggregate</td><td class="text-right">${recipe.agg10mmKgPerM3} kg/m³</td><td class="text-right"><strong>${agg10Kg.toLocaleString('en-IN')} kg</strong></td></tr>
-                <tr><td>Batching Water</td><td class="text-right">${recipe.waterLitresPerM3} L/m³</td><td class="text-right"><strong>${waterLtr.toLocaleString('en-IN')} Litres</strong></td></tr>
-              </tbody>
-            </table>
           </div>
 
           <div class="signatures">
@@ -927,12 +873,8 @@ export const BillingRMC: React.FC = () => {
               ) : (
                 filteredInvoices.map((inv) => (
                   <tr key={inv.id} className="hover:bg-[#0e1728] transition-colors">
-                    {/* Date Column First */}
                     <td className="py-4 px-6 text-slate-300 font-bold">{formatDateDDMMYYYY(inv.date)}</td>
-                    
-                    {/* Vehicle No Column Second */}
                     <td className="py-4 px-6 text-amber-400 font-black text-sm">{inv.vehicleNo || 'N/A'}</td>
-                    
                     <td className="py-4 px-6 font-sans font-bold text-cyan-300">{inv.clientName}</td>
                     <td className="py-4 px-6 text-cyan-400">{inv.mixGrade}</td>
                     <td className="py-4 px-6 font-bold">{inv.volumeM3} m³</td>
@@ -1011,7 +953,6 @@ export const BillingRMC: React.FC = () => {
             </div>
 
             <form onSubmit={handleSaveInvoice} className="space-y-4 text-xs">
-              {/* Work Element Selector */}
               <div className="bg-[#070d1a] border border-[#1b273d] p-3 rounded-2xl space-y-1.5">
                 <label className="text-slate-300 font-bold uppercase tracking-wider flex items-center gap-1.5 text-[11px]">
                   <Filter className="w-3.5 h-3.5 text-blue-400" />
@@ -1031,7 +972,6 @@ export const BillingRMC: React.FC = () => {
                 </select>
               </div>
 
-              {/* Invoice Date */}
               <div className="space-y-1.5">
                 <label className="text-slate-300 font-bold uppercase tracking-wider flex items-center gap-1.5 text-[11px]">
                   <Calendar className="w-3.5 h-3.5 text-cyan-400" />
@@ -1045,7 +985,6 @@ export const BillingRMC: React.FC = () => {
                 />
               </div>
 
-              {/* Concrete Mix Grade */}
               <div>
                 <label className="block text-slate-300 font-bold mb-1.5 uppercase tracking-wider">Concrete Mix Grade (From Category of Material)</label>
                 <select
@@ -1054,7 +993,7 @@ export const BillingRMC: React.FC = () => {
                   className="w-full px-3 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-cyan-400 font-bold outline-none cursor-pointer text-xs"
                 >
                   {materialGrades.map((mat, idx) => {
-                    const gradeLabel = `${mat.grade || mat.name || 'M25'}`;
+                    const gradeLabel = `${mat.grade || mat.name || 'M20'}`;
                     return (
                       <option key={idx} value={gradeLabel}>
                         {gradeLabel}
@@ -1064,7 +1003,6 @@ export const BillingRMC: React.FC = () => {
                 </select>
               </div>
 
-              {/* Vehicle Number (From TransitMixerPage) */}
               <div className="bg-[#070d1a] border border-[#1b273d] p-3.5 rounded-2xl space-y-2">
                 <div className="flex items-center justify-between">
                   <label className="text-slate-300 font-bold uppercase tracking-wider flex items-center gap-1.5 text-[11px]">
@@ -1144,7 +1082,6 @@ export const BillingRMC: React.FC = () => {
                 </label>
               </div>
 
-              {/* Summary Calculation Box */}
               <div className="bg-[#070d1a] border border-[#1b273d] p-4 rounded-2xl space-y-2 text-xs">
                 <div className="flex justify-between text-slate-400">
                   <span>Concrete Subtotal ({numVolume} m³ × ₹{numRate}):</span>
