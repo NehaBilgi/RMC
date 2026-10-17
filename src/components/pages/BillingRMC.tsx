@@ -44,13 +44,14 @@ interface MaterialCategoryItem {
 }
 
 const DEFAULT_RECIPES: Record<string, any> = {
-  'M15': { rate: 3900, cementKgPerM3: 250, flyAshKgPerM3: 75, ggbsKgPerM3: 0, waterLitresPerM3: 165, mSandKgPerM3: 815, agg20mmKgPerM3: 645, agg10mmKgPerM3: 430 },
-  'M20': { rate: 4200, cementKgPerM3: 300, flyAshKgPerM3: 90, ggbsKgPerM3: 0, waterLitresPerM3: 170, mSandKgPerM3: 780, agg20mmKgPerM3: 635, agg10mmKgPerM3: 425 },
-  'M25': { rate: 4500, cementKgPerM3: 350, flyAshKgPerM3: 105, ggbsKgPerM3: 0, waterLitresPerM3: 172, mSandKgPerM3: 740, agg20mmKgPerM3: 630, agg10mmKgPerM3: 420 },
-  'M30': { rate: 4800, cementKgPerM3: 380, flyAshKgPerM3: 115, ggbsKgPerM3: 0, waterLitresPerM3: 170, mSandKgPerM3: 720, agg20mmKgPerM3: 635, agg10mmKgPerM3: 425 },
-  'M35': { rate: 5200, cementKgPerM3: 400, flyAshKgPerM3: 120, ggbsKgPerM3: 0, waterLitresPerM3: 165, mSandKgPerM3: 705, agg20mmKgPerM3: 640, agg10mmKgPerM3: 425 },
-  'M40': { rate: 5600, cementKgPerM3: 420, flyAshKgPerM3: 125, ggbsKgPerM3: 0, waterLitresPerM3: 160, mSandKgPerM3: 690, agg20mmKgPerM3: 645, agg10mmKgPerM3: 430 },
-  'M45': { rate: 6000, cementKgPerM3: 440, flyAshKgPerM3: 130, ggbsKgPerM3: 0, waterLitresPerM3: 155, mSandKgPerM3: 675, agg20mmKgPerM3: 650, agg10mmKgPerM3: 435 }
+  'M15': { rate: 3900, cementKgPerM3: 250, flyAshKgPerM3: 75, ggbsKgPerM3: 100, waterLitresPerM3: 150, mSandKgPerM3: 825, agg20mmKgPerM3: 658, agg10mmKgPerM3: 440 },
+  'M20': { rate: 4200, cementKgPerM3: 300, flyAshKgPerM3: 90, ggbsKgPerM3: 120, waterLitresPerM3: 148, mSandKgPerM3: 789, agg20mmKgPerM3: 642, agg10mmKgPerM3: 428 },
+  'M25': { rate: 4500, cementKgPerM3: 350, flyAshKgPerM3: 105, ggbsKgPerM3: 140, waterLitresPerM3: 145, mSandKgPerM3: 752, agg20mmKgPerM3: 627, agg10mmKgPerM3: 418 },
+  'M30': { rate: 4800, cementKgPerM3: 380, flyAshKgPerM3: 115, ggbsKgPerM3: 150, waterLitresPerM3: 142, mSandKgPerM3: 721, agg20mmKgPerM3: 623, agg10mmKgPerM3: 415 },
+  'M35': { rate: 5200, cementKgPerM3: 400, flyAshKgPerM3: 120, ggbsKgPerM3: 160, waterLitresPerM3: 138, mSandKgPerM3: 704, agg20mmKgPerM3: 620, agg10mmKgPerM3: 414 },
+  'M40': { rate: 5600, cementKgPerM3: 420, flyAshKgPerM3: 125, ggbsKgPerM3: 170, waterLitresPerM3: 135, mSandKgPerM3: 681, agg20mmKgPerM3: 620, agg10mmKgPerM3: 414 },
+  'M45': { rate: 6000, cementKgPerM3: 440, flyAshKgPerM3: 130, ggbsKgPerM3: 180, waterLitresPerM3: 132, mSandKgPerM3: 660, agg20mmKgPerM3: 619, agg10mmKgPerM3: 414 },
+  'M50': { rate: 6500, cementKgPerM3: 460, flyAshKgPerM3: 135, ggbsKgPerM3: 190, waterLitresPerM3: 130, mSandKgPerM3: 641, agg20mmKgPerM3: 617, agg10mmKgPerM3: 411 }
 };
 
 const extractCleanSiteName = (name: string): string => {
@@ -160,6 +161,7 @@ export const BillingRMC: React.FC = () => {
   const [applyGst, setApplyGst] = useState(true);
   const [invoiceDate, setInvoiceDate] = useState<string>(new Date().toISOString().split('T')[0]);
 
+  // Load Material Categories & Pricing
   const loadMaterialCategories = () => {
     try {
       const keys = ['concrete360_material_categories', 'pave_material_categories', 'concrete360_mix_designs', 'concrete360_mixes'];
@@ -182,12 +184,13 @@ export const BillingRMC: React.FC = () => {
       { grade: 'M30', rate: 4800 },
       { grade: 'M35', rate: 5200 },
       { grade: 'M40', rate: 5600 },
-      { grade: 'M45', rate: 6000 }
+      { grade: 'M45', rate: 6000 },
+      { grade: 'M50', rate: 6500 }
     ]);
   };
 
   const fetchRateForGrade = (gradeStr: string) => {
-    const code = gradeStr.substring(0, 3).toUpperCase();
+    const code = (gradeStr || 'M20').substring(0, 3).toUpperCase();
     const found = materialGrades.find(m => String(m.grade || m.name || m.code || '').toUpperCase().includes(code));
     if (found && (found.rate || found.unitRate || found.price)) {
       return Number(found.rate || found.unitRate || found.price);
@@ -199,6 +202,23 @@ export const BillingRMC: React.FC = () => {
     setMixGrade(newGrade);
     const resolvedRate = fetchRateForGrade(newGrade);
     setUnitRate(resolvedRate);
+  };
+
+  // Resolve Concrete Grade directly from Site Reports & Measurements
+  const resolveGradeFromReports = (siteKey: string, parsedM: any[]): string => {
+    try {
+      const explicitGrade = localStorage.getItem(`concrete360_active_mix_grade_${siteKey}`);
+      if (explicitGrade && explicitGrade.trim()) return explicitGrade.trim();
+    } catch {}
+
+    if (Array.isArray(parsedM) && parsedM.length > 0) {
+      const firstWithGrade = parsedM.find(it => it.mixGrade && String(it.mixGrade).trim().length > 0);
+      if (firstWithGrade && firstWithGrade.mixGrade) {
+        return firstWithGrade.mixGrade.trim();
+      }
+    }
+
+    return 'M20';
   };
 
   const loadTransitMixers = (siteKey: string) => {
@@ -308,6 +328,7 @@ export const BillingRMC: React.FC = () => {
 
       const loadedTrucks = loadTransitMixers(siteKey);
 
+      // Load Invoices for active site
       const savedInvoices = localStorage.getItem(`concrete360_site_invoices_${siteKey}`);
       let existingInvoices: RMCInvoice[] = [];
       if (savedInvoices) {
@@ -322,6 +343,7 @@ export const BillingRMC: React.FC = () => {
         setInvoices([]);
       }
 
+      // Load Measurements & Extract Grade from Reports
       let measurementsRaw = localStorage.getItem(`concrete360_advanced_measurements_${siteKey}`);
       let parsedM: any[] = [];
       if (measurementsRaw) {
@@ -332,6 +354,12 @@ export const BillingRMC: React.FC = () => {
       }
 
       setMeasurementItems(parsedM);
+
+      // Take grade from reports automatically
+      const reportGrade = resolveGradeFromReports(siteKey, parsedM);
+      setMixGrade(reportGrade);
+      setUnitRate(fetchRateForGrade(reportGrade));
+
       const netTotalVol = parsedM.reduce((sum: number, it: any) => sum + (Number(it.volumeM3) || 0), 0);
       
       let wastage = 5;
@@ -361,6 +389,11 @@ export const BillingRMC: React.FC = () => {
             .reduce((sum, inv) => sum + (Number(inv.volumeM3) || 0), 0);
           rem = Number(Math.max(0, selGross - workAlreadyInvoiced).toFixed(2));
           setRemainingVolume(rem);
+
+          if (selItem.mixGrade) {
+            setMixGrade(selItem.mixGrade);
+            setUnitRate(fetchRateForGrade(selItem.mixGrade));
+          }
         }
       }
 
@@ -386,6 +419,7 @@ export const BillingRMC: React.FC = () => {
     window.addEventListener('concrete360_transit_mixer_updated', handleSync);
     window.addEventListener('concrete360_fleet_updated', handleSync);
     window.addEventListener('concrete360_mix_designs_updated', handleSync);
+    window.addEventListener('concrete360_measurement_updated', handleSync);
     window.addEventListener('storage', handleSync);
     window.addEventListener('focus', handleSync);
     return () => {
@@ -393,6 +427,7 @@ export const BillingRMC: React.FC = () => {
       window.removeEventListener('concrete360_transit_mixer_updated', handleSync);
       window.removeEventListener('concrete360_fleet_updated', handleSync);
       window.removeEventListener('concrete360_mix_designs_updated', handleSync);
+      window.removeEventListener('concrete360_measurement_updated', handleSync);
       window.removeEventListener('storage', handleSync);
       window.removeEventListener('focus', handleSync);
     };
@@ -423,10 +458,14 @@ export const BillingRMC: React.FC = () => {
     }
   };
 
+  // Synchronize mix grade and volume whenever a structural work element is picked
   const handleWorkElementChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const wId = e.target.value;
     setSelectedWorkId(wId);
     if (wId === 'ALL') {
+      const reportGrade = resolveGradeFromReports(currentSiteKey, measurementItems);
+      setMixGrade(reportGrade);
+      setUnitRate(fetchRateForGrade(reportGrade));
       loadSiteData();
     } else {
       const item = measurementItems.find(it => it.id === wId);
@@ -451,6 +490,7 @@ export const BillingRMC: React.FC = () => {
         const cap = currentTruck?.capacityM3 || 9;
         setVolumeM3(rem > 0 && rem < cap ? rem : cap);
 
+        // Take concrete grade directly from this report item
         if (item.mixGrade) {
           const gradeCode = item.mixGrade;
           setMixGrade(gradeCode);
@@ -478,6 +518,12 @@ export const BillingRMC: React.FC = () => {
     }
     loadSiteData();
     setEditingInvoiceId(null);
+
+    // Auto-resolve grade from reports on modal open
+    const resolvedReportGrade = resolveGradeFromReports(currentSiteKey, measurementItems);
+    setMixGrade(resolvedReportGrade);
+    setUnitRate(fetchRateForGrade(resolvedReportGrade));
+
     if (transitTrucks.length > 0) {
       const firstTruck = transitTrucks[0];
       setSelectedVehicleNo(firstTruck.vehicleNo);
@@ -564,14 +610,13 @@ export const BillingRMC: React.FC = () => {
     const gradeKey = (inv.mixGrade || 'M20').substring(0, 3).toUpperCase();
     let recipe = DEFAULT_RECIPES[gradeKey] || DEFAULT_RECIPES['M20'];
 
-    // Resolve active recipe and mineral admixture mode (Fly Ash or GGBS)
     let activeAdmixtureMode: 'FLY_ASH' | 'GGBS' = 'FLY_ASH';
     try {
-      const savedMode = localStorage.getItem('concrete360_admixture_mode');
+      const savedMode = localStorage.getItem(`concrete360_admixture_mode_${currentSiteKey}`) || localStorage.getItem('concrete360_admixture_mode');
       if (savedMode === 'GGBS' || savedMode === 'FLY_ASH') {
         activeAdmixtureMode = savedMode;
       }
-      const rawMixes = localStorage.getItem('concrete360_mix_designs');
+      const rawMixes = localStorage.getItem(`concrete360_mix_designs_${currentSiteKey}`) || localStorage.getItem('concrete360_mix_designs');
       if (rawMixes) {
         const parsedList = JSON.parse(rawMixes);
         if (Array.isArray(parsedList)) {
@@ -639,7 +684,6 @@ export const BillingRMC: React.FC = () => {
             .totals-row { display: flex; justify-content: space-between; padding: 5px 8px; border-bottom: 1px solid #cbd5e1; font-size: 10px; }
             .totals-row:last-child { border-bottom: none; font-weight: bold; background: #f1f5f9; font-size: 11px; color: #0f172a; }
             
-            /* Re-integrated Batch Material Breakdown Table */
             .material-breakdown { border: 1px solid #cbd5e1; background: #f8fafc; padding: 10px; font-size: 10px; margin-bottom: 20px; }
             .material-breakdown-title { font-weight: bold; color: #0f172a; margin-bottom: 6px; text-transform: uppercase; font-size: 10px; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; }
             
@@ -695,9 +739,9 @@ export const BillingRMC: React.FC = () => {
               <tr>
                 <td>1</td>
                 <td>
-                  <strong>Ready-Mix Grade: ${inv.mixGrade}</strong><br/>
+                  <strong>Ready-Mix Concrete: ${inv.mixGrade} Grade</strong><br/>
                   <span style="font-size:10px; font-weight:bold; color:#0f172a;">Vehicle No (Transit Mixer): ${inv.vehicleNo || 'N/A'}</span><br/>
-                  <span style="font-size:9px; color:#555;">Batch delivery as per IS 4926 / ASTM C94 quality dockets</span>
+                  <span style="font-size:9px; color:#555;">Batch delivery as per IS 4926 / IS 456 quality dockets</span>
                 </td>
                 <td>38245010</td>
                 <td>${inv.volumeM3.toFixed(2)} m³</td>
@@ -725,9 +769,8 @@ export const BillingRMC: React.FC = () => {
             </div>
           </div>
 
-          <!-- BATCH MATERIAL BREAKDOWN TABLE -->
           <div class="material-breakdown">
-            <div class="material-breakdown-title">BATCH MATERIAL BREAKDOWN TABLE (LINKED REPORT CONSUMPTION FOR ${inv.volumeM3} M³):</div>
+            <div class="material-breakdown-title">BATCH MATERIAL BREAKDOWN TABLE (REPORT CONSUMPTION FOR ${inv.volumeM3} M³):</div>
             <table>
               <thead>
                 <tr>
@@ -738,7 +781,7 @@ export const BillingRMC: React.FC = () => {
               </thead>
               <tbody>
                 <tr>
-                  <td>Cement (OPC)</td>
+                  <td>Cement (OPC 53)</td>
                   <td class="text-right">${recipe.cementKgPerM3} kg/m³</td>
                   <td class="text-right"><strong>${cementKg.toLocaleString('en-IN')} kg</strong></td>
                 </tr>
@@ -748,7 +791,7 @@ export const BillingRMC: React.FC = () => {
                   <td class="text-right"><strong>${mineralKg.toLocaleString('en-IN')} kg</strong></td>
                 </tr>
                 <tr>
-                  <td>M-Sand</td>
+                  <td>M-Sand (Zone II)</td>
                   <td class="text-right">${recipe.mSandKgPerM3} kg/m³</td>
                   <td class="text-right"><strong>${mSandKg.toLocaleString('en-IN')} kg</strong></td>
                 </tr>
@@ -969,7 +1012,7 @@ export const BillingRMC: React.FC = () => {
                     <td className="py-4 px-6 text-slate-300 font-bold">{formatDateDDMMYYYY(inv.date)}</td>
                     <td className="py-4 px-6 text-amber-400 font-black text-sm">{inv.vehicleNo || 'N/A'}</td>
                     <td className="py-4 px-6 font-sans font-bold text-cyan-300">{inv.clientName}</td>
-                    <td className="py-4 px-6 text-cyan-400">{inv.mixGrade}</td>
+                    <td className="py-4 px-6 text-cyan-400 font-bold">{inv.mixGrade}</td>
                     <td className="py-4 px-6 font-bold">{inv.volumeM3} m³</td>
                     <td className="py-4 px-6 text-emerald-400 font-extrabold">₹{inv.grandTotal.toLocaleString('en-IN')}</td>
                     <td className="py-4 px-6 text-right">
@@ -1046,6 +1089,7 @@ export const BillingRMC: React.FC = () => {
             </div>
 
             <form onSubmit={handleSaveInvoice} className="space-y-4 text-xs">
+              {/* Work Element Selector (Linked directly to Report & Auto-Selects Grade) */}
               <div className="bg-[#070d1a] border border-[#1b273d] p-3 rounded-2xl space-y-1.5">
                 <label className="text-slate-300 font-bold uppercase tracking-wider flex items-center gap-1.5 text-[11px]">
                   <Filter className="w-3.5 h-3.5 text-blue-400" />
@@ -1059,12 +1103,13 @@ export const BillingRMC: React.FC = () => {
                   <option value="ALL">All Site Works Combined</option>
                   {measurementItems.map(it => (
                     <option key={it.id} value={it.id}>
-                      {it.id}: {it.label} ({it.volumeM3} m³)
+                      {it.id}: {it.label} ({it.volumeM3} m³) {it.mixGrade ? `[${it.mixGrade}]` : ''}
                     </option>
                   ))}
                 </select>
               </div>
 
+              {/* Invoice Date */}
               <div className="space-y-1.5">
                 <label className="text-slate-300 font-bold uppercase tracking-wider flex items-center gap-1.5 text-[11px]">
                   <Calendar className="w-3.5 h-3.5 text-cyan-400" />
@@ -1078,8 +1123,12 @@ export const BillingRMC: React.FC = () => {
                 />
               </div>
 
+              {/* Concrete Mix Grade (Pulled from Report / Mix Design) */}
               <div>
-                <label className="block text-slate-300 font-bold mb-1.5 uppercase tracking-wider">Concrete Mix Grade (From Category of Material)</label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-slate-300 font-bold uppercase tracking-wider">Concrete Mix Grade (From Report)</label>
+                  <span className="text-[10px] text-cyan-400 font-bold">Auto-synced</span>
+                </div>
                 <select
                   value={mixGrade}
                   onChange={(e) => handleMixGradeChange(e.target.value)}
@@ -1096,6 +1145,7 @@ export const BillingRMC: React.FC = () => {
                 </select>
               </div>
 
+              {/* Vehicle Number */}
               <div className="bg-[#070d1a] border border-[#1b273d] p-3.5 rounded-2xl space-y-2">
                 <div className="flex items-center justify-between">
                   <label className="text-slate-300 font-bold uppercase tracking-wider flex items-center gap-1.5 text-[11px]">
@@ -1148,7 +1198,7 @@ export const BillingRMC: React.FC = () => {
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <label className="text-slate-300 font-bold uppercase tracking-wider">Unit Rate (₹ / m³)</label>
-                    <span className="text-[10px] text-amber-400">From Category</span>
+                    <span className="text-[10px] text-amber-400">From Grade Catalog</span>
                   </div>
                   <input
                     type="number"
