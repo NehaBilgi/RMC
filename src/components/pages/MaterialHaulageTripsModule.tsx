@@ -19,7 +19,7 @@ import {
 export interface HaulageTripRecord {
   id: string;
   tripDate: string;
-  siteName: string;
+  siteName: string; // Strictly scoped to active site
   vehicleNumber: string;
   materialName: string;
   purchasedFrom: string;
@@ -43,7 +43,7 @@ export interface FleetVehicle {
 export interface DieselFuelRecord {
   id: string;
   date: string;
-  siteName: string;
+  siteName?: string;
   vehicleNumber: string;
   litres: number;
   ratePerLitre: number;
@@ -61,7 +61,6 @@ export interface VendorAdvanceRecord {
   paymentMode?: string;
 }
 
-const STORAGE_HAULAGE_KEY = 'CONSTRUCTION_PRO_HAULAGE_TRIPS_V2';
 const STORAGE_FLEET_KEY = 'CONSTRUCTION_PRO_FLEET_VEHICLES_V1';
 const STORAGE_DIESEL_KEY = 'CONSTRUCTION_PRO_DIESEL_LOGS_V1';
 const STORAGE_VENDOR_ADVANCES_KEY = 'CONSTRUCTION_PRO_VENDOR_ADVANCES_V1';
@@ -113,7 +112,6 @@ const getCurrentMonthBounds = () => {
 };
 
 export const MaterialHaulageTripsModule: React.FC = () => {
-  // Retrieve Active User Role
   const getUserRole = (): 'ADMIN' | 'EMPLOYEE' | 'READ_ONLY' => {
     try {
       const userRaw = sessionStorage.getItem('concrete360_user');
@@ -174,17 +172,15 @@ export const MaterialHaulageTripsModule: React.FC = () => {
     ];
   }, []);
 
-  const loadSiteTrips = (siteKey: string) => {
+  // Strictly load haulage trips belonging ONLY to the active site
+  const loadSiteTrips = (siteKey: string): HaulageTripRecord[] => {
     try {
       const siteTripsRaw = localStorage.getItem(`concrete360_site_haulage_trips_${siteKey}`);
       if (siteTripsRaw) {
         const parsed = JSON.parse(siteTripsRaw);
-        if (Array.isArray(parsed)) return parsed;
-      }
-      const globalRaw = localStorage.getItem(STORAGE_HAULAGE_KEY);
-      if (globalRaw) {
-        const parsed = JSON.parse(globalRaw);
-        if (Array.isArray(parsed)) return parsed;
+        if (Array.isArray(parsed)) {
+          return parsed.filter(t => extractCleanSiteName(t.siteName || siteKey) === siteKey);
+        }
       }
     } catch {}
     return [];
@@ -252,7 +248,7 @@ export const MaterialHaulageTripsModule: React.FC = () => {
   const [brassPerTrip, setBrassPerTrip] = useState<number | ''>(6);
   const [ratePerBrass, setRatePerBrass] = useState<number | ''>(defaultMat.rate);
 
-  // Sync active site changes
+  // Sync state cleanly whenever site is switched
   useEffect(() => {
     const handleSync = () => {
       const siteKey = getActiveSiteKey();
@@ -299,12 +295,12 @@ export const MaterialHaulageTripsModule: React.FC = () => {
     }
   };
 
+  // Strictly save trips to the active site's storage key
   useEffect(() => {
     try {
       localStorage.setItem(`concrete360_site_haulage_trips_${currentSiteKey}`, JSON.stringify(trips));
-      localStorage.setItem(STORAGE_HAULAGE_KEY, JSON.stringify(trips));
     } catch (error) {
-      console.error('Failed saving trips', error);
+      console.error('Failed saving site trips', error);
     }
   }, [trips, currentSiteKey]);
 
@@ -321,6 +317,9 @@ export const MaterialHaulageTripsModule: React.FC = () => {
 
   const filtered = useMemo(() => {
     return trips.filter((t) => {
+      // Enforce site-matching
+      if (extractCleanSiteName(t.siteName || currentSiteKey) !== currentSiteKey) return false;
+
       const matchDate = (!fromDate || t.tripDate >= fromDate) && (!toDate || t.tripDate <= toDate);
       const q = searchQuery.toLowerCase().trim();
       const matchQuery =
@@ -332,7 +331,7 @@ export const MaterialHaulageTripsModule: React.FC = () => {
 
       return matchDate && matchQuery;
     });
-  }, [trips, fromDate, toDate, searchQuery]);
+  }, [trips, fromDate, toDate, searchQuery, currentSiteKey]);
 
   const rentedVehiclesMap = useMemo(() => {
     const map = new Map<string, FleetVehicle>();
@@ -347,10 +346,12 @@ export const MaterialHaulageTripsModule: React.FC = () => {
     const isRented = vObj?.ownershipType === 'rented';
     if (!isRented) return { litres: 0, cost: 0 };
 
+    // Scoped strictly to the active site
     const matchingLogs = dieselLogs.filter(
       (d) =>
         d.date === rowDate &&
-        d.vehicleNumber.trim().toUpperCase() === rowVehicle.trim().toUpperCase()
+        d.vehicleNumber.trim().toUpperCase() === rowVehicle.trim().toUpperCase() &&
+        (!d.siteName || extractCleanSiteName(d.siteName) === currentSiteKey)
     );
 
     const litres = matchingLogs.reduce((sum, l) => sum + (Number(l.litres) || 0), 0);
@@ -390,10 +391,12 @@ export const MaterialHaulageTripsModule: React.FC = () => {
 
   const matchingAdvances = useMemo(() => {
     return advances.filter((a) => {
+      // Scoped strictly to this site
+      const siteMatch = !a.siteName || extractCleanSiteName(a.siteName) === currentSiteKey;
       const matchDate = (!fromDate || a.date >= fromDate) && (!toDate || a.date <= toDate);
-      return matchDate;
+      return siteMatch && matchDate;
     });
-  }, [advances, fromDate, toDate]);
+  }, [advances, fromDate, toDate, currentSiteKey]);
 
   const totalVendorAdvancePaid = useMemo(() => {
     return matchingAdvances.reduce((sum, a) => sum + (Number(a.amount) || 0), 0);
@@ -451,7 +454,7 @@ export const MaterialHaulageTripsModule: React.FC = () => {
       alert('Permission Denied: Only ADMIN accounts can delete trips.');
       return;
     }
-    if (window.confirm('Delete this record?')) {
+    if (window.confirm('Delete this trip record for current site?')) {
       setTrips((prev) => prev.filter((t) => t.id !== id));
     }
   };
@@ -469,7 +472,7 @@ export const MaterialHaulageTripsModule: React.FC = () => {
     const record: HaulageTripRecord = {
       id: editingId || `TRIP-${Date.now().toString().slice(-4)}`,
       tripDate,
-      siteName: currentSiteKey,
+      siteName: currentSiteKey, // Strictly saved for this specific site
       vehicleNumber: vehicleNumber.trim().toUpperCase(),
       purchasedFrom: 'RAW MATERIAL CATALOG',
       materialName,
@@ -497,7 +500,7 @@ export const MaterialHaulageTripsModule: React.FC = () => {
           </div>
           <div>
             <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-blue-400 bg-blue-500/10 border border-blue-500/30 px-2.5 py-0.5 rounded-full">
-              SITE LOGISTICS ({currentSiteKey})
+              SITE LOGISTICS ({currentSiteKey})[cite: 4]
             </span>
             <h1 className="text-xl sm:text-2xl font-black text-white mt-1">Material Haulage Trips</h1>
           </div>
@@ -527,37 +530,37 @@ export const MaterialHaulageTripsModule: React.FC = () => {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 no-print">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 no-print font-mono">
         <div className="trip-summary-card p-4 rounded-2xl bg-[#0B1220] border border-[#1E293B]">
-          <div className="text-[10px] font-bold uppercase text-slate-400">Gross Haulage Total</div>
-          <div className="trip-summary-accent text-xl font-black text-white font-mono mt-1">₹{overallTotals.amount.toLocaleString('en-IN')}</div>
+          <div className="text-[10px] font-bold uppercase text-slate-400 font-sans">Gross Haulage Total</div>
+          <div className="trip-summary-accent text-xl font-black text-white mt-1">₹{overallTotals.amount.toLocaleString('en-IN')}</div>
           <div className="text-[10px] text-slate-500">{overallTotals.trips} Trips ({overallTotals.brass} Brass)</div>
         </div>
 
         <div className="trip-summary-card p-4 rounded-2xl bg-[#0B1220] border border-[#1E293B]">
-          <div className="trip-summary-accent text-[10px] font-bold uppercase text-amber-400 flex items-center gap-1">
+          <div className="trip-summary-accent text-[10px] font-bold uppercase text-amber-400 flex items-center gap-1 font-sans">
             <Fuel className="w-3 h-3 text-amber-400" />
             <span>(-) Less: Rented Diesel</span>
           </div>
-          <div className="trip-summary-accent text-xl font-black text-amber-400 font-mono mt-1">₹{overallTotals.dieselCost.toLocaleString('en-IN', { minimumFractionDigits: 1 })}</div>
+          <div className="trip-summary-accent text-xl font-black text-amber-400 mt-1">₹{overallTotals.dieselCost.toLocaleString('en-IN', { minimumFractionDigits: 1 })}</div>
           <div className="text-[10px] text-slate-500">{overallTotals.dieselLitres.toFixed(1)} Litres Issued</div>
         </div>
 
         <div className="trip-summary-card p-4 rounded-2xl bg-[#0B1220] border border-[#1E293B]">
-          <div className="trip-summary-accent text-[10px] font-bold uppercase text-rose-400">(-) Less: Advance Paid</div>
-          <div className="trip-summary-accent text-xl font-black text-rose-400 font-mono mt-1">₹{totalVendorAdvancePaid.toLocaleString('en-IN')}</div>
+          <div className="trip-summary-accent text-[10px] font-bold uppercase text-rose-400 font-sans">(-) Less: Advance Paid</div>
+          <div className="trip-summary-accent text-xl font-black text-rose-400 mt-1">₹{totalVendorAdvancePaid.toLocaleString('en-IN')}</div>
           <div className="text-[10px] text-slate-500">{matchingAdvances.length} Advance Payments Recorded</div>
         </div>
 
         <div className={`trip-summary-card p-4 rounded-2xl border ${isAdvanceExcess ? 'bg-rose-950/20 border-rose-500/30' : 'bg-amber-950/20 border-amber-500/30'}`}>
-          <div className={`trip-summary-accent text-[10px] font-bold uppercase ${isAdvanceExcess ? 'text-rose-400' : 'text-amber-400'}`}>
+          <div className={`trip-summary-accent text-[10px] font-bold uppercase font-sans ${isAdvanceExcess ? 'text-rose-400' : 'text-amber-400'}`}>
             {isAdvanceExcess ? '(+) Advance Balance' : '(=) Net Payable'}
           </div>
-          <div className={`trip-summary-accent text-xl font-black font-mono mt-1 ${isAdvanceExcess ? 'text-rose-400' : 'text-amber-400'}`}>
+          <div className={`trip-summary-accent text-xl font-black mt-1 ${isAdvanceExcess ? 'text-rose-400' : 'text-amber-400'}`}>
             {isAdvanceExcess ? '+' : ''}₹{netPayableAmount.toLocaleString('en-IN', { minimumFractionDigits: 1 })}
           </div>
-          <div className="text-[10px] text-slate-400">
-            {isAdvanceExcess ? 'Excess advance holding' : 'Pending balance'}
+          <div className="text-[10px] text-slate-400 font-sans">
+            {isAdvanceExcess ? 'Excess advance holding' : `Pending balance for ${currentSiteKey}`}
           </div>
         </div>
       </div>
@@ -614,7 +617,7 @@ export const MaterialHaulageTripsModule: React.FC = () => {
         </div>
 
         <div className="text-slate-400 text-right">
-          Showing <strong className="text-white">{filtered.length}</strong> of {trips.length} records
+          Showing <strong className="text-white">{filtered.length}</strong> of {trips.length} records for <strong className="text-blue-400">{currentSiteKey}</strong>
         </div>
       </div>
 
@@ -623,10 +626,10 @@ export const MaterialHaulageTripsModule: React.FC = () => {
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse">
             <thead>
-              <tr className="border-b border-[#1E293B] text-[10px] font-extrabold uppercase text-slate-400 bg-[#080d19]/80">
+              <tr className="border-b border-[#1E293B] text-[10px] font-extrabold uppercase text-slate-400 bg-[#080d19]/80 font-mono">
                 <th className="py-3 px-4 text-left">DATE</th>
                 <th className="py-3 px-4 text-center">VEHICLE</th>
-                <th className="py-3 px-4 text-left">RAW MATERIAL (CATALOG)</th>
+                <th className="py-3 px-4 text-left font-sans">RAW MATERIAL (CATALOG)</th>
                 <th className="py-3 px-3 text-center">TRIPS</th>
                 <th className="py-3 px-3 text-right">BRASS / TRIP</th>
                 <th className="py-3 px-3 text-right">RATE / BRASS (₹)</th>
@@ -637,8 +640,8 @@ export const MaterialHaulageTripsModule: React.FC = () => {
             <tbody className="divide-y divide-[#1E293B]/60 text-slate-200">
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-500">
-                    No haulage trips logged matching the selected range.
+                  <td colSpan={8} className="py-12 text-center text-slate-500 font-sans">
+                    No haulage trips logged for site <strong>{currentSiteKey}</strong> matching the selected range.
                   </td>
                 </tr>
               ) : (
@@ -656,12 +659,10 @@ export const MaterialHaulageTripsModule: React.FC = () => {
 
                   return (
                     <tr key={t.id} className="hover:bg-[#121c33]/50 transition-colors">
-                      {/* Date First */}
                       <td className="py-3 px-4 font-mono text-left whitespace-nowrap text-slate-300 font-bold">
                         {formatDateDMY(t.tripDate)}
                       </td>
                       
-                      {/* Vehicle Number Second */}
                       <td className="py-3 px-4 font-mono text-center">
                         <span className="font-bold text-amber-400">{t.vehicleNumber}</span>
                         {isRented ? (
@@ -671,7 +672,7 @@ export const MaterialHaulageTripsModule: React.FC = () => {
                         )}
                       </td>
 
-                      <td className="py-3 px-4 font-bold text-cyan-300">{t.materialName}</td>
+                      <td className="py-3 px-4 font-bold text-cyan-300 font-sans">{t.materialName}</td>
                       <td className="py-3 px-3 text-center font-mono font-bold">{t.dayTrips}</td>
                       
                       <td className="py-3 px-3 text-right font-mono">
@@ -727,7 +728,7 @@ export const MaterialHaulageTripsModule: React.FC = () => {
             <div className="flex justify-between items-center border-b border-[#1E293B] pb-3">
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
                 <Truck className="w-4 h-4 text-blue-400" />
-                <span>{editingId ? 'Edit Haulage Trip' : 'Log Total Day Haulage Trips'}</span>
+                <span>{editingId ? `Edit Haulage Trip (${currentSiteKey})` : `Log Haulage Trips for ${currentSiteKey}`}</span>
               </h3>
               <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-white cursor-pointer">
                 <X className="w-5 h-5" />
@@ -926,7 +927,7 @@ export const MaterialHaulageTripsModule: React.FC = () => {
                                 className="p-1 text-slate-400 hover:text-blue-400 cursor-pointer"
                                 title="Edit Vehicle"
                               >
-                                <Edit2 className="w-3 h-3" />
+                                <Edit2 className="w-3.5 h-3.5" />
                               </button>
                               <button
                                 type="button"
@@ -939,7 +940,7 @@ export const MaterialHaulageTripsModule: React.FC = () => {
                                 className="p-1 text-slate-400 hover:text-rose-400 cursor-pointer"
                                 title="Delete Vehicle"
                               >
-                                <Trash2 className="w-3 h-3" />
+                                <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             </div>
                           )}
@@ -1028,7 +1029,7 @@ export const MaterialHaulageTripsModule: React.FC = () => {
                   Cancel
                 </button>
                 <button type="submit" className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold cursor-pointer font-sans shadow-lg shadow-blue-600/30 transition">
-                  {editingId ? 'Update Record' : 'Save Record'}
+                  {editingId ? 'Update Record' : `Save for ${currentSiteKey}`}
                 </button>
               </div>
             </form>
