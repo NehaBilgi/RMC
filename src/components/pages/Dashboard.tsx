@@ -16,6 +16,15 @@ interface Props {
   onNavigate: (tabId: string) => void;
 }
 
+const extractCleanSiteName = (name: string): string => {
+  if (!name) return 'MBBILGI';
+  let clean = String(name).trim();
+  if (clean.includes('(')) {
+    clean = clean.split('(')[0].trim();
+  }
+  return clean.toUpperCase();
+};
+
 export const Dashboard: React.FC<Props> = ({ onNavigate }) => {
   const getActiveSiteKey = () => {
     try {
@@ -24,26 +33,27 @@ export const Dashboard: React.FC<Props> = ({ onNavigate }) => {
         try {
           const parsed = JSON.parse(activeSiteRaw);
           if (parsed.name || parsed.siteName || parsed.id) {
-            return String(parsed.name || parsed.siteName || parsed.id).trim();
+            return extractCleanSiteName(parsed.name || parsed.siteName || parsed.id);
           }
         } catch {
-          return activeSiteRaw.trim();
+          return extractCleanSiteName(activeSiteRaw);
         }
       }
       const selectedSite = sessionStorage.getItem('concrete360_selected_site');
-      if (selectedSite) return String(selectedSite).trim();
+      if (selectedSite) return extractCleanSiteName(selectedSite);
     } catch {}
     return 'MBBILGI';
   };
 
   const [activeSiteTitle, setActiveSiteTitle] = useState<string>(getActiveSiteKey());
-  const [activeScope, setActiveScope] = useState<string>('Scope: G + 3 Floors');
+  const [activeScope, setActiveScope] = useState<string>('Scope: Commercial & Residential Concrete');
   const [totalBilledRevenue, setTotalBilledRevenue] = useState<number>(0);
   const [totalTripsCount, setTotalTripsCount] = useState<number>(0);
   const [tmTripsCount, setTmTripsCount] = useState<number>(0);
   const [haulageTripsCount, setHaulageTripsCount] = useState<number>(0);
   const [totalVolumeM3, setTotalVolumeM3] = useState<number>(0);
   const [activeMixersCount, setActiveMixersCount] = useState<number>(0);
+  const [admixtureMode, setAdmixtureMode] = useState<string>('FLY ASH');
 
   // Load site-scoped dashboard telemetry
   const loadDashboardTelemetry = () => {
@@ -57,7 +67,7 @@ export const Dashboard: React.FC<Props> = ({ onNavigate }) => {
         try {
           const parsed = JSON.parse(activeSiteRaw);
           if (parsed.name || parsed.siteName) {
-            setActiveSiteTitle(parsed.name || parsed.siteName);
+            setActiveSiteTitle(extractCleanSiteName(parsed.name || parsed.siteName));
           }
           if (parsed.scope || parsed.location) {
             setActiveScope(parsed.scope ? `Scope: ${parsed.scope}` : `Location: ${parsed.location}`);
@@ -65,56 +75,44 @@ export const Dashboard: React.FC<Props> = ({ onNavigate }) => {
         } catch {}
       }
 
-      // 2. Compute Billed Revenue & Volume from site-specific + global invoices
-      const possibleInvoiceKeys = [
-        `concrete360_site_invoices_${siteKey}`,
-        'concrete360_site_invoices',
-        'concrete360_invoices'
-      ];
+      // Check current site's mineral admixture mode
+      const savedMode = localStorage.getItem(`concrete360_admixture_mode_${siteKey}`) || localStorage.getItem('concrete360_admixture_mode') || 'FLY_ASH';
+      setAdmixtureMode(savedMode === 'GGBS' ? 'GGBS' : 'FLY ASH');
+
+      // 2. Compute Billed Revenue & Volume strictly from site-specific invoices
+      const siteInvoiceRaw = localStorage.getItem(`concrete360_site_invoices_${siteKey}`);
       let invoiceRev = 0;
       let invoiceVol = 0;
       let invoiceTrips = 0;
 
-      for (const k of possibleInvoiceKeys) {
-        const raw = localStorage.getItem(k);
-        if (raw) {
-          try {
-            const arr = JSON.parse(raw);
-            if (Array.isArray(arr) && arr.length > 0) {
-              invoiceTrips = arr.length;
-              arr.forEach((inv: any) => {
-                invoiceRev += Number(inv.grandTotalINR || inv.grandTotal) || 0;
-                invoiceVol += Number(inv.volumeM3) || 0;
-              });
-              break;
-            }
-          } catch {}
-        }
+      if (siteInvoiceRaw) {
+        try {
+          const arr = JSON.parse(siteInvoiceRaw);
+          if (Array.isArray(arr)) {
+            invoiceTrips = arr.length;
+            arr.forEach((inv: any) => {
+              invoiceRev += Number(inv.grandTotalINR || inv.grandTotal) || 0;
+              invoiceVol += Number(inv.volumeM3) || 0;
+            });
+          }
+        } catch {}
       }
 
-      // 3. Compute Haulage & Rental Trips
-      const possibleHaulageKeys = [
-        `concrete360_site_haulage_trips_${siteKey}`,
-        'concrete360_site_haulage_trips',
-        'CONSTRUCTION_PRO_HAULAGE_TRIPS_V2'
-      ];
+      // 3. Compute Haulage & Rental Trips strictly for this site
+      const siteHaulageRaw = localStorage.getItem(`concrete360_site_haulage_trips_${siteKey}`);
       let haulageRev = 0;
       let haulageTrips = 0;
 
-      for (const k of possibleHaulageKeys) {
-        const raw = localStorage.getItem(k);
-        if (raw) {
-          try {
-            const arr = JSON.parse(raw);
-            if (Array.isArray(arr) && arr.length > 0) {
-              haulageTrips = arr.length;
-              arr.forEach((t: any) => {
-                haulageRev += Number(t.totalAmount || t.rentAmount || t.rent) || 0;
-              });
-              break;
-            }
-          } catch {}
-        }
+      if (siteHaulageRaw) {
+        try {
+          const arr = JSON.parse(siteHaulageRaw);
+          if (Array.isArray(arr)) {
+            haulageTrips = arr.length;
+            arr.forEach((t: any) => {
+              haulageRev += Number(t.totalAmount || t.rentAmount || t.rent) || 0;
+            });
+          }
+        } catch {}
       }
 
       // 4. Retrieve Active Transit Mixers
@@ -156,12 +154,18 @@ export const Dashboard: React.FC<Props> = ({ onNavigate }) => {
     const handleSync = () => loadDashboardTelemetry();
     window.addEventListener('concrete360_site_switched', handleSync);
     window.addEventListener('concrete360_transit_mixer_updated', handleSync);
+    window.addEventListener('concrete360_trips_updated', handleSync);
+    window.addEventListener('concrete360_measurement_updated', handleSync);
+    window.addEventListener('concrete360_mix_designs_updated', handleSync);
     window.addEventListener('storage', handleSync);
     window.addEventListener('focus', handleSync);
 
     return () => {
       window.removeEventListener('concrete360_site_switched', handleSync);
       window.removeEventListener('concrete360_transit_mixer_updated', handleSync);
+      window.removeEventListener('concrete360_trips_updated', handleSync);
+      window.removeEventListener('concrete360_measurement_updated', handleSync);
+      window.removeEventListener('concrete360_mix_designs_updated', handleSync);
       window.removeEventListener('storage', handleSync);
       window.removeEventListener('focus', handleSync);
     };
@@ -172,17 +176,21 @@ export const Dashboard: React.FC<Props> = ({ onNavigate }) => {
       {/* Top Banner Card */}
       <div className="bg-[#0b1322] border border-[#1b273d] p-6 rounded-3xl shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <span className="px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-[10px] font-mono font-bold uppercase tracking-wider">
-            Active Building Site
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-[10px] font-mono font-bold uppercase tracking-wider">
+              Active Building Site
+            </span>
+            <span className="px-2.5 py-1 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/30 text-[10px] font-mono font-bold uppercase tracking-wider">
+              {admixtureMode} BLEND
+            </span>
+          </div>
           <h2 className="text-2xl font-black text-white mt-2 tracking-tight">{activeSiteTitle}</h2>
           <p className="text-xs text-slate-400 mt-0.5">
-            Real-time telemetry, material haulage, and financial billing overview.
+            Real-time telemetry, structural material measurements, haulage, and billing records.
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          {/* Linked to Site Measurement Studio */}
           <button
             onClick={() => onNavigate('site-measurement-studio')}
             className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-lg shadow-blue-600/30 transition cursor-pointer active:scale-95"
@@ -191,12 +199,11 @@ export const Dashboard: React.FC<Props> = ({ onNavigate }) => {
             <span>Site Measurements</span>
           </button>
           
-          {/* Linked to At-Site Tests */}
           <button
             onClick={() => onNavigate('at-site-tests')}
-            className="px-4 py-2.5 bg-blue-600 hover:bg-blue-500 border border-blue-600 text-white font-bold rounded-xl text-xs flex items-center gap-2 transition cursor-pointer active:scale-95"
+            className="px-4 py-2.5 bg-[#121c2d] hover:bg-[#1a2842] border border-[#1b273d] text-white font-bold rounded-xl text-xs flex items-center gap-2 transition cursor-pointer active:scale-95"
           >
-            <FlaskConical className="w-4 h-4 text-white" />
+            <FlaskConical className="w-4 h-4 text-cyan-400" />
             <span>At-Site Tests</span>
           </button>
         </div>
@@ -219,7 +226,7 @@ export const Dashboard: React.FC<Props> = ({ onNavigate }) => {
             ₹{totalBilledRevenue.toLocaleString('en-IN')}
           </div>
           <span className="text-[10px] text-slate-500 font-mono mt-1 block">
-            From Billing &amp; Invoices
+            From Billed Customer Invoices
           </span>
         </div>
 
@@ -238,7 +245,7 @@ export const Dashboard: React.FC<Props> = ({ onNavigate }) => {
             {totalTripsCount} Trips
           </div>
           <span className="text-[10px] text-slate-500 font-mono mt-1 block">
-            Combined Trips &amp; Transit Mixers
+            {tmTripsCount} TM Loads + {haulageTripsCount} Material Hauls
           </span>
         </div>
 
@@ -256,7 +263,7 @@ export const Dashboard: React.FC<Props> = ({ onNavigate }) => {
           <div className="text-2xl font-black text-white font-mono mt-2 truncate" title={activeSiteTitle}>
             {activeSiteTitle}
           </div>
-          <span className="text-[10px] text-slate-500 font-mono mt-1 block">
+          <span className="text-[10px] text-slate-500 font-mono mt-1 block truncate">
             {activeScope}
           </span>
         </div>
@@ -275,7 +282,7 @@ export const Dashboard: React.FC<Props> = ({ onNavigate }) => {
                 <h3 className="text-sm font-bold text-white uppercase tracking-wider">
                   Transit Mixer Activity &amp; Trips
                 </h3>
-                <p className="text-[11px] text-slate-400">Logistics dispatch docket status</p>
+                <p className="text-[11px] text-slate-400">Logistics dispatch docket status for {activeSiteTitle}</p>
               </div>
             </div>
             <button
@@ -345,9 +352,9 @@ export const Dashboard: React.FC<Props> = ({ onNavigate }) => {
             >
               <div className="flex items-center gap-2 font-mono">
                 <span className="w-2 h-2 rounded-full bg-cyan-400" />
-                <span className="text-slate-300 font-bold">Concrete Mix Designs (M20 - M40)</span>
+                <span className="text-slate-300 font-bold">Concrete Mix Designs (M15 - M50)</span>
               </div>
-              <span className="text-cyan-400 font-mono text-[11px]">Calibrated</span>
+              <span className="text-cyan-400 font-mono text-[11px] font-bold">2400 kg/m³ Yield</span>
             </div>
           </div>
 
