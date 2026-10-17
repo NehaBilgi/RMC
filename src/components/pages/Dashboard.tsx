@@ -79,7 +79,7 @@ export const Dashboard: React.FC<Props> = ({ onNavigate }) => {
       const savedMode = localStorage.getItem(`concrete360_admixture_mode_${siteKey}`) || localStorage.getItem('concrete360_admixture_mode') || 'FLY_ASH';
       setAdmixtureMode(savedMode === 'GGBS' ? 'GGBS' : 'FLY ASH');
 
-      // 2. Compute Billed Revenue & Volume strictly from site-specific invoices
+      // 2. Compute Billed Revenue & Volume ONLY from customer invoices
       const siteInvoiceRaw = localStorage.getItem(`concrete360_site_invoices_${siteKey}`);
       let invoiceRev = 0;
       let invoiceVol = 0;
@@ -98,9 +98,8 @@ export const Dashboard: React.FC<Props> = ({ onNavigate }) => {
         } catch {}
       }
 
-      // 3. Compute Haulage & Rental Trips strictly for this site
+      // 3. Compute Haulage Trips count only (DO NOT add financial amounts to revenue)
       const siteHaulageRaw = localStorage.getItem(`concrete360_site_haulage_trips_${siteKey}`);
-      let haulageRev = 0;
       let haulageTrips = 0;
 
       if (siteHaulageRaw) {
@@ -108,9 +107,6 @@ export const Dashboard: React.FC<Props> = ({ onNavigate }) => {
           const arr = JSON.parse(siteHaulageRaw);
           if (Array.isArray(arr)) {
             haulageTrips = arr.length;
-            arr.forEach((t: any) => {
-              haulageRev += Number(t.totalAmount || t.rentAmount || t.rent) || 0;
-            });
           }
         } catch {}
       }
@@ -136,7 +132,8 @@ export const Dashboard: React.FC<Props> = ({ onNavigate }) => {
         }
       }
 
-      setTotalBilledRevenue(invoiceRev + haulageRev);
+      // Revenue strictly from invoices (haulage trip money excluded)
+      setTotalBilledRevenue(invoiceRev);
       setTmTripsCount(invoiceTrips);
       setHaulageTripsCount(haulageTrips);
       setTotalTripsCount(invoiceTrips + haulageTrips);
@@ -186,7 +183,7 @@ export const Dashboard: React.FC<Props> = ({ onNavigate }) => {
           </div>
           <h2 className="text-2xl font-black text-white mt-2 tracking-tight">{activeSiteTitle}</h2>
           <p className="text-xs text-slate-400 mt-0.5">
-            Real-time telemetry, structural material measurements, haulage, and billing records.
+            Real-time telemetry, structural material measurements, haulage logistics, and billed tax invoices.
           </p>
         </div>
 
@@ -211,7 +208,7 @@ export const Dashboard: React.FC<Props> = ({ onNavigate }) => {
 
       {/* Main KPI Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {/* Total Billed Revenue */}
+        {/* Total Billed Revenue (Invoices Only) */}
         <div 
           onClick={() => onNavigate('billing')}
           className="bg-[#0b1322] border border-[#1b273d] hover:border-blue-500/50 p-5 rounded-2xl shadow-xl cursor-pointer transition group"
@@ -226,7 +223,7 @@ export const Dashboard: React.FC<Props> = ({ onNavigate }) => {
             ₹{totalBilledRevenue.toLocaleString('en-IN')}
           </div>
           <span className="text-[10px] text-slate-500 font-mono mt-1 block">
-            From Billed Customer Invoices
+            Pure Customer Tax Invoice Total
           </span>
         </div>
 
@@ -245,7 +242,7 @@ export const Dashboard: React.FC<Props> = ({ onNavigate }) => {
             {totalTripsCount} Trips
           </div>
           <span className="text-[10px] text-slate-500 font-mono mt-1 block">
-            {tmTripsCount} TM Loads + {haulageTripsCount} Material Hauls
+            {tmTripsCount} TM Loads + {haulageTripsCount} Haul Trips
           </span>
         </div>
 
@@ -336,12 +333,12 @@ export const Dashboard: React.FC<Props> = ({ onNavigate }) => {
 
           <div className="space-y-2 text-xs">
             <div 
-              onClick={() => onNavigate('total-bill')}
+              onClick={() => onNavigate('billing')}
               className="flex items-center justify-between p-3 rounded-xl bg-[#070d1a] hover:bg-[#0e1728] border border-[#1b273d] cursor-pointer transition"
             >
               <div className="flex items-center gap-2 font-mono">
                 <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                <span className="text-slate-300 font-bold">Total Bill of Site Ledger</span>
+                <span className="text-slate-300 font-bold">Total Customer Tax Invoiced</span>
               </div>
               <span className="text-emerald-400 font-mono font-bold">₹{totalBilledRevenue.toLocaleString('en-IN')}</span>
             </div>
@@ -360,10 +357,10 @@ export const Dashboard: React.FC<Props> = ({ onNavigate }) => {
 
           <div className="flex justify-end pt-1">
             <button
-              onClick={() => onNavigate('total-bill')}
+              onClick={() => onNavigate('billing')}
               className="px-4 py-2 bg-[#121c2d] hover:bg-[#19273f] border border-[#1b273d] text-slate-200 text-xs font-bold rounded-xl transition cursor-pointer"
             >
-              Open Site Ledger
+              View Invoices
             </button>
           </div>
         </div>
