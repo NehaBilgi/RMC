@@ -44,13 +44,13 @@ interface MaterialCategoryItem {
 }
 
 const DEFAULT_RECIPES: Record<string, any> = {
-  'M15': { rate: 3900, cementKgPerM3: 250, flyAshKgPerM3: 75, ggbsKgPerM3: 100, waterLitresPerM3: 165, mSandKgPerM3: 815, agg20mmKgPerM3: 645, agg10mmKgPerM3: 430 },
-  'M20': { rate: 4200, cementKgPerM3: 300, flyAshKgPerM3: 90, ggbsKgPerM3: 120, waterLitresPerM3: 170, mSandKgPerM3: 780, agg20mmKgPerM3: 635, agg10mmKgPerM3: 425 },
-  'M25': { rate: 4500, cementKgPerM3: 350, flyAshKgPerM3: 105, ggbsKgPerM3: 140, waterLitresPerM3: 172, mSandKgPerM3: 740, agg20mmKgPerM3: 630, agg10mmKgPerM3: 420 },
-  'M30': { rate: 4800, cementKgPerM3: 380, flyAshKgPerM3: 115, ggbsKgPerM3: 150, waterLitresPerM3: 170, mSandKgPerM3: 720, agg20mmKgPerM3: 635, agg10mmKgPerM3: 425 },
-  'M35': { rate: 5200, cementKgPerM3: 400, flyAshKgPerM3: 120, ggbsKgPerM3: 160, waterLitresPerM3: 165, mSandKgPerM3: 705, agg20mmKgPerM3: 640, agg10mmKgPerM3: 425 },
-  'M40': { rate: 5600, cementKgPerM3: 420, flyAshKgPerM3: 125, ggbsKgPerM3: 170, waterLitresPerM3: 160, mSandKgPerM3: 690, agg20mmKgPerM3: 645, agg10mmKgPerM3: 430 },
-  'M45': { rate: 6000, cementKgPerM3: 440, flyAshKgPerM3: 130, ggbsKgPerM3: 180, waterLitresPerM3: 155, mSandKgPerM3: 675, agg20mmKgPerM3: 650, agg10mmKgPerM3: 435 }
+  'M15': { rate: 3900, cementKgPerM3: 250, flyAshKgPerM3: 75, ggbsKgPerM3: 0, waterLitresPerM3: 165, mSandKgPerM3: 815, agg20mmKgPerM3: 645, agg10mmKgPerM3: 430 },
+  'M20': { rate: 4200, cementKgPerM3: 300, flyAshKgPerM3: 90, ggbsKgPerM3: 0, waterLitresPerM3: 170, mSandKgPerM3: 780, agg20mmKgPerM3: 635, agg10mmKgPerM3: 425 },
+  'M25': { rate: 4500, cementKgPerM3: 350, flyAshKgPerM3: 105, ggbsKgPerM3: 0, waterLitresPerM3: 172, mSandKgPerM3: 740, agg20mmKgPerM3: 630, agg10mmKgPerM3: 420 },
+  'M30': { rate: 4800, cementKgPerM3: 380, flyAshKgPerM3: 115, ggbsKgPerM3: 0, waterLitresPerM3: 170, mSandKgPerM3: 720, agg20mmKgPerM3: 635, agg10mmKgPerM3: 425 },
+  'M35': { rate: 5200, cementKgPerM3: 400, flyAshKgPerM3: 120, ggbsKgPerM3: 0, waterLitresPerM3: 165, mSandKgPerM3: 705, agg20mmKgPerM3: 640, agg10mmKgPerM3: 425 },
+  'M40': { rate: 5600, cementKgPerM3: 420, flyAshKgPerM3: 125, ggbsKgPerM3: 0, waterLitresPerM3: 160, mSandKgPerM3: 690, agg20mmKgPerM3: 645, agg10mmKgPerM3: 430 },
+  'M45': { rate: 6000, cementKgPerM3: 440, flyAshKgPerM3: 130, ggbsKgPerM3: 0, waterLitresPerM3: 155, mSandKgPerM3: 675, agg20mmKgPerM3: 650, agg10mmKgPerM3: 435 }
 };
 
 const extractCleanSiteName = (name: string): string => {
@@ -561,6 +561,48 @@ export const BillingRMC: React.FC = () => {
     const sgst = isGstActive ? sub * 0.09 : 0;
     const calculatedGrandTotal = sub + cgst + sgst;
 
+    const gradeKey = (inv.mixGrade || 'M20').substring(0, 3).toUpperCase();
+    let recipe = DEFAULT_RECIPES[gradeKey] || DEFAULT_RECIPES['M20'];
+
+    // Resolve active recipe and mineral admixture mode (Fly Ash or GGBS)
+    let activeAdmixtureMode: 'FLY_ASH' | 'GGBS' = 'FLY_ASH';
+    try {
+      const savedMode = localStorage.getItem('concrete360_admixture_mode');
+      if (savedMode === 'GGBS' || savedMode === 'FLY_ASH') {
+        activeAdmixtureMode = savedMode;
+      }
+      const rawMixes = localStorage.getItem('concrete360_mix_designs');
+      if (rawMixes) {
+        const parsedList = JSON.parse(rawMixes);
+        if (Array.isArray(parsedList)) {
+          const match = parsedList.find((m: any) => String(m.grade || m.code || '').toUpperCase().includes(gradeKey));
+          if (match) {
+            recipe = {
+              cementKgPerM3: Number(match.cementKgPerM3 ?? recipe.cementKgPerM3),
+              flyAshKgPerM3: Number(match.flyAshKgPerM3 ?? recipe.flyAshKgPerM3),
+              ggbsKgPerM3: Number(match.ggbsKgPerM3 ?? recipe.ggbsKgPerM3 ?? 0),
+              waterLitresPerM3: Number(match.waterLitresPerM3 ?? recipe.waterLitresPerM3),
+              mSandKgPerM3: Number(match.mSandKgPerM3 ?? recipe.mSandKgPerM3),
+              agg20mmKgPerM3: Number(match.agg20mmKgPerM3 ?? recipe.agg20mmKgPerM3),
+              agg10mmKgPerM3: Number(match.agg10mmKgPerM3 ?? recipe.agg10mmKgPerM3)
+            };
+            if (match.admixtureMode) activeAdmixtureMode = match.admixtureMode;
+          }
+        }
+      }
+    } catch {}
+
+    const useGgbs = activeAdmixtureMode === 'GGBS' || (recipe.ggbsKgPerM3 > 0 && (!recipe.flyAshKgPerM3 || recipe.flyAshKgPerM3 === 0));
+    const mineralAdmixtureName = useGgbs ? 'GGBS (Slag)' : 'Fly Ash';
+    const mineralAdmixtureProp = useGgbs ? (recipe.ggbsKgPerM3 || recipe.mineralAdmixtureKg || 120) : (recipe.flyAshKgPerM3 || recipe.mineralAdmixtureKg || 90);
+
+    const cementKg = Math.round(inv.volumeM3 * recipe.cementKgPerM3);
+    const mineralKg = Math.round(inv.volumeM3 * mineralAdmixtureProp);
+    const mSandKg = Math.round(inv.volumeM3 * recipe.mSandKgPerM3);
+    const agg20Kg = Math.round(inv.volumeM3 * recipe.agg20mmKgPerM3);
+    const agg10Kg = Math.round(inv.volumeM3 * recipe.agg10mmKgPerM3);
+    const waterLtr = Math.round(inv.volumeM3 * recipe.waterLitresPerM3);
+
     let linkedReport = null;
     if (inv.workElementId && measurementItems.length > 0) {
       linkedReport = measurementItems.find(it => it.id === inv.workElementId);
@@ -596,6 +638,11 @@ export const BillingRMC: React.FC = () => {
             .totals-box { width: 42%; border: 1px solid #cbd5e1; }
             .totals-row { display: flex; justify-content: space-between; padding: 5px 8px; border-bottom: 1px solid #cbd5e1; font-size: 10px; }
             .totals-row:last-child { border-bottom: none; font-weight: bold; background: #f1f5f9; font-size: 11px; color: #0f172a; }
+            
+            /* Re-integrated Batch Material Breakdown Table */
+            .material-breakdown { border: 1px solid #cbd5e1; background: #f8fafc; padding: 10px; font-size: 10px; margin-bottom: 20px; }
+            .material-breakdown-title { font-weight: bold; color: #0f172a; margin-bottom: 6px; text-transform: uppercase; font-size: 10px; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; }
+            
             .signatures { display: flex; justify-content: space-between; margin-top: 25px; font-size: 9px; }
             .sig-line { width: 160px; border-top: 1px dashed #64748b; text-align: center; padding-top: 4px; }
           </style>
@@ -648,9 +695,9 @@ export const BillingRMC: React.FC = () => {
               <tr>
                 <td>1</td>
                 <td>
-                  <strong>Ready-Mix Concrete: ${inv.mixGrade} Grade</strong><br/>
+                  <strong>Ready-Mix Grade: ${inv.mixGrade}</strong><br/>
                   <span style="font-size:10px; font-weight:bold; color:#0f172a;">Vehicle No (Transit Mixer): ${inv.vehicleNo || 'N/A'}</span><br/>
-                  <span style="font-size:9px; color:#555;">Commercial RMC supply as per IS 4926 / IS 456 delivery docket standards</span>
+                  <span style="font-size:9px; color:#555;">Batch delivery as per IS 4926 / ASTM C94 quality dockets</span>
                 </td>
                 <td>38245010</td>
                 <td>${inv.volumeM3.toFixed(2)} m³</td>
@@ -676,6 +723,52 @@ export const BillingRMC: React.FC = () => {
               ` : ''}
               <div class="totals-row" style="font-weight: bold; background: #f1f5f9; color: #0f172a; font-size: 11px;"><span>PAYABLE AMOUNT:</span><span>₹${Math.round(calculatedGrandTotal).toLocaleString('en-IN')}</span></div>
             </div>
+          </div>
+
+          <!-- BATCH MATERIAL BREAKDOWN TABLE -->
+          <div class="material-breakdown">
+            <div class="material-breakdown-title">BATCH MATERIAL BREAKDOWN TABLE (LINKED REPORT CONSUMPTION FOR ${inv.volumeM3} M³):</div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Material Component</th>
+                  <th class="text-right">Proportion per m³</th>
+                  <th class="text-right">Total Quantity (${inv.volumeM3} m³)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Cement (OPC)</td>
+                  <td class="text-right">${recipe.cementKgPerM3} kg/m³</td>
+                  <td class="text-right"><strong>${cementKg.toLocaleString('en-IN')} kg</strong></td>
+                </tr>
+                <tr>
+                  <td>${mineralAdmixtureName}</td>
+                  <td class="text-right">${mineralAdmixtureProp} kg/m³</td>
+                  <td class="text-right"><strong>${mineralKg.toLocaleString('en-IN')} kg</strong></td>
+                </tr>
+                <tr>
+                  <td>M-Sand</td>
+                  <td class="text-right">${recipe.mSandKgPerM3} kg/m³</td>
+                  <td class="text-right"><strong>${mSandKg.toLocaleString('en-IN')} kg</strong></td>
+                </tr>
+                <tr>
+                  <td>20MM Aggregate</td>
+                  <td class="text-right">${recipe.agg20mmKgPerM3} kg/m³</td>
+                  <td class="text-right"><strong>${agg20Kg.toLocaleString('en-IN')} kg</strong></td>
+                </tr>
+                <tr>
+                  <td>10MM Aggregate</td>
+                  <td class="text-right">${recipe.agg10mmKgPerM3} kg/m³</td>
+                  <td class="text-right"><strong>${agg10Kg.toLocaleString('en-IN')} kg</strong></td>
+                </tr>
+                <tr>
+                  <td>Batching Water</td>
+                  <td class="text-right">${recipe.waterLitresPerM3} L/m³</td>
+                  <td class="text-right"><strong>${waterLtr.toLocaleString('en-IN')} Litres</strong></td>
+                </tr>
+              </tbody>
+            </table>
           </div>
 
           <div class="signatures">
