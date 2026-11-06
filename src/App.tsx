@@ -7,36 +7,20 @@ import { SiteSelectionPage } from './components/pages/SiteSelectionPage';
 import { SessionUser } from './utils/accessControl';
 
 export default function App() {
-  // 1. Persist user in localStorage so closing the window never logs you out
+  // 1. Session-only user authentication (clears when browser/PWA window closes)
   const [user, setUser] = useState<SessionUser | null>(() => {
     try {
-      const savedUser = localStorage.getItem('concrete360_user') || sessionStorage.getItem('concrete360_user');
+      const savedUser = sessionStorage.getItem('concrete360_user');
       return savedUser ? JSON.parse(savedUser) : null;
     } catch {
       return null;
     }
   });
 
-  // 2. Safely restore active site from localStorage
+  // 2. Session-only active site selection (clears when browser/PWA window closes)
   const [selectedSite, setSelectedSite] = useState<string | null>(() => {
     try {
-      const rawSites = localStorage.getItem('concrete360_ongoing_sites') || localStorage.getItem('concrete360_sites');
-      const parsedSites = rawSites ? JSON.parse(rawSites) : [];
-      
-      const savedSelected = localStorage.getItem('concrete360_selected_site') || sessionStorage.getItem('concrete360_selected_site');
-
-      // If a selected site key is saved and sites exist, keep it
-      if (savedSelected && Array.isArray(parsedSites) && parsedSites.length > 0) {
-        return savedSelected;
-      }
-
-      // If sites exist in storage but none is explicitly selected, fall back to the first site
-      if (Array.isArray(parsedSites) && parsedSites.length > 0) {
-        const firstKey = parsedSites[0].name || parsedSites[0].siteName || parsedSites[0].id;
-        return firstKey ? String(firstKey).toUpperCase().trim() : null;
-      }
-
-      return null;
+      return sessionStorage.getItem('concrete360_selected_site');
     } catch {
       return null;
     }
@@ -70,24 +54,21 @@ export default function App() {
     } catch {}
   }, [theme]);
 
-  // Persist user in localStorage & sessionStorage
+  // Persist session user in sessionStorage only
   useEffect(() => {
     try {
       if (user) {
-        localStorage.setItem('concrete360_user', JSON.stringify(user));
         sessionStorage.setItem('concrete360_user', JSON.stringify(user));
       } else {
-        localStorage.removeItem('concrete360_user');
         sessionStorage.removeItem('concrete360_user');
       }
     } catch {}
   }, [user]);
 
-  // Persist active site across application restarts
+  // Persist selected site in sessionStorage & active context
   useEffect(() => {
     try {
       if (selectedSite) {
-        localStorage.setItem('concrete360_selected_site', selectedSite);
         sessionStorage.setItem('concrete360_selected_site', selectedSite);
         localStorage.setItem(
           'concrete360_active_site',
@@ -97,21 +78,22 @@ export default function App() {
             scope: 'G + 3 Floors'
           })
         );
+      } else {
+        sessionStorage.removeItem('concrete360_selected_site');
+        localStorage.removeItem('concrete360_active_site');
       }
     } catch {}
   }, [selectedSite]);
 
-  // Listen for site deletions and active switch triggers from OngoingSiteTransfer
+  // Listen for site deletions and switch events
   useEffect(() => {
     const handleSiteSwitch = (e: any) => {
       const newSiteKey = e?.detail || '';
       if (!newSiteKey) {
-        // Site was deleted and list is completely empty -> zero out
+        // If all sites were deleted, send back to site selection page
         setSelectedSite(null);
-        localStorage.removeItem('concrete360_selected_site');
         sessionStorage.removeItem('concrete360_selected_site');
         localStorage.removeItem('concrete360_active_site');
-        setMeasurementSession(INITIAL_MEASUREMENT_SESSION);
       } else {
         setSelectedSite(newSiteKey);
       }
@@ -131,55 +113,52 @@ export default function App() {
     } catch {}
   }, [measurementSession]);
 
-  // Handle Logout action
+  // Logout action resets session completely
   const handleLogout = () => {
-    localStorage.removeItem('concrete360_user');
     sessionStorage.removeItem('concrete360_user');
-    localStorage.removeItem('concrete360_selected_site');
     sessionStorage.removeItem('concrete360_selected_site');
     localStorage.removeItem('concrete360_active_site');
     setUser(null);
     setSelectedSite(null);
-    setMeasurementSession(INITIAL_MEASUREMENT_SESSION);
   };
 
-  // Step 1: Render Login Page if not logged in
+  // STEP 1: Always show Login page if no active user session
   if (!user) {
     return (
       <div className={`app-theme ${themeClass}`}>
         <Login
           onLoginSuccess={(loggedInUser) => {
             try {
-              localStorage.setItem('concrete360_user', JSON.stringify(loggedInUser));
               sessionStorage.setItem('concrete360_user', JSON.stringify(loggedInUser));
             } catch {}
             setUser(loggedInUser);
           }}
           theme={theme}
-          onToggleTheme={() => setTheme((current) => current === 'light' ? 'dark' : 'light')}
+          onToggleTheme={() => setTheme((current) => (current === 'light' ? 'dark' : 'light'))}
         />
       </div>
     );
   }
 
-  // Step 2: Render Site Selection Page ONLY if there are no sites or none selected
+  // STEP 2: Always show Site Selection page after login if no site is active for this session
   if (!selectedSite) {
     return (
       <div className={`app-theme ${themeClass}`}>
         <SiteSelectionPage
           projectType="BUILDING"
           onSelectSite={(siteName) => {
+            sessionStorage.setItem('concrete360_selected_site', siteName);
             setSelectedSite(siteName);
             window.dispatchEvent(new CustomEvent('concrete360_site_switched', { detail: siteName }));
           }}
           theme={theme}
-          onToggleTheme={() => setTheme((current) => current === 'light' ? 'dark' : 'light')}
+          onToggleTheme={() => setTheme((current) => (current === 'light' ? 'dark' : 'light'))}
         />
       </div>
     );
   }
 
-  // Step 3: Render main workspace with Sidebar and Top Header
+  // STEP 3: Enter main workspace once both user login & site selection are completed
   return (
     <div className={`app-theme ${themeClass} relative min-h-screen font-sans`}>
       <Sidebar
@@ -188,7 +167,7 @@ export default function App() {
         user={user}
         onLogout={handleLogout}
         theme={theme}
-        onToggleTheme={() => setTheme((current) => current === 'light' ? 'dark' : 'light')}
+        onToggleTheme={() => setTheme((current) => (current === 'light' ? 'dark' : 'light'))}
       />
     </div>
   );
