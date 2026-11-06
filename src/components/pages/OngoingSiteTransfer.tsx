@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 
 const extractCleanSiteName = (name: string): string => {
-  if (!name) return 'MBBILGI';
+  if (!name) return '';
   let clean = String(name).trim();
   if (clean.includes('(')) {
     clean = clean.split('(')[0].trim();
@@ -82,7 +82,7 @@ export const OngoingSiteTransfer: React.FC = () => {
       const selected = sessionStorage.getItem('concrete360_selected_site');
       if (selected) return extractCleanSiteName(selected);
     } catch {}
-    return 'MBBILGI';
+    return '';
   };
 
   const [currentActiveKey, setCurrentActiveKey] = useState<string>(getActiveSiteKey());
@@ -219,7 +219,7 @@ export const OngoingSiteTransfer: React.FC = () => {
     handleSelectActiveSite(newSite);
   };
 
-  // Direct deletion confirmed via in-app UI modal
+  // Complete Cascade Purge on Site Deletion: Reset all site-linked metrics, trips, invoices, and tests to 0
   const confirmDeleteExecution = () => {
     if (!siteToDelete) return;
 
@@ -228,6 +228,7 @@ export const OngoingSiteTransfer: React.FC = () => {
     const targetSiteId = String(targetSite.siteId || '');
     const targetName = extractCleanSiteName(targetSite.name || targetSite.siteName || '');
 
+    // 1. Remove the site from the list
     const updated = sites.filter(s => {
       const sId = String(s.id || '');
       const sSiteId = String(s.siteId || '');
@@ -240,18 +241,35 @@ export const OngoingSiteTransfer: React.FC = () => {
       return !(matchId || matchSiteId || matchName);
     });
 
-    // 1. Force immediate write to localStorage to prevent stale data re-read
+    // 2. Cascade purge all stored metrics and telemetry for this site so everything returns to 0
+    const keysToPurge = [
+      `concrete360_site_invoices_${targetName}`,
+      `concrete360_advanced_measurements_${targetName}`,
+      `concrete360_trips_${targetName}`,
+      `concrete360_haul_trips_${targetName}`,
+      `concrete360_site_tests_${targetName}`,
+      `concrete360_at_site_tests_${targetName}`,
+      `concrete360_total_bill_${targetName}`,
+      `concrete360_transit_mixers_${targetName}`,
+      `concrete360_site_transit_mixers_${targetName}`,
+      `concrete360_active_mix_grade_${targetName}`,
+      `concrete360_admixture_mode_${targetName}`,
+      `concrete360_mix_designs_${targetName}`,
+      `concrete360_material_reports_${targetName}`
+    ];
+
     try {
+      keysToPurge.forEach(key => localStorage.removeItem(key));
       localStorage.setItem('concrete360_sites', JSON.stringify(updated));
       localStorage.setItem('concrete360_ongoing_sites', JSON.stringify(updated));
     } catch {}
 
-    // 2. Update state
+    // 3. Update state
     setSites(updated);
     setSiteToDelete(null);
 
-    // 3. Fallback active site if the deleted one was selected
-    if (currentActiveKey === targetName || currentActiveKey === targetSiteId) {
+    // 4. Update or clear active site context
+    if (currentActiveKey === targetName || currentActiveKey === targetSiteId || updated.length === 0) {
       if (updated.length > 0) {
         handleSelectActiveSite(updated[0]);
       } else {
@@ -412,7 +430,7 @@ export const OngoingSiteTransfer: React.FC = () => {
         </div>
       )}
 
-      {/* CONFIRM DELETE MODAL (Bypasses PWA window.confirm blocking) */}
+      {/* CONFIRM DELETE MODAL */}
       {siteToDelete && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-[#0b1322] border border-[#22334f] rounded-2xl w-full max-w-sm p-6 shadow-2xl space-y-4">
@@ -422,12 +440,12 @@ export const OngoingSiteTransfer: React.FC = () => {
               </div>
               <div>
                 <h4 className="text-sm font-bold text-white uppercase">Confirm Delete</h4>
-                <p className="text-xs text-slate-400">This action cannot be undone.</p>
+                <p className="text-xs text-slate-400">Resets trips, billing, and tests to 0.</p>
               </div>
             </div>
             
             <p className="text-xs font-mono text-slate-300 bg-[#121d2f] p-3 rounded-xl border border-[#1b273d]">
-              Are you sure you want to delete section <span className="text-rose-400 font-bold">{siteToDelete.siteName || siteToDelete.name}</span>?
+              Are you sure you want to delete section <span className="text-rose-400 font-bold">{siteToDelete.siteName || siteToDelete.name}</span>? All logged telemetry will be permanently purged.
             </p>
 
             <div className="flex justify-end gap-2 pt-2">
@@ -443,7 +461,7 @@ export const OngoingSiteTransfer: React.FC = () => {
                 onClick={confirmDeleteExecution}
                 className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-500 shadow-lg shadow-rose-600/20 cursor-pointer"
               >
-                Delete Section
+                Delete &amp; Reset to 0
               </button>
             </div>
           </div>
