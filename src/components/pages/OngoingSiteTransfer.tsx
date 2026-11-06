@@ -7,10 +7,10 @@ import {
   Truck, 
   X,
   Signpost,
-  ArrowRight
+  ArrowRight,
+  AlertTriangle
 } from 'lucide-react';
 
-// Normalizer to extract clean site key (e.g. "WW (G + 3 Floors)" -> "WW")
 const extractCleanSiteName = (name: string): string => {
   if (!name) return 'MBBILGI';
   let clean = String(name).trim();
@@ -50,7 +50,6 @@ const DEFAULT_SITES = [
 ];
 
 export const OngoingSiteTransfer: React.FC = () => {
-  // Retrieve Active User Role
   const getUserRole = (): 'ADMIN' | 'EMPLOYEE' | 'READ_ONLY' => {
     try {
       const userRaw = sessionStorage.getItem('concrete360_user');
@@ -94,7 +93,7 @@ export const OngoingSiteTransfer: React.FC = () => {
       if (saved !== null) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) {
-          return parsed; // Allow empty array if user deleted all
+          return parsed;
         }
       }
     } catch {}
@@ -103,7 +102,7 @@ export const OngoingSiteTransfer: React.FC = () => {
 
   const [sites, setSites] = useState<any[]>(loadStoredSites);
 
-  // Sync sites to localStorage whenever state changes
+  // Sync state changes to storage
   useEffect(() => {
     try {
       localStorage.setItem('concrete360_sites', JSON.stringify(sites));
@@ -111,7 +110,7 @@ export const OngoingSiteTransfer: React.FC = () => {
     } catch {}
   }, [sites]);
 
-  // Sync active site key and card list across windows and events
+  // Sync events across tabs / windows
   useEffect(() => {
     const handleSync = () => {
       setCurrentActiveKey(getActiveSiteKey());
@@ -128,6 +127,8 @@ export const OngoingSiteTransfer: React.FC = () => {
   }, []);
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [siteToDelete, setSiteToDelete] = useState<any | null>(null);
+
   const [category, setCategory] = useState<'Road' | 'Building'>('Building');
   const [name, setName] = useState('');
   const [location, setLocation] = useState('');
@@ -138,7 +139,6 @@ export const OngoingSiteTransfer: React.FC = () => {
   const [endKm, setEndKm] = useState('12.5');
   const [floorScope, setFloorScope] = useState('G + 3 Floors');
 
-  // Select active site helper
   const handleSelectActiveSite = (site: any) => {
     if (!site) return;
     const cleanSiteKey = extractCleanSiteName(site.name || site.siteName);
@@ -190,8 +190,8 @@ export const OngoingSiteTransfer: React.FC = () => {
     };
 
     const updatedSites = [newSite, ...sites];
-    setSites(updatedSites);
-
+    
+    // Save to storage immediately
     try {
       localStorage.setItem('concrete360_sites', JSON.stringify(updatedSites));
       localStorage.setItem('concrete360_ongoing_sites', JSON.stringify(updatedSites));
@@ -209,6 +209,7 @@ export const OngoingSiteTransfer: React.FC = () => {
       }
     } catch {}
 
+    setSites(updatedSites);
     setIsAddModalOpen(false);
     setName('');
     setLocation('');
@@ -218,40 +219,39 @@ export const OngoingSiteTransfer: React.FC = () => {
     handleSelectActiveSite(newSite);
   };
 
-  // Immediate delete with target resolution and instant storage flush
-  const handleDeleteSite = (targetSite: any, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!canDelete) {
-      alert('Permission Denied: Only ADMIN accounts can delete site sections.');
-      return;
-    }
+  // Direct deletion confirmed via in-app UI modal
+  const confirmDeleteExecution = () => {
+    if (!siteToDelete) return;
 
-    const siteDisplayName = targetSite.siteName || targetSite.name || 'this site';
-    if (!window.confirm(`Are you sure you want to delete ${siteDisplayName}?`)) {
-      return;
-    }
+    const targetSite = siteToDelete;
+    const targetId = String(targetSite.id || '');
+    const targetSiteId = String(targetSite.siteId || '');
+    const targetName = extractCleanSiteName(targetSite.name || targetSite.siteName || '');
 
-    // Filter out by matching either id, siteId, or clean name key
-    const targetKey = extractCleanSiteName(targetSite.name || targetSite.siteName);
     const updated = sites.filter(s => {
-      const sKey = extractCleanSiteName(s.name || s.siteName);
-      const isSameId = targetSite.id && s.id === targetSite.id;
-      const isSameSiteId = targetSite.siteId && s.siteId === targetSite.siteId;
-      const isSameKey = targetKey && sKey === targetKey;
-      return !(isSameId || isSameSiteId || isSameKey);
+      const sId = String(s.id || '');
+      const sSiteId = String(s.siteId || '');
+      const sName = extractCleanSiteName(s.name || s.siteName || '');
+
+      const matchId = Boolean(targetId && sId === targetId);
+      const matchSiteId = Boolean(targetSiteId && sSiteId === targetSiteId);
+      const matchName = Boolean(targetName && sName === targetName);
+
+      return !(matchId || matchSiteId || matchName);
     });
 
-    // 1. Update React state
-    setSites(updated);
-
-    // 2. Immediately write to localStorage so background focus events can't revive it
+    // 1. Force immediate write to localStorage to prevent stale data re-read
     try {
       localStorage.setItem('concrete360_sites', JSON.stringify(updated));
       localStorage.setItem('concrete360_ongoing_sites', JSON.stringify(updated));
     } catch {}
 
-    // 3. If deleted site was active, switch to the next available site
-    if (currentActiveKey === targetKey) {
+    // 2. Update state
+    setSites(updated);
+    setSiteToDelete(null);
+
+    // 3. Fallback active site if the deleted one was selected
+    if (currentActiveKey === targetName || currentActiveKey === targetSiteId) {
       if (updated.length > 0) {
         handleSelectActiveSite(updated[0]);
       } else {
@@ -341,8 +341,12 @@ export const OngoingSiteTransfer: React.FC = () => {
                       {canDelete && (
                         <button
                           type="button"
-                          onClick={(e) => handleDeleteSite(site, e)}
-                          className="p-1 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition cursor-pointer"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            setSiteToDelete(site);
+                          }}
+                          className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition cursor-pointer"
                           title="Delete Site"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -408,9 +412,47 @@ export const OngoingSiteTransfer: React.FC = () => {
         </div>
       )}
 
+      {/* CONFIRM DELETE MODAL (Bypasses PWA window.confirm blocking) */}
+      {siteToDelete && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#0b1322] border border-[#22334f] rounded-2xl w-full max-w-sm p-6 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-white uppercase">Confirm Delete</h4>
+                <p className="text-xs text-slate-400">This action cannot be undone.</p>
+              </div>
+            </div>
+            
+            <p className="text-xs font-mono text-slate-300 bg-[#121d2f] p-3 rounded-xl border border-[#1b273d]">
+              Are you sure you want to delete section <span className="text-rose-400 font-bold">{siteToDelete.siteName || siteToDelete.name}</span>?
+            </p>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setSiteToDelete(null)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-white bg-[#121c2d] cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteExecution}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-500 shadow-lg shadow-rose-600/20 cursor-pointer"
+              >
+                Delete Section
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MODAL: ADD ONGOING ROAD / BUILDING SECTION */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in">
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-[#0b1322] border border-[#1e2d46] rounded-3xl w-full max-w-lg p-6 shadow-2xl relative max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-3">
