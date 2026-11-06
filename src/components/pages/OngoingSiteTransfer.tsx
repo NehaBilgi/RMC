@@ -23,7 +23,7 @@ const extractCleanSiteName = (name: string): string => {
 export const OngoingSiteTransfer: React.FC = () => {
   const getUserRole = (): 'ADMIN' | 'EMPLOYEE' | 'READ_ONLY' => {
     try {
-      const userRaw = sessionStorage.getItem('concrete360_user');
+      const userRaw = localStorage.getItem('concrete360_user') || sessionStorage.getItem('concrete360_user');
       if (userRaw) {
         const parsed = JSON.parse(userRaw);
         const r = String(parsed.role || '').toUpperCase();
@@ -39,51 +39,48 @@ export const OngoingSiteTransfer: React.FC = () => {
   const canCreate = userRole === 'ADMIN' || userRole === 'EMPLOYEE';
   const canDelete = userRole === 'ADMIN';
 
-  const getActiveSiteKey = () => {
+  // Read sites directly from localStorage
+  const getSitesFromStorage = (): any[] => {
     try {
-      const activeRaw = localStorage.getItem('concrete360_active_site');
-      if (activeRaw) {
-        try {
-          const parsed = JSON.parse(activeRaw);
-          return extractCleanSiteName(parsed.name || parsed.siteName || parsed.id);
-        } catch {
-          return extractCleanSiteName(activeRaw);
-        }
-      }
-      const selected = sessionStorage.getItem('concrete360_selected_site');
-      if (selected) return extractCleanSiteName(selected);
-    } catch {}
-    return '';
-  };
-
-  const readSitesFromStorage = (): any[] => {
-    try {
-      const saved = localStorage.getItem('concrete360_ongoing_sites') || localStorage.getItem('concrete360_sites');
-      if (saved) {
-        const parsed = JSON.parse(saved);
+      const raw = localStorage.getItem('concrete360_ongoing_sites') || localStorage.getItem('concrete360_sites');
+      if (raw) {
+        const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) return parsed;
       }
     } catch {}
     return [];
   };
 
-  const [currentActiveKey, setCurrentActiveKey] = useState<string>(getActiveSiteKey());
-  const [sites, setSites] = useState<any[]>(() => readSitesFromStorage());
+  const [sites, setSites] = useState<any[]>(() => getSitesFromStorage());
+  const [currentActiveKey, setCurrentActiveKey] = useState<string>(() => {
+    try {
+      const activeRaw = localStorage.getItem('concrete360_active_site');
+      if (activeRaw) {
+        const parsed = JSON.parse(activeRaw);
+        return extractCleanSiteName(parsed.name || parsed.siteName || parsed.id);
+      }
+    } catch {}
+    return '';
+  });
 
-  // Listen only to active site changes from other components without overwriting local array
+  // Re-read storage on window focus or explicit site switch
   useEffect(() => {
-    const handleSync = (e: any) => {
-      const active = getActiveSiteKey();
-      setCurrentActiveKey(active);
-      const stored = readSitesFromStorage();
-      if (stored.length > 0 || sites.length === 0) {
-        setSites(stored);
+    const handleSync = (e?: any) => {
+      const stored = getSitesFromStorage();
+      setSites(stored);
+
+      const activeRaw = localStorage.getItem('concrete360_active_site');
+      if (activeRaw) {
+        try {
+          const parsed = JSON.parse(activeRaw);
+          setCurrentActiveKey(extractCleanSiteName(parsed.name || parsed.siteName || parsed.id));
+        } catch {}
       }
     };
 
-    window.addEventListener('storage', handleSync);
+    window.addEventListener('concrete360_site_switched', handleSync);
     return () => {
-      window.removeEventListener('storage', handleSync);
+      window.removeEventListener('concrete360_site_switched', handleSync);
     };
   }, []);
 
@@ -115,12 +112,10 @@ export const OngoingSiteTransfer: React.FC = () => {
       gstin: site.gstin
     };
 
-    try {
-      localStorage.setItem('concrete360_active_site', JSON.stringify(sitePayload));
-      sessionStorage.setItem('concrete360_selected_site', cleanSiteKey);
-    } catch {}
-
+    localStorage.setItem('concrete360_active_site', JSON.stringify(sitePayload));
+    localStorage.setItem('concrete360_selected_site', cleanSiteKey);
     setCurrentActiveKey(cleanSiteKey);
+
     window.dispatchEvent(new CustomEvent('concrete360_site_switched', { detail: cleanSiteKey }));
   };
 
@@ -132,16 +127,14 @@ export const OngoingSiteTransfer: React.FC = () => {
     }
     if (!name.trim()) return;
 
+    const currentList = getSitesFromStorage();
     const detail = category === 'Road' ? `Km ${startKm} to ${endKm}` : floorScope;
     const cleanKey = extractCleanSiteName(name);
     const siteTitle = category === 'Building' ? `${cleanKey} (${detail})` : cleanKey;
 
-    // Load current existing sites directly to ensure accurate indexing
-    const currentStored = readSitesFromStorage();
-
     const newSite = {
       id: `site-${Date.now()}`,
-      siteId: `S-0${currentStored.length + 1}`,
+      siteId: `S-0${currentList.length + 1}`,
       category,
       name: cleanKey,
       siteName: siteTitle,
@@ -153,35 +146,23 @@ export const OngoingSiteTransfer: React.FC = () => {
       assignedFleet: 4
     };
 
-    const updatedSites = [newSite, ...currentStored];
+    const updated = [newSite, ...currentList];
 
-    // 1. Direct synchronous save
-    localStorage.setItem('concrete360_sites', JSON.stringify(updatedSites));
-    localStorage.setItem('concrete360_ongoing_sites', JSON.stringify(updatedSites));
+    // Write to both keys synchronously
+    localStorage.setItem('concrete360_sites', JSON.stringify(updated));
+    localStorage.setItem('concrete360_ongoing_sites', JSON.stringify(updated));
 
-    if (clientName.trim()) {
-      try {
-        const existingClients = JSON.parse(localStorage.getItem('concrete360_clients') || '[]');
-        const newClientEntry = {
-          id: `c-${Date.now()}`,
-          clientName: clientName.trim() || cleanKey,
-          site: siteTitle,
-          location: location || 'Ainapur Site',
-          gstin: gstin.trim().toUpperCase() || '29UNREGISTERED'
-        };
-        localStorage.setItem('concrete360_clients', JSON.stringify([newClientEntry, ...existingClients]));
-      } catch {}
-    }
+    // Update local React state
+    setSites(updated);
 
-    // 2. State update
-    setSites(updatedSites);
+    // Reset inputs & close modal
     setIsAddModalOpen(false);
     setName('');
     setLocation('');
     setClientName('');
     setGstin('');
 
-    // 3. Switch active context
+    // Set active
     handleSelectActiveSite(newSite);
   };
 
@@ -193,19 +174,20 @@ export const OngoingSiteTransfer: React.FC = () => {
     const targetSiteId = String(targetSite.siteId || '');
     const targetName = extractCleanSiteName(targetSite.name || targetSite.siteName || '');
 
-    const currentStored = readSitesFromStorage();
-    const updated = currentStored.filter(s => {
+    const currentList = getSitesFromStorage();
+    const updated = currentList.filter(s => {
       const sId = String(s.id || '');
       const sSiteId = String(s.siteId || '');
       const sName = extractCleanSiteName(s.name || s.siteName || '');
 
-      const matchId = Boolean(targetId && sId === targetId);
-      const matchSiteId = Boolean(targetSiteId && sSiteId === targetSiteId);
-      const matchName = Boolean(targetName && sName === targetName);
-
-      return !(matchId || matchSiteId || matchName);
+      return !(
+        (targetId && sId === targetId) ||
+        (targetSiteId && sSiteId === targetSiteId) ||
+        (targetName && sName === targetName)
+      );
     });
 
+    // Wipe all operational records linked to this site key so values drop to 0
     const keysToPurge = [
       `concrete360_site_invoices_${targetName}`,
       `concrete360_advanced_measurements_${targetName}`,
@@ -215,31 +197,23 @@ export const OngoingSiteTransfer: React.FC = () => {
       `concrete360_at_site_tests_${targetName}`,
       `concrete360_total_bill_${targetName}`,
       `concrete360_transit_mixers_${targetName}`,
-      `concrete360_site_transit_mixers_${targetName}`,
-      `concrete360_active_mix_grade_${targetName}`,
-      `concrete360_admixture_mode_${targetName}`,
-      `concrete360_mix_designs_${targetName}`,
-      `concrete360_material_reports_${targetName}`
+      `concrete360_site_transit_mixers_${targetName}`
     ];
+    keysToPurge.forEach(k => localStorage.removeItem(k));
 
-    try {
-      keysToPurge.forEach(key => localStorage.removeItem(key));
-      localStorage.setItem('concrete360_sites', JSON.stringify(updated));
-      localStorage.setItem('concrete360_ongoing_sites', JSON.stringify(updated));
-    } catch {}
+    localStorage.setItem('concrete360_sites', JSON.stringify(updated));
+    localStorage.setItem('concrete360_ongoing_sites', JSON.stringify(updated));
 
     setSites(updated);
     setSiteToDelete(null);
 
-    if (currentActiveKey === targetName || currentActiveKey === targetSiteId || updated.length === 0) {
-      if (updated.length > 0) {
-        handleSelectActiveSite(updated[0]);
-      } else {
-        localStorage.removeItem('concrete360_active_site');
-        sessionStorage.removeItem('concrete360_selected_site');
-        setCurrentActiveKey('');
-        window.dispatchEvent(new CustomEvent('concrete360_site_switched', { detail: '' }));
-      }
+    if (updated.length > 0) {
+      handleSelectActiveSite(updated[0]);
+    } else {
+      localStorage.removeItem('concrete360_active_site');
+      localStorage.removeItem('concrete360_selected_site');
+      setCurrentActiveKey('');
+      window.dispatchEvent(new CustomEvent('concrete360_site_switched', { detail: '' }));
     }
   };
 
