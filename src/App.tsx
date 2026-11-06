@@ -18,6 +18,14 @@ export default function App() {
 
   const [selectedSite, setSelectedSite] = useState<string | null>(() => {
     try {
+      // Check if any sites actually exist in storage
+      const rawSites = localStorage.getItem('concrete360_ongoing_sites') || localStorage.getItem('concrete360_sites');
+      const parsedSites = rawSites ? JSON.parse(rawSites) : [];
+      if (!Array.isArray(parsedSites) || parsedSites.length === 0) {
+        sessionStorage.removeItem('concrete360_selected_site');
+        localStorage.removeItem('concrete360_active_site');
+        return null;
+      }
       return sessionStorage.getItem('concrete360_selected_site');
     } catch {
       return null;
@@ -63,7 +71,7 @@ export default function App() {
     } catch {}
   }, [user]);
 
-  // Persist active site & dispatch switch event for cross-component sync
+  // Handle active site persistence and empty zero-reset
   useEffect(() => {
     try {
       if (selectedSite) {
@@ -76,12 +84,36 @@ export default function App() {
             scope: 'G + 3 Floors'
           })
         );
-        window.dispatchEvent(new CustomEvent('concrete360_site_switched', { detail: selectedSite }));
       } else {
         sessionStorage.removeItem('concrete360_selected_site');
+        localStorage.removeItem('concrete360_active_site');
+        // Reset measurement metrics back to 0
+        setMeasurementSession(INITIAL_MEASUREMENT_SESSION);
+        localStorage.setItem('concrete360_measurement', JSON.stringify(INITIAL_MEASUREMENT_SESSION));
       }
     } catch {}
   }, [selectedSite]);
+
+  // Listen for site deletions and active switch triggers from OngoingSiteTransfer
+  useEffect(() => {
+    const handleSiteSwitch = (e: any) => {
+      const newSiteKey = e?.detail || '';
+      if (!newSiteKey) {
+        // Site was deleted and list is now empty -> Reset all metrics to 0
+        setSelectedSite(null);
+        sessionStorage.removeItem('concrete360_selected_site');
+        localStorage.removeItem('concrete360_active_site');
+        setMeasurementSession(INITIAL_MEASUREMENT_SESSION);
+      } else {
+        setSelectedSite(newSiteKey);
+      }
+    };
+
+    window.addEventListener('concrete360_site_switched', handleSiteSwitch);
+    return () => {
+      window.removeEventListener('concrete360_site_switched', handleSiteSwitch);
+    };
+  }, []);
 
   // Sync measurement session storage & dispatch event
   useEffect(() => {
@@ -95,8 +127,10 @@ export default function App() {
   const handleLogout = () => {
     sessionStorage.removeItem('concrete360_user');
     sessionStorage.removeItem('concrete360_selected_site');
+    localStorage.removeItem('concrete360_active_site');
     setUser(null);
     setSelectedSite(null);
+    setMeasurementSession(INITIAL_MEASUREMENT_SESSION);
   };
 
   // Step 1: Render Login Page if not logged in
@@ -108,16 +142,17 @@ export default function App() {
             try {
               sessionStorage.setItem('concrete360_user', JSON.stringify(loggedInUser));
             } catch {}
-          setUser(loggedInUser);
+            setUser(loggedInUser);
           }}
-        theme={theme}
-        onToggleTheme={() => setTheme((current) => current === 'light' ? 'dark' : 'light')}
+          theme={theme}
+          onToggleTheme={() => setTheme((current) => current === 'light' ? 'dark' : 'light')}
         />
       </div>
     );
   }
 
-  // Step 2: Render Site Selection Page if no site is selected
+  // Step 2: Render Site Selection Page if no site is selected or if site was deleted
+  // This guarantees user MUST register or pick a site before entering any values
   if (!selectedSite) {
     return (
       <div className={`app-theme ${themeClass}`}>
@@ -125,6 +160,7 @@ export default function App() {
           projectType="BUILDING"
           onSelectSite={(siteName) => {
             setSelectedSite(siteName);
+            window.dispatchEvent(new CustomEvent('concrete360_site_switched', { detail: siteName }));
           }}
           theme={theme}
           onToggleTheme={() => setTheme((current) => current === 'light' ? 'dark' : 'light')}
