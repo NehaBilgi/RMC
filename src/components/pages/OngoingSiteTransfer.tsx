@@ -7,9 +7,7 @@ import {
   Truck, 
   X,
   Signpost,
-  ArrowRight,
-  Eye,
-  Lock
+  ArrowRight
 } from 'lucide-react';
 
 // Normalizer to extract clean site key (e.g. "WW (G + 3 Floors)" -> "WW")
@@ -21,6 +19,35 @@ const extractCleanSiteName = (name: string): string => {
   }
   return clean.toUpperCase();
 };
+
+const DEFAULT_SITES = [
+  {
+    id: 'site-1789881335720',
+    siteId: 'S-01',
+    category: 'Road',
+    name: 'MBBILGI',
+    siteName: 'MBBILGI',
+    location: 'AINAPUR',
+    supervisor: 'adminbilgi',
+    clientName: 'MBBILGI',
+    gstin: '29AAACB1234F1Z5',
+    detail: 'Km 0 to 1.6',
+    assignedFleet: 4
+  },
+  {
+    id: 'site-1789881335721',
+    siteId: 'S-02',
+    category: 'Building',
+    name: 'WW',
+    siteName: 'WW (G + 3 Floors)',
+    location: 'WW',
+    supervisor: 'adminbilgi',
+    clientName: 'WW',
+    gstin: '29AAACB1234F1Z8',
+    detail: 'G + 3 Floors',
+    assignedFleet: 4
+  }
+];
 
 export const OngoingSiteTransfer: React.FC = () => {
   // Retrieve Active User Role
@@ -61,49 +88,22 @@ export const OngoingSiteTransfer: React.FC = () => {
 
   const [currentActiveKey, setCurrentActiveKey] = useState<string>(getActiveSiteKey());
 
-  const loadStoredSites = () => {
+  const loadStoredSites = (): any[] => {
     try {
       const saved = localStorage.getItem('concrete360_ongoing_sites') || localStorage.getItem('concrete360_sites');
-      if (saved) {
+      if (saved !== null) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
+        if (Array.isArray(parsed)) {
+          return parsed; // Allow empty array if user deleted all
         }
       }
     } catch {}
-    return [
-      {
-        id: 'site-1789881335720',
-        siteId: 'S-01',
-        category: 'Road',
-        name: 'MBBILGI',
-        siteName: 'MBBILGI',
-        location: 'AINAPUR',
-        supervisor: 'adminbilgi',
-        clientName: 'MBBILGI',
-        gstin: '29AAACB1234F1Z5',
-        detail: 'Km 0 to 1.6',
-        assignedFleet: 4
-      },
-      {
-        id: 'site-1789881335721',
-        siteId: 'S-02',
-        category: 'Building',
-        name: 'WW',
-        siteName: 'WW (G + 3 Floors)',
-        location: 'WW',
-        supervisor: 'adminbilgi',
-        clientName: 'WW',
-        gstin: '29AAACB1234F1Z8',
-        detail: 'G + 3 Floors',
-        assignedFleet: 4
-      }
-    ];
+    return DEFAULT_SITES;
   };
 
   const [sites, setSites] = useState<any[]>(loadStoredSites);
 
-  // Sync sites to localStorage whenever they change
+  // Sync sites to localStorage whenever state changes
   useEffect(() => {
     try {
       localStorage.setItem('concrete360_sites', JSON.stringify(sites));
@@ -120,12 +120,10 @@ export const OngoingSiteTransfer: React.FC = () => {
 
     window.addEventListener('concrete360_site_switched', handleSync);
     window.addEventListener('storage', handleSync);
-    window.addEventListener('focus', handleSync);
 
     return () => {
       window.removeEventListener('concrete360_site_switched', handleSync);
       window.removeEventListener('storage', handleSync);
-      window.removeEventListener('focus', handleSync);
     };
   }, []);
 
@@ -139,6 +137,31 @@ export const OngoingSiteTransfer: React.FC = () => {
   const [startKm, setStartKm] = useState('0');
   const [endKm, setEndKm] = useState('12.5');
   const [floorScope, setFloorScope] = useState('G + 3 Floors');
+
+  // Select active site helper
+  const handleSelectActiveSite = (site: any) => {
+    if (!site) return;
+    const cleanSiteKey = extractCleanSiteName(site.name || site.siteName);
+
+    const sitePayload = {
+      id: site.id || cleanSiteKey,
+      siteId: site.siteId || 'S-01',
+      name: cleanSiteKey,
+      displayName: site.siteName || cleanSiteKey,
+      clientName: site.clientName || cleanSiteKey,
+      location: site.location,
+      scope: site.detail || site.structureScope || 'G + 3 Floors',
+      gstin: site.gstin
+    };
+
+    try {
+      localStorage.setItem('concrete360_active_site', JSON.stringify(sitePayload));
+      sessionStorage.setItem('concrete360_selected_site', cleanSiteKey);
+    } catch {}
+
+    setCurrentActiveKey(cleanSiteKey);
+    window.dispatchEvent(new CustomEvent('concrete360_site_switched', { detail: cleanSiteKey }));
+  };
 
   const handleAddSite = (e: React.FormEvent) => {
     e.preventDefault();
@@ -169,8 +192,11 @@ export const OngoingSiteTransfer: React.FC = () => {
     const updatedSites = [newSite, ...sites];
     setSites(updatedSites);
 
-    if (clientName.trim()) {
-      try {
+    try {
+      localStorage.setItem('concrete360_sites', JSON.stringify(updatedSites));
+      localStorage.setItem('concrete360_ongoing_sites', JSON.stringify(updatedSites));
+
+      if (clientName.trim()) {
         const existingClients = JSON.parse(localStorage.getItem('concrete360_clients') || '[]');
         const newClientEntry = {
           id: `c-${Date.now()}`,
@@ -180,8 +206,8 @@ export const OngoingSiteTransfer: React.FC = () => {
           gstin: gstin.trim().toUpperCase() || '29UNREGISTERED'
         };
         localStorage.setItem('concrete360_clients', JSON.stringify([newClientEntry, ...existingClients]));
-      } catch {}
-    }
+      }
+    } catch {}
 
     setIsAddModalOpen(false);
     setName('');
@@ -189,46 +215,52 @@ export const OngoingSiteTransfer: React.FC = () => {
     setClientName('');
     setGstin('');
 
-    // Automatically switch active site to the newly created section
     handleSelectActiveSite(newSite);
   };
 
-  const handleDeleteSite = (id: string, e: React.MouseEvent) => {
+  // Immediate delete with target resolution and instant storage flush
+  const handleDeleteSite = (targetSite: any, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!canDelete) {
       alert('Permission Denied: Only ADMIN accounts can delete site sections.');
       return;
     }
-    if (window.confirm('Are you sure you want to delete this ongoing site?')) {
-      setSites(prev => prev.filter(s => s.id !== id));
+
+    const siteDisplayName = targetSite.siteName || targetSite.name || 'this site';
+    if (!window.confirm(`Are you sure you want to delete ${siteDisplayName}?`)) {
+      return;
     }
-  };
 
-  // ISOLATE SITE DATA: Save clean active context and scope across modules & trigger workspace reload
-  const handleSelectActiveSite = (site: any) => {
-    const cleanSiteKey = extractCleanSiteName(site.name || site.siteName);
+    // Filter out by matching either id, siteId, or clean name key
+    const targetKey = extractCleanSiteName(targetSite.name || targetSite.siteName);
+    const updated = sites.filter(s => {
+      const sKey = extractCleanSiteName(s.name || s.siteName);
+      const isSameId = targetSite.id && s.id === targetSite.id;
+      const isSameSiteId = targetSite.siteId && s.siteId === targetSite.siteId;
+      const isSameKey = targetKey && sKey === targetKey;
+      return !(isSameId || isSameSiteId || isSameKey);
+    });
 
-    // 1. Persist active site payload to localStorage and sessionStorage
-    const sitePayload = {
-      id: site.id || cleanSiteKey,
-      siteId: site.siteId || 'S-01',
-      name: cleanSiteKey,
-      displayName: site.siteName || cleanSiteKey,
-      clientName: site.clientName || cleanSiteKey,
-      location: site.location,
-      scope: site.detail || site.structureScope || 'G + 3 Floors',
-      gstin: site.gstin
-    };
+    // 1. Update React state
+    setSites(updated);
 
+    // 2. Immediately write to localStorage so background focus events can't revive it
     try {
-      localStorage.setItem('concrete360_active_site', JSON.stringify(sitePayload));
-      sessionStorage.setItem('concrete360_selected_site', cleanSiteKey);
+      localStorage.setItem('concrete360_sites', JSON.stringify(updated));
+      localStorage.setItem('concrete360_ongoing_sites', JSON.stringify(updated));
     } catch {}
 
-    setCurrentActiveKey(cleanSiteKey);
-
-    // 2. Trigger window event so all modules re-fetch site data
-    window.dispatchEvent(new CustomEvent('concrete360_site_switched', { detail: cleanSiteKey }));
+    // 3. If deleted site was active, switch to the next available site
+    if (currentActiveKey === targetKey) {
+      if (updated.length > 0) {
+        handleSelectActiveSite(updated[0]);
+      } else {
+        localStorage.removeItem('concrete360_active_site');
+        sessionStorage.removeItem('concrete360_selected_site');
+        setCurrentActiveKey('');
+        window.dispatchEvent(new CustomEvent('concrete360_site_switched', { detail: '' }));
+      }
+    }
   };
 
   return (
@@ -267,99 +299,114 @@ export const OngoingSiteTransfer: React.FC = () => {
       </div>
 
       {/* Sites Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {sites.map(site => {
-          const cleanKey = extractCleanSiteName(site.name || site.siteName);
-          const isCurrentlyActive = cleanKey === currentActiveKey;
-
-          return (
-            <div
-              key={site.id}
-              onClick={() => handleSelectActiveSite(site)}
-              className={`bg-[#0b1322] border rounded-3xl p-5 shadow-xl cursor-pointer transition relative flex flex-col justify-between group ${
-                isCurrentlyActive 
-                  ? 'border-blue-500 ring-2 ring-blue-500/20' 
-                  : 'border-[#1b273d] hover:border-blue-500/50'
-              }`}
+      {sites.length === 0 ? (
+        <div className="bg-[#0b1322] border border-[#1b273d] rounded-3xl p-12 text-center">
+          <p className="text-slate-400 text-sm font-mono">No active site sections found.</p>
+          {canCreate && (
+            <button
+              onClick={() => setIsAddModalOpen(true)}
+              className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl cursor-pointer"
             >
-              <div>
-                <div className="flex items-center justify-between">
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
-                    site.category === 'Building' 
-                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' 
-                      : 'bg-blue-500/10 text-blue-400 border border-blue-500/30'
-                  }`}>
-                    {(site.category || 'Building').toUpperCase()} SITE
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-mono text-slate-500">{site.siteId || site.id}</span>
-                    {canDelete && (
-                      <button
-                        onClick={(e) => handleDeleteSite(site.id, e)}
-                        className="p-1 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition cursor-pointer"
-                        title="Delete Site"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-                </div>
+              + Add First Site
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {sites.map(site => {
+            const cleanKey = extractCleanSiteName(site.name || site.siteName);
+            const isCurrentlyActive = cleanKey === currentActiveKey;
 
-                <h3 className="text-base font-black text-white mt-3 tracking-wide group-hover:text-blue-300 transition-colors">
-                  {cleanKey}
-                </h3>
-                <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5 font-mono">
-                  <MapPin className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                  <span>{site.location}</span>
-                </p>
-
-                <div className="mt-4 bg-[#0d1627] border border-[#17253e] rounded-xl p-3 space-y-1.5 text-xs font-mono">
-                  <div className="flex justify-between items-center text-slate-300">
-                    <span className="text-slate-400">Supervisor:</span>
-                    <span className="font-bold text-white">{site.supervisor}</span>
-                  </div>
-                  {site.clientName && (
-                    <div className="flex justify-between items-center text-slate-300">
-                      <span className="text-slate-400">Client:</span>
-                      <span className="font-bold text-blue-400 truncate max-w-[140px]">{site.clientName}</span>
+            return (
+              <div
+                key={site.id || site.siteId || cleanKey}
+                onClick={() => handleSelectActiveSite(site)}
+                className={`bg-[#0b1322] border rounded-3xl p-5 shadow-xl cursor-pointer transition relative flex flex-col justify-between group ${
+                  isCurrentlyActive 
+                    ? 'border-blue-500 ring-2 ring-blue-500/20' 
+                    : 'border-[#1b273d] hover:border-blue-500/50'
+                }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
+                      site.category === 'Building' 
+                        ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' 
+                        : 'bg-blue-500/10 text-blue-400 border border-blue-500/30'
+                    }`}>
+                      {(site.category || 'Building').toUpperCase()} SITE
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-mono text-slate-500">{site.siteId || site.id}</span>
+                      {canDelete && (
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteSite(site, e)}
+                          className="p-1 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition cursor-pointer"
+                          title="Delete Site"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
-                  )}
-                  <div className="flex justify-between items-center text-slate-300">
-                    <span className="text-slate-400">{site.category === 'Road' ? 'Chainage Range:' : 'Structure Scope:'}</span>
-                    <span className="font-extrabold text-emerald-400">{site.detail}</span>
+                  </div>
+
+                  <h3 className="text-base font-black text-white mt-3 tracking-wide group-hover:text-blue-300 transition-colors">
+                    {cleanKey}
+                  </h3>
+                  <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5 font-mono">
+                    <MapPin className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                    <span>{site.location}</span>
+                  </p>
+
+                  <div className="mt-4 bg-[#0d1627] border border-[#17253e] rounded-xl p-3 space-y-1.5 text-xs font-mono">
+                    <div className="flex justify-between items-center text-slate-300">
+                      <span className="text-slate-400">Supervisor:</span>
+                      <span className="font-bold text-white">{site.supervisor}</span>
+                    </div>
+                    {site.clientName && (
+                      <div className="flex justify-between items-center text-slate-300">
+                        <span className="text-slate-400">Client:</span>
+                        <span className="font-bold text-blue-400 truncate max-w-[140px]">{site.clientName}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between items-center text-slate-300">
+                      <span className="text-slate-400">{site.category === 'Road' ? 'Chainage Range:' : 'Structure Scope:'}</span>
+                      <span className="font-extrabold text-emerald-400">{site.detail}</span>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="mt-4 pt-3 border-t border-[#172439] flex items-center justify-between text-xs font-mono">
-                <span className="text-slate-400 flex items-center gap-1.5">
-                  <Truck className="w-3.5 h-3.5 text-blue-400" />
-                  {site.assignedFleet || 4} Assigned Fleet
-                </span>
-                
-                {isCurrentlyActive ? (
-                  <span className="text-blue-400 font-bold flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
-                    Active Selection
+                <div className="mt-4 pt-3 border-t border-[#172439] flex items-center justify-between text-xs font-mono">
+                  <span className="text-slate-400 flex items-center gap-1.5">
+                    <Truck className="w-3.5 h-3.5 text-blue-400" />
+                    {site.assignedFleet || 4} Assigned Fleet
                   </span>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleSelectActiveSite(site);
-                    }}
-                    className="text-blue-400 hover:text-blue-300 font-bold flex items-center gap-1 group-hover:translate-x-0.5 transition-transform cursor-pointer"
-                  >
-                    <span>Launch Site</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                )}
+                  
+                  {isCurrentlyActive ? (
+                    <span className="text-blue-400 font-bold flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                      Active Selection
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSelectActiveSite(site);
+                      }}
+                      className="text-blue-400 hover:text-blue-300 font-bold flex items-center gap-1 group-hover:translate-x-0.5 transition-transform cursor-pointer"
+                    >
+                      <span>Launch Site</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* MODAL: ADD ONGOING ROAD / BUILDING SECTION */}
       {isAddModalOpen && (
