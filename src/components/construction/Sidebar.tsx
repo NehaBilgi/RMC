@@ -45,15 +45,14 @@ interface Props {
   onToggleTheme: () => void;
 }
 
-// Helper to normalize site name (e.g., "WW (G + 3 Floors)" -> "WW")
+// Clean normalizer without fake fallback
 export const normalizeSiteKey = (raw: string): string => {
-  if (!raw) return 'MBBILGI';
+  if (!raw) return '';
   let clean = raw.trim();
-  // Strip trailing scopes in parentheses if any
   if (clean.includes('(')) {
     clean = clean.split('(')[0].trim();
   }
-  return clean || 'MBBILGI';
+  return clean.toUpperCase();
 };
 
 export const Sidebar: React.FC<Props> = ({
@@ -64,31 +63,34 @@ export const Sidebar: React.FC<Props> = ({
   theme,
   onToggleTheme
 }) => {
-  const getActiveSiteKey = () => {
+  // Reads active site strictly from localStorage
+  const getActiveSiteKey = (): string => {
     try {
       const activeRaw = localStorage.getItem('concrete360_active_site');
       if (activeRaw) {
         try {
           const parsed = JSON.parse(activeRaw);
-          return normalizeSiteKey(parsed.name || parsed.siteName || parsed.id);
+          const key = normalizeSiteKey(parsed.name || parsed.siteName || parsed.id);
+          if (key) return key;
         } catch {
-          return normalizeSiteKey(activeRaw);
+          const key = normalizeSiteKey(activeRaw);
+          if (key) return key;
         }
       }
-      const selected = sessionStorage.getItem('concrete360_selected_site');
+      const selected = localStorage.getItem('concrete360_selected_site') || sessionStorage.getItem('concrete360_selected_site');
       if (selected) return normalizeSiteKey(selected);
     } catch {}
-    return 'MBBILGI';
+    return '';
   };
 
-  const [currentSite, setCurrentSite] = useState<string>(getActiveSiteKey());
-  const [activeTab, setActiveTab] = useState<string>('dashboard');
+  const [currentSite, setCurrentSite] = useState<string>(() => getActiveSiteKey());
+  const [activeTab, setActiveTab] = useState<string>('ongoing_site');
   const [isSidebarOpenMobile, setIsSidebarOpenMobile] = useState(false);
 
-  // Retrieve Active Authenticated User Details for Footer
+  // Authenticated user state supporting localStorage persistence
   const [currentUser, setCurrentUser] = useState<SessionUser>(() => {
     try {
-      const savedUser = sessionStorage.getItem('concrete360_user');
+      const savedUser = localStorage.getItem('concrete360_user') || sessionStorage.getItem('concrete360_user');
       if (savedUser) {
         const parsed = JSON.parse(savedUser);
         return {
@@ -102,16 +104,16 @@ export const Sidebar: React.FC<Props> = ({
     return user;
   });
 
-  // Sync site switches and user updates across all modules
+  // Keep currentSite synchronized across site creations, selections, and deletions
   useEffect(() => {
     const handleSiteSwitch = (e?: any) => {
-      const siteName = e?.detail ? normalizeSiteKey(e.detail) : getActiveSiteKey();
+      const siteName = e?.detail !== undefined ? normalizeSiteKey(e.detail) : getActiveSiteKey();
       setCurrentSite(siteName);
     };
 
     const handleUserSync = () => {
       try {
-        const savedUser = sessionStorage.getItem('concrete360_user');
+        const savedUser = localStorage.getItem('concrete360_user') || sessionStorage.getItem('concrete360_user');
         if (savedUser) {
           const parsed = JSON.parse(savedUser);
           setCurrentUser({
@@ -128,14 +130,12 @@ export const Sidebar: React.FC<Props> = ({
     window.addEventListener('storage', handleSiteSwitch);
     window.addEventListener('storage', handleUserSync);
     window.addEventListener('concrete360_user_updated', handleUserSync);
-    window.addEventListener('focus', handleSiteSwitch);
 
     return () => {
       window.removeEventListener('concrete360_site_switched', handleSiteSwitch);
       window.removeEventListener('storage', handleSiteSwitch);
       window.removeEventListener('storage', handleUserSync);
       window.removeEventListener('concrete360_user_updated', handleUserSync);
-      window.removeEventListener('focus', handleSiteSwitch);
     };
   }, []);
 
@@ -159,9 +159,11 @@ export const Sidebar: React.FC<Props> = ({
   const visibleNavItems = sidebarNavItems.filter(item =>
     (!item.adminOnly || isAdminUser(currentUser)) && canViewPage(currentUser, item.id)
   );
+
   const activePage = visibleNavItems.some(item => item.id === activeTab)
     ? activeTab
-    : (visibleNavItems[0]?.id || '');
+    : (visibleNavItems[0]?.id || 'ongoing_site');
+
   const sidebarGroups = ['SITE OPERATIONS', 'ENGINEERING', 'CONFIGURATION']
     .map(section => ({
       section,
@@ -233,6 +235,7 @@ export const Sidebar: React.FC<Props> = ({
           className="fixed inset-0 z-40 bg-slate-950/50 md:hidden"
         />
       )}
+      
       {/* SIDEBAR NAVIGATION */}
       <aside className={`
         app-sidebar fixed inset-y-0 left-0 z-50 w-64 bg-[#080e1a] border-r border-[#152033] flex flex-col justify-between transition-transform duration-200 ease-in-out
@@ -250,8 +253,8 @@ export const Sidebar: React.FC<Props> = ({
                   CONCRETE 360
                 </span>
                 <span className="text-[10px] font-mono text-emerald-400 font-semibold tracking-wide flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  SITE: {currentSite}
+                  <span className={`w-1.5 h-1.5 rounded-full ${currentSite ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
+                  SITE: {currentSite || 'NONE SELECTED'}
                 </span>
               </div>
             </div>
@@ -304,7 +307,7 @@ export const Sidebar: React.FC<Props> = ({
           <div className="flex items-center justify-between p-2 rounded-xl bg-[#0d1627] border border-[#17253e]">
             <div className="flex items-center gap-2.5 overflow-hidden">
               <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white font-black text-xs shrink-0 uppercase">
-                {currentUser.username.slice(0, 2) || 'AB'}
+                {(currentUser.username || 'AD').slice(0, 2)}
               </div>
               <div className="truncate">
                 <span className="text-xs font-mono font-bold text-white block truncate">{currentUser.username}</span>
@@ -332,7 +335,7 @@ export const Sidebar: React.FC<Props> = ({
           </div>
           <div className="flex items-center justify-end gap-1.5 sm:gap-2 shrink-0">
             <span className="hidden lg:inline-flex text-[10px] font-mono font-bold text-cyan-400 bg-[#0e1728] border border-[#1b273d] px-2.5 py-1 rounded-xl max-w-40 truncate">
-              Active: {currentSite}
+              Active: {currentSite || 'None'}
             </span>
             <span className="hidden sm:inline text-[10px] sm:text-xs text-slate-400 font-mono">
               Role: <strong className="text-white uppercase">{currentUser.role}</strong>
@@ -355,8 +358,8 @@ export const Sidebar: React.FC<Props> = ({
           </div>
         </header>
 
-        {/* Passing key={currentSite} forces a full re-mount with newly loaded site data */}
-        <main key={`${currentSite}_${activePage}`} className="workspace-content flex-1 p-6 max-w-7xl w-full mx-auto min-w-0">
+        {/* Stable workspace mount without aggressive remount key tearing */}
+        <main className="workspace-content flex-1 p-6 max-w-7xl w-full mx-auto min-w-0">
           {!activePage && (
             <div className="rounded-2xl border border-[#1b273d] bg-[#0b1322] p-6 text-sm text-slate-400">
               No pages have been assigned to this account. Ask an administrator to grant access.
