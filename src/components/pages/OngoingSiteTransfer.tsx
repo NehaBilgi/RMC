@@ -56,46 +56,33 @@ export const OngoingSiteTransfer: React.FC = () => {
     return '';
   };
 
-  const [currentActiveKey, setCurrentActiveKey] = useState<string>(getActiveSiteKey());
-
-  const loadStoredSites = (): any[] => {
+  const readSitesFromStorage = (): any[] => {
     try {
       const saved = localStorage.getItem('concrete360_ongoing_sites') || localStorage.getItem('concrete360_sites');
-      if (saved !== null) {
+      if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          return parsed;
-        }
+        if (Array.isArray(parsed)) return parsed;
       }
     } catch {}
     return [];
   };
 
-  const [sites, setSites] = useState<any[]>(loadStoredSites);
+  const [currentActiveKey, setCurrentActiveKey] = useState<string>(getActiveSiteKey());
+  const [sites, setSites] = useState<any[]>(() => readSitesFromStorage());
 
-  // Sync state to storage whenever sites state changes
-  useEffect(() => {
-    try {
-      localStorage.setItem('concrete360_sites', JSON.stringify(sites));
-      localStorage.setItem('concrete360_ongoing_sites', JSON.stringify(sites));
-    } catch {}
-  }, [sites]);
-
-  // Synchronize across events and windows, ignoring self-triggering active_site changes
+  // Listen only to active site changes from other components without overwriting local array
   useEffect(() => {
     const handleSync = (e: any) => {
-      if (e?.type === 'storage' && e?.key === 'concrete360_active_site') {
-        return;
+      const active = getActiveSiteKey();
+      setCurrentActiveKey(active);
+      const stored = readSitesFromStorage();
+      if (stored.length > 0 || sites.length === 0) {
+        setSites(stored);
       }
-      setCurrentActiveKey(getActiveSiteKey());
-      setSites(loadStoredSites());
     };
 
-    window.addEventListener('concrete360_site_switched', handleSync);
     window.addEventListener('storage', handleSync);
-
     return () => {
-      window.removeEventListener('concrete360_site_switched', handleSync);
       window.removeEventListener('storage', handleSync);
     };
   }, []);
@@ -149,9 +136,12 @@ export const OngoingSiteTransfer: React.FC = () => {
     const cleanKey = extractCleanSiteName(name);
     const siteTitle = category === 'Building' ? `${cleanKey} (${detail})` : cleanKey;
 
+    // Load current existing sites directly to ensure accurate indexing
+    const currentStored = readSitesFromStorage();
+
     const newSite = {
       id: `site-${Date.now()}`,
-      siteId: `S-0${sites.length + 1}`,
+      siteId: `S-0${currentStored.length + 1}`,
       category,
       name: cleanKey,
       siteName: siteTitle,
@@ -163,14 +153,14 @@ export const OngoingSiteTransfer: React.FC = () => {
       assignedFleet: 4
     };
 
-    const updatedSites = [newSite, ...sites];
+    const updatedSites = [newSite, ...currentStored];
 
-    // 1. Immediately persist to localStorage first
-    try {
-      localStorage.setItem('concrete360_sites', JSON.stringify(updatedSites));
-      localStorage.setItem('concrete360_ongoing_sites', JSON.stringify(updatedSites));
+    // 1. Direct synchronous save
+    localStorage.setItem('concrete360_sites', JSON.stringify(updatedSites));
+    localStorage.setItem('concrete360_ongoing_sites', JSON.stringify(updatedSites));
 
-      if (clientName.trim()) {
+    if (clientName.trim()) {
+      try {
         const existingClients = JSON.parse(localStorage.getItem('concrete360_clients') || '[]');
         const newClientEntry = {
           id: `c-${Date.now()}`,
@@ -180,10 +170,10 @@ export const OngoingSiteTransfer: React.FC = () => {
           gstin: gstin.trim().toUpperCase() || '29UNREGISTERED'
         };
         localStorage.setItem('concrete360_clients', JSON.stringify([newClientEntry, ...existingClients]));
-      }
-    } catch {}
+      } catch {}
+    }
 
-    // 2. Update state and close modal
+    // 2. State update
     setSites(updatedSites);
     setIsAddModalOpen(false);
     setName('');
@@ -191,7 +181,7 @@ export const OngoingSiteTransfer: React.FC = () => {
     setClientName('');
     setGstin('');
 
-    // 3. Make the newly created site active
+    // 3. Switch active context
     handleSelectActiveSite(newSite);
   };
 
@@ -203,8 +193,8 @@ export const OngoingSiteTransfer: React.FC = () => {
     const targetSiteId = String(targetSite.siteId || '');
     const targetName = extractCleanSiteName(targetSite.name || targetSite.siteName || '');
 
-    // 1. Filter out deleted site
-    const updated = sites.filter(s => {
+    const currentStored = readSitesFromStorage();
+    const updated = currentStored.filter(s => {
       const sId = String(s.id || '');
       const sSiteId = String(s.siteId || '');
       const sName = extractCleanSiteName(s.name || s.siteName || '');
@@ -216,7 +206,6 @@ export const OngoingSiteTransfer: React.FC = () => {
       return !(matchId || matchSiteId || matchName);
     });
 
-    // 2. Cascade purge all telemetry for this site so trips, billing, and tests go to 0
     const keysToPurge = [
       `concrete360_site_invoices_${targetName}`,
       `concrete360_advanced_measurements_${targetName}`,
@@ -239,11 +228,9 @@ export const OngoingSiteTransfer: React.FC = () => {
       localStorage.setItem('concrete360_ongoing_sites', JSON.stringify(updated));
     } catch {}
 
-    // 3. Update React state
     setSites(updated);
     setSiteToDelete(null);
 
-    // 4. Update or clear active selection
     if (currentActiveKey === targetName || currentActiveKey === targetSiteId || updated.length === 0) {
       if (updated.length > 0) {
         handleSelectActiveSite(updated[0]);
@@ -323,9 +310,9 @@ export const OngoingSiteTransfer: React.FC = () => {
                 <div>
                   <div className="flex items-center justify-between">
                     <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
-                      site.category === 'Building' 
-                        ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' 
-                        : 'bg-blue-500/10 text-blue-400 border border-blue-500/30'
+                      site.category === 'Road' 
+                        ? 'bg-blue-500/10 text-blue-400 border border-blue-500/30' 
+                        : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
                     }`}>
                       {(site.category || 'Building').toUpperCase()} SITE
                     </span>
