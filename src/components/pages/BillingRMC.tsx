@@ -1,5 +1,17 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { FileText, Check, X, Truck, Plus, Trash2, Edit2, Printer, Filter, Calendar, RotateCcw, Lock, Eye } from 'lucide-react';
+import { 
+  FileText, 
+  X, 
+  Truck, 
+  Trash2, 
+  Edit2, 
+  Printer, 
+  Filter, 
+  Calendar, 
+  RotateCcw, 
+  Eye, 
+  AlertTriangle 
+} from 'lucide-react';
 
 interface RMCInvoice {
   id: string;
@@ -129,6 +141,7 @@ export const BillingRMC: React.FC = () => {
   const [currentSiteKey, setCurrentSiteKey] = useState<string>(getActiveSiteKey());
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null);
+  const [invoiceToDelete, setInvoiceToDelete] = useState<RMCInvoice | null>(null);
 
   const monthBounds = getCurrentMonthBounds();
   const [fromDate, setFromDate] = useState<string>(monthBounds.start);
@@ -204,7 +217,6 @@ export const BillingRMC: React.FC = () => {
     setUnitRate(resolvedRate);
   };
 
-  // Resolve Concrete Grade directly from Site Reports & Measurements
   const resolveGradeFromReports = (siteKey: string, parsedM: any[]): string => {
     try {
       const explicitGrade = localStorage.getItem(`concrete360_active_mix_grade_${siteKey}`);
@@ -305,7 +317,7 @@ export const BillingRMC: React.FC = () => {
         try { foundSite = JSON.parse(activeRaw); } catch {}
       }
 
-      const ongoingRaw = localStorage.getItem('concrete360_ongoing_sites');
+      const ongoingRaw = localStorage.getItem('concrete360_ongoing_sites') || localStorage.getItem('concrete360_sites');
       if (ongoingRaw) {
         const parsedList = JSON.parse(ongoingRaw);
         if (Array.isArray(parsedList) && parsedList.length > 0) {
@@ -344,7 +356,7 @@ export const BillingRMC: React.FC = () => {
       }
 
       // Load Measurements & Extract Grade from Reports
-      let measurementsRaw = localStorage.getItem(`concrete360_advanced_measurements_${siteKey}`);
+      const measurementsRaw = localStorage.getItem(`concrete360_advanced_measurements_${siteKey}`);
       let parsedM: any[] = [];
       if (measurementsRaw) {
         try {
@@ -355,7 +367,6 @@ export const BillingRMC: React.FC = () => {
 
       setMeasurementItems(parsedM);
 
-      // Take grade from reports automatically
       const reportGrade = resolveGradeFromReports(siteKey, parsedM);
       setMixGrade(reportGrade);
       setUnitRate(fetchRateForGrade(reportGrade));
@@ -421,7 +432,7 @@ export const BillingRMC: React.FC = () => {
     window.addEventListener('concrete360_mix_designs_updated', handleSync);
     window.addEventListener('concrete360_measurement_updated', handleSync);
     window.addEventListener('storage', handleSync);
-    window.addEventListener('focus', handleSync);
+    
     return () => {
       window.removeEventListener('concrete360_site_switched', handleSync);
       window.removeEventListener('concrete360_transit_mixer_updated', handleSync);
@@ -429,7 +440,6 @@ export const BillingRMC: React.FC = () => {
       window.removeEventListener('concrete360_mix_designs_updated', handleSync);
       window.removeEventListener('concrete360_measurement_updated', handleSync);
       window.removeEventListener('storage', handleSync);
-      window.removeEventListener('focus', handleSync);
     };
   }, []);
 
@@ -458,7 +468,6 @@ export const BillingRMC: React.FC = () => {
     }
   };
 
-  // Synchronize mix grade and volume whenever a structural work element is picked
   const handleWorkElementChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const wId = e.target.value;
     setSelectedWorkId(wId);
@@ -490,7 +499,6 @@ export const BillingRMC: React.FC = () => {
         const cap = currentTruck?.capacityM3 || 9;
         setVolumeM3(rem > 0 && rem < cap ? rem : cap);
 
-        // Take concrete grade directly from this report item
         if (item.mixGrade) {
           const gradeCode = item.mixGrade;
           setMixGrade(gradeCode);
@@ -519,7 +527,6 @@ export const BillingRMC: React.FC = () => {
     loadSiteData();
     setEditingInvoiceId(null);
 
-    // Auto-resolve grade from reports on modal open
     const resolvedReportGrade = resolveGradeFromReports(currentSiteKey, measurementItems);
     setMixGrade(resolvedReportGrade);
     setUnitRate(fetchRateForGrade(resolvedReportGrade));
@@ -658,7 +665,7 @@ export const BillingRMC: React.FC = () => {
     printWindow.document.write(`
       <html>
         <head>
-          <title></title>
+          <title>RMC Tax Invoice - ${inv.invoiceNo}</title>
           <style>
             @page {
               size: A4;
@@ -683,10 +690,8 @@ export const BillingRMC: React.FC = () => {
             .totals-box { width: 42%; border: 1px solid #cbd5e1; }
             .totals-row { display: flex; justify-content: space-between; padding: 5px 8px; border-bottom: 1px solid #cbd5e1; font-size: 10px; }
             .totals-row:last-child { border-bottom: none; font-weight: bold; background: #f1f5f9; font-size: 11px; color: #0f172a; }
-            
             .material-breakdown { border: 1px solid #cbd5e1; background: #f8fafc; padding: 10px; font-size: 10px; margin-bottom: 20px; }
             .material-breakdown-title { font-weight: bold; color: #0f172a; margin-bottom: 6px; text-transform: uppercase; font-size: 10px; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; }
-            
             .signatures { display: flex; justify-content: space-between; margin-top: 25px; font-size: 9px; }
             .sig-line { width: 160px; border-top: 1px dashed #64748b; text-align: center; padding-top: 4px; }
           </style>
@@ -701,6 +706,7 @@ export const BillingRMC: React.FC = () => {
             </div>
             <div class="invoice-meta">
               <div style="font-size: 10px; color: #334155;">
+                Invoice No: <strong>${inv.invoiceNo}</strong><br/>
                 Invoice Date: <strong>${formattedPrintDate}</strong><br/>
                 ${linkedReport ? `Linked Report ID: <strong>${linkedReport.id}</strong>` : ''}
               </div>
@@ -848,7 +854,7 @@ export const BillingRMC: React.FC = () => {
         return;
       }
 
-      setInvoices(prev => prev.map(i => i.id === editingInvoiceId ? {
+      const updatedInvoices = invoices.map(i => i.id === editingInvoiceId ? {
         ...i,
         clientName: siteDetails.clientName,
         clientAddress: siteDetails.clientAddress,
@@ -865,12 +871,17 @@ export const BillingRMC: React.FC = () => {
         grandTotal: Math.round(grandTotal),
         date: invoiceDate,
         workElementId: selectedWorkId
-      } : i));
+      } : i);
 
+      try {
+        localStorage.setItem(`concrete360_site_invoices_${currentSiteKey}`, JSON.stringify(updatedInvoices));
+      } catch {}
+
+      setInvoices(updatedInvoices);
       setRemainingVolume(prev => Number((prev - volDiff).toFixed(2)));
     } else {
       const newInvoice: RMCInvoice = {
-        id: `INV-${Math.floor(1000 + Math.random() * 9000)}`,
+        id: `INV-${Date.now()}`,
         invoiceNo: `INV-2026-${Math.floor(100 + Math.random() * 900)}`,
         clientName: siteDetails.clientName,
         clientAddress: siteDetails.clientAddress,
@@ -889,21 +900,33 @@ export const BillingRMC: React.FC = () => {
         workElementId: selectedWorkId
       };
 
-      setInvoices(prev => [newInvoice, ...prev]);
+      const updatedInvoices = [newInvoice, ...invoices];
+      try {
+        localStorage.setItem(`concrete360_site_invoices_${currentSiteKey}`, JSON.stringify(updatedInvoices));
+      } catch {}
+
+      setInvoices(updatedInvoices);
       setRemainingVolume(prev => Number(Math.max(0, prev - numVolume).toFixed(2)));
     }
 
     setIsModalOpen(false);
   };
 
-  const handleDeleteInvoice = (id: string, deletedVol: number) => {
-    if (!canEditOrDelete) {
-      alert('Permission Denied: EMPLOYEE and READ_ONLY roles cannot delete invoices.');
-      return;
-    }
-    if (!window.confirm('Are you sure you want to delete this invoice?')) return;
-    setInvoices(prev => prev.filter(i => i.id !== id));
+  // Safe delete execution without native window.confirm hanging
+  const confirmDeleteExecution = () => {
+    if (!invoiceToDelete) return;
+
+    const targetId = invoiceToDelete.id;
+    const deletedVol = invoiceToDelete.volumeM3;
+    const updated = invoices.filter(i => i.id !== targetId);
+
+    try {
+      localStorage.setItem(`concrete360_site_invoices_${currentSiteKey}`, JSON.stringify(updated));
+    } catch {}
+
+    setInvoices(updated);
     setRemainingVolume(prev => Number((prev + deletedVol).toFixed(2)));
+    setInvoiceToDelete(null);
   };
 
   return (
@@ -1037,7 +1060,10 @@ export const BillingRMC: React.FC = () => {
                               <Edit2 className="w-4 h-4" />
                             </button>
                             <button
-                              onClick={() => handleDeleteInvoice(inv.id, inv.volumeM3)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setInvoiceToDelete(inv);
+                              }}
                               className="text-slate-400 hover:text-rose-400 p-1 transition cursor-pointer"
                               title="Delete Invoice"
                             >
@@ -1061,6 +1087,44 @@ export const BillingRMC: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {/* CONFIRM INVOICE DELETE MODAL */}
+      {invoiceToDelete && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#0b1322] border border-[#22334f] rounded-2xl w-full max-w-sm p-6 shadow-2xl space-y-4 font-mono">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-white uppercase font-sans">Delete Invoice</h4>
+                <p className="text-xs text-slate-400">Reverts billed volume to site balance.</p>
+              </div>
+            </div>
+            
+            <p className="text-xs text-slate-300 bg-[#121d2f] p-3 rounded-xl border border-[#1b273d]">
+              Are you sure you want to delete invoice <span className="text-rose-400 font-bold">{invoiceToDelete.invoiceNo}</span> ({invoiceToDelete.volumeM3} m³)?
+            </p>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setInvoiceToDelete(null)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-white bg-[#121c2d] cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteExecution}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-500 shadow-lg shadow-rose-600/20 cursor-pointer"
+              >
+                Delete Invoice
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Invoice Generation / Edit Modal */}
       {isModalOpen && (
@@ -1089,7 +1153,7 @@ export const BillingRMC: React.FC = () => {
             </div>
 
             <form onSubmit={handleSaveInvoice} className="space-y-4 text-xs">
-              {/* Work Element Selector (Linked directly to Report & Auto-Selects Grade) */}
+              {/* Work Element Selector */}
               <div className="bg-[#070d1a] border border-[#1b273d] p-3 rounded-2xl space-y-1.5">
                 <label className="text-slate-300 font-bold uppercase tracking-wider flex items-center gap-1.5 text-[11px]">
                   <Filter className="w-3.5 h-3.5 text-blue-400" />
@@ -1123,7 +1187,7 @@ export const BillingRMC: React.FC = () => {
                 />
               </div>
 
-              {/* Concrete Mix Grade (Pulled from Report / Mix Design) */}
+              {/* Concrete Mix Grade */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-slate-300 font-bold uppercase tracking-wider">Concrete Mix Grade (From Report)</label>
