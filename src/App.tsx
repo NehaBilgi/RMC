@@ -7,26 +7,36 @@ import { SiteSelectionPage } from './components/pages/SiteSelectionPage';
 import { SessionUser } from './utils/accessControl';
 
 export default function App() {
+  // 1. Persist user in localStorage so closing the window never logs you out
   const [user, setUser] = useState<SessionUser | null>(() => {
     try {
-      const savedUser = sessionStorage.getItem('concrete360_user');
+      const savedUser = localStorage.getItem('concrete360_user') || sessionStorage.getItem('concrete360_user');
       return savedUser ? JSON.parse(savedUser) : null;
     } catch {
       return null;
     }
   });
 
+  // 2. Safely restore active site from localStorage
   const [selectedSite, setSelectedSite] = useState<string | null>(() => {
     try {
-      // Check if any sites actually exist in storage
       const rawSites = localStorage.getItem('concrete360_ongoing_sites') || localStorage.getItem('concrete360_sites');
       const parsedSites = rawSites ? JSON.parse(rawSites) : [];
-      if (!Array.isArray(parsedSites) || parsedSites.length === 0) {
-        sessionStorage.removeItem('concrete360_selected_site');
-        localStorage.removeItem('concrete360_active_site');
-        return null;
+      
+      const savedSelected = localStorage.getItem('concrete360_selected_site') || sessionStorage.getItem('concrete360_selected_site');
+
+      // If a selected site key is saved and sites exist, keep it
+      if (savedSelected && Array.isArray(parsedSites) && parsedSites.length > 0) {
+        return savedSelected;
       }
-      return sessionStorage.getItem('concrete360_selected_site');
+
+      // If sites exist in storage but none is explicitly selected, fall back to the first site
+      if (Array.isArray(parsedSites) && parsedSites.length > 0) {
+        const firstKey = parsedSites[0].name || parsedSites[0].siteName || parsedSites[0].id;
+        return firstKey ? String(firstKey).toUpperCase().trim() : null;
+      }
+
+      return null;
     } catch {
       return null;
     }
@@ -60,21 +70,24 @@ export default function App() {
     } catch {}
   }, [theme]);
 
-  // Persist user in sessionStorage
+  // Persist user in localStorage & sessionStorage
   useEffect(() => {
     try {
       if (user) {
+        localStorage.setItem('concrete360_user', JSON.stringify(user));
         sessionStorage.setItem('concrete360_user', JSON.stringify(user));
       } else {
+        localStorage.removeItem('concrete360_user');
         sessionStorage.removeItem('concrete360_user');
       }
     } catch {}
   }, [user]);
 
-  // Handle active site persistence and empty zero-reset
+  // Persist active site across application restarts
   useEffect(() => {
     try {
       if (selectedSite) {
+        localStorage.setItem('concrete360_selected_site', selectedSite);
         sessionStorage.setItem('concrete360_selected_site', selectedSite);
         localStorage.setItem(
           'concrete360_active_site',
@@ -84,12 +97,6 @@ export default function App() {
             scope: 'G + 3 Floors'
           })
         );
-      } else {
-        sessionStorage.removeItem('concrete360_selected_site');
-        localStorage.removeItem('concrete360_active_site');
-        // Reset measurement metrics back to 0
-        setMeasurementSession(INITIAL_MEASUREMENT_SESSION);
-        localStorage.setItem('concrete360_measurement', JSON.stringify(INITIAL_MEASUREMENT_SESSION));
       }
     } catch {}
   }, [selectedSite]);
@@ -99,8 +106,9 @@ export default function App() {
     const handleSiteSwitch = (e: any) => {
       const newSiteKey = e?.detail || '';
       if (!newSiteKey) {
-        // Site was deleted and list is now empty -> Reset all metrics to 0
+        // Site was deleted and list is completely empty -> zero out
         setSelectedSite(null);
+        localStorage.removeItem('concrete360_selected_site');
         sessionStorage.removeItem('concrete360_selected_site');
         localStorage.removeItem('concrete360_active_site');
         setMeasurementSession(INITIAL_MEASUREMENT_SESSION);
@@ -125,7 +133,9 @@ export default function App() {
 
   // Handle Logout action
   const handleLogout = () => {
+    localStorage.removeItem('concrete360_user');
     sessionStorage.removeItem('concrete360_user');
+    localStorage.removeItem('concrete360_selected_site');
     sessionStorage.removeItem('concrete360_selected_site');
     localStorage.removeItem('concrete360_active_site');
     setUser(null);
@@ -140,6 +150,7 @@ export default function App() {
         <Login
           onLoginSuccess={(loggedInUser) => {
             try {
+              localStorage.setItem('concrete360_user', JSON.stringify(loggedInUser));
               sessionStorage.setItem('concrete360_user', JSON.stringify(loggedInUser));
             } catch {}
             setUser(loggedInUser);
@@ -151,8 +162,7 @@ export default function App() {
     );
   }
 
-  // Step 2: Render Site Selection Page if no site is selected or if site was deleted
-  // This guarantees user MUST register or pick a site before entering any values
+  // Step 2: Render Site Selection Page ONLY if there are no sites or none selected
   if (!selectedSite) {
     return (
       <div className={`app-theme ${themeClass}`}>
