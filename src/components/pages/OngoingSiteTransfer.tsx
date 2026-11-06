@@ -20,35 +20,6 @@ const extractCleanSiteName = (name: string): string => {
   return clean.toUpperCase();
 };
 
-const DEFAULT_SITES = [
-  {
-    id: 'site-1789881335720',
-    siteId: 'S-01',
-    category: 'Road',
-    name: 'MBBILGI',
-    siteName: 'MBBILGI',
-    location: 'AINAPUR',
-    supervisor: 'adminbilgi',
-    clientName: 'MBBILGI',
-    gstin: '29AAACB1234F1Z5',
-    detail: 'Km 0 to 1.6',
-    assignedFleet: 4
-  },
-  {
-    id: 'site-1789881335721',
-    siteId: 'S-02',
-    category: 'Building',
-    name: 'WW',
-    siteName: 'WW (G + 3 Floors)',
-    location: 'WW',
-    supervisor: 'adminbilgi',
-    clientName: 'WW',
-    gstin: '29AAACB1234F1Z8',
-    detail: 'G + 3 Floors',
-    assignedFleet: 4
-  }
-];
-
 export const OngoingSiteTransfer: React.FC = () => {
   const getUserRole = (): 'ADMIN' | 'EMPLOYEE' | 'READ_ONLY' => {
     try {
@@ -97,12 +68,12 @@ export const OngoingSiteTransfer: React.FC = () => {
         }
       }
     } catch {}
-    return DEFAULT_SITES;
+    return [];
   };
 
   const [sites, setSites] = useState<any[]>(loadStoredSites);
 
-  // Sync state changes to storage
+  // Sync state to storage whenever sites state changes
   useEffect(() => {
     try {
       localStorage.setItem('concrete360_sites', JSON.stringify(sites));
@@ -110,9 +81,12 @@ export const OngoingSiteTransfer: React.FC = () => {
     } catch {}
   }, [sites]);
 
-  // Sync events across tabs / windows
+  // Synchronize across events and windows, ignoring self-triggering active_site changes
   useEffect(() => {
-    const handleSync = () => {
+    const handleSync = (e: any) => {
+      if (e?.type === 'storage' && e?.key === 'concrete360_active_site') {
+        return;
+      }
       setCurrentActiveKey(getActiveSiteKey());
       setSites(loadStoredSites());
     };
@@ -190,8 +164,8 @@ export const OngoingSiteTransfer: React.FC = () => {
     };
 
     const updatedSites = [newSite, ...sites];
-    
-    // Save to storage immediately
+
+    // 1. Immediately persist to localStorage first
     try {
       localStorage.setItem('concrete360_sites', JSON.stringify(updatedSites));
       localStorage.setItem('concrete360_ongoing_sites', JSON.stringify(updatedSites));
@@ -202,13 +176,14 @@ export const OngoingSiteTransfer: React.FC = () => {
           id: `c-${Date.now()}`,
           clientName: clientName.trim() || cleanKey,
           site: siteTitle,
-          location: location || 'Mulwad Site',
+          location: location || 'Ainapur Site',
           gstin: gstin.trim().toUpperCase() || '29UNREGISTERED'
         };
         localStorage.setItem('concrete360_clients', JSON.stringify([newClientEntry, ...existingClients]));
       }
     } catch {}
 
+    // 2. Update state and close modal
     setSites(updatedSites);
     setIsAddModalOpen(false);
     setName('');
@@ -216,10 +191,10 @@ export const OngoingSiteTransfer: React.FC = () => {
     setClientName('');
     setGstin('');
 
+    // 3. Make the newly created site active
     handleSelectActiveSite(newSite);
   };
 
-  // Complete Cascade Purge on Site Deletion: Reset all site-linked metrics, trips, invoices, and tests to 0
   const confirmDeleteExecution = () => {
     if (!siteToDelete) return;
 
@@ -228,7 +203,7 @@ export const OngoingSiteTransfer: React.FC = () => {
     const targetSiteId = String(targetSite.siteId || '');
     const targetName = extractCleanSiteName(targetSite.name || targetSite.siteName || '');
 
-    // 1. Remove the site from the list
+    // 1. Filter out deleted site
     const updated = sites.filter(s => {
       const sId = String(s.id || '');
       const sSiteId = String(s.siteId || '');
@@ -241,7 +216,7 @@ export const OngoingSiteTransfer: React.FC = () => {
       return !(matchId || matchSiteId || matchName);
     });
 
-    // 2. Cascade purge all stored metrics and telemetry for this site so everything returns to 0
+    // 2. Cascade purge all telemetry for this site so trips, billing, and tests go to 0
     const keysToPurge = [
       `concrete360_site_invoices_${targetName}`,
       `concrete360_advanced_measurements_${targetName}`,
@@ -264,11 +239,11 @@ export const OngoingSiteTransfer: React.FC = () => {
       localStorage.setItem('concrete360_ongoing_sites', JSON.stringify(updated));
     } catch {}
 
-    // 3. Update state
+    // 3. Update React state
     setSites(updated);
     setSiteToDelete(null);
 
-    // 4. Update or clear active site context
+    // 4. Update or clear active selection
     if (currentActiveKey === targetName || currentActiveKey === targetSiteId || updated.length === 0) {
       if (updated.length > 0) {
         handleSelectActiveSite(updated[0]);
@@ -323,7 +298,7 @@ export const OngoingSiteTransfer: React.FC = () => {
           {canCreate && (
             <button
               onClick={() => setIsAddModalOpen(true)}
-              className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl cursor-pointer"
+              className="mt-4 px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-blue-600/30 cursor-pointer"
             >
               + Add First Site
             </button>
@@ -433,19 +408,19 @@ export const OngoingSiteTransfer: React.FC = () => {
       {/* CONFIRM DELETE MODAL */}
       {siteToDelete && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#0b1322] border border-[#22334f] rounded-2xl w-full max-w-sm p-6 shadow-2xl space-y-4">
+          <div className="bg-[#0b1322] border border-[#22334f] rounded-2xl w-full max-w-sm p-6 shadow-2xl space-y-4 font-mono">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400">
                 <AlertTriangle className="w-5 h-5" />
               </div>
               <div>
-                <h4 className="text-sm font-bold text-white uppercase">Confirm Delete</h4>
+                <h4 className="text-sm font-bold text-white uppercase font-sans">Confirm Delete</h4>
                 <p className="text-xs text-slate-400">Resets trips, billing, and tests to 0.</p>
               </div>
             </div>
             
-            <p className="text-xs font-mono text-slate-300 bg-[#121d2f] p-3 rounded-xl border border-[#1b273d]">
-              Are you sure you want to delete section <span className="text-rose-400 font-bold">{siteToDelete.siteName || siteToDelete.name}</span>? All logged telemetry will be permanently purged.
+            <p className="text-xs text-slate-300 bg-[#121d2f] p-3 rounded-xl border border-[#1b273d]">
+              Are you sure you want to delete section <span className="text-rose-400 font-bold">{siteToDelete.siteName || siteToDelete.name}</span>? All operational data will be purged.
             </p>
 
             <div className="flex justify-end gap-2 pt-2">
@@ -479,7 +454,7 @@ export const OngoingSiteTransfer: React.FC = () => {
                 }`}>
                   {category === 'Road' ? <Signpost className="w-5 h-5" /> : <Building2 className="w-5 h-5" />}
                 </div>
-                <h3 className="text-base font-black text-white uppercase tracking-wider">
+                <h3 className="text-base font-black text-white uppercase tracking-wider font-sans">
                   Add Ongoing {category} Section
                 </h3>
               </div>
