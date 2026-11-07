@@ -38,10 +38,14 @@ export const Header: React.FC<Props> = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [sites, setSites] = useState<SiteItem[]>([]);
-  const [activeSite, setActiveSite] = useState<SiteItem>({
-    id: 'default',
-    name: 'FATIMA COMPLEX',
-    siteName: 'FATIMA COMPLEX (G + 3)'
+  const [activeSite, setActiveSite] = useState<SiteItem>(() => {
+    try {
+      const activeRaw = localStorage.getItem('concrete360_active_site');
+      if (activeRaw) return JSON.parse(activeRaw);
+      const selected = sessionStorage.getItem('concrete360_selected_site');
+      if (selected) return { id: selected, name: selected, siteName: selected };
+    } catch {}
+    return { id: '', name: 'Select Site', siteName: 'Select Site' };
   });
 
   const dropdownRef = useRef<HTMLDivElement | null>(null);
@@ -108,7 +112,7 @@ export const Header: React.FC<Props> = ({
     } catch {}
 
     // Dispatch global event so all active modules instantly re-sync their data top-to-bottom
-    window.dispatchEvent(new Event('concrete360_site_switched'));
+    window.dispatchEvent(new CustomEvent('concrete360_site_switched', { detail: siteTitle }));
     setIsOpen(false);
   };
 
@@ -150,10 +154,9 @@ export const Header: React.FC<Props> = ({
                           setIsOpen(false);
                           onTabChange('ongoing_site');
                         }}
-                        className="w-full text-left px-4 py-3 text-xs text-white hover:bg-slate-900 flex items-center justify-between cursor-pointer"
+                        className="w-full text-left px-4 py-3 text-xs text-slate-400 hover:bg-slate-900 flex items-center justify-between cursor-pointer"
                       >
-                        <span>FATIMA COMPLEX</span>
-                        <Check className="w-4 h-4 text-amber-400" />
+                        <span>+ Add New Site Section</span>
                       </button>
                     ) : (
                       sites.map((s) => {
