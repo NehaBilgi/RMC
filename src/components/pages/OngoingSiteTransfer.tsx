@@ -10,6 +10,7 @@ import {
   ArrowRight,
   AlertTriangle
 } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
 
 const extractCleanSiteName = (name: string): string => {
   if (!name) return '';
@@ -79,8 +80,14 @@ export const OngoingSiteTransfer: React.FC = () => {
     };
 
     window.addEventListener('concrete360_site_switched', handleSync);
+    window.addEventListener('concrete360_cloud_synced', handleSync);
+    window.addEventListener('concrete360_remote_update', handleSync);
+    window.addEventListener('storage', handleSync);
     return () => {
       window.removeEventListener('concrete360_site_switched', handleSync);
+      window.removeEventListener('concrete360_cloud_synced', handleSync);
+      window.removeEventListener('concrete360_remote_update', handleSync);
+      window.removeEventListener('storage', handleSync);
     };
   }, []);
 
@@ -152,6 +159,25 @@ export const OngoingSiteTransfer: React.FC = () => {
     localStorage.setItem('concrete360_sites', JSON.stringify(updated));
     localStorage.setItem('concrete360_ongoing_sites', JSON.stringify(updated));
 
+    if (supabase) {
+      void (supabase as any)
+        .from('sites')
+        .upsert({
+          id: cleanKey,
+          site_id: newSite.siteId,
+          name: cleanKey,
+          site_name: siteTitle,
+          category: category,
+          location: newSite.location,
+          supervisor: supervisor,
+          client_name: newSite.clientName,
+          gstin: newSite.gstin,
+          scope: detail,
+          assigned_fleet: 4,
+          status: 'active'
+        }, { onConflict: 'id' });
+    }
+
     // Update local React state
     setSites(updated);
 
@@ -203,6 +229,13 @@ export const OngoingSiteTransfer: React.FC = () => {
 
     localStorage.setItem('concrete360_sites', JSON.stringify(updated));
     localStorage.setItem('concrete360_ongoing_sites', JSON.stringify(updated));
+
+    if (supabase) {
+      void (supabase as any)
+        .from('sites')
+        .delete()
+        .or(`id.eq.${targetName},name.eq.${targetName}`);
+    }
 
     setSites(updated);
     setSiteToDelete(null);
