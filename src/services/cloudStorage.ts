@@ -169,13 +169,25 @@ class CloudStorageService {
     this.pendingUploads.set(key, value);
     this.setStatus('syncing', 'Saving changes to cloud...');
 
+    // Immediately flush critical collections (sites, users, company profile)
+    const isCritical =
+      key.includes('sites') ||
+      key.includes('users') ||
+      key.includes('company_profile');
+
+    if (isCritical) {
+      if (this.debounceTimer) clearTimeout(this.debounceTimer);
+      void this.flushPendingUploads();
+      return;
+    }
+
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
     }
 
     this.debounceTimer = setTimeout(() => {
-      this.flushPendingUploads();
-    }, 600);
+      void this.flushPendingUploads();
+    }, 400);
   }
 
   private async flushPendingUploads() {
