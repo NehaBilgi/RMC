@@ -28,15 +28,11 @@ export interface Database {
           role: UserRole;
           page_access: string[];
           active: boolean;
-          name: string | null;
-          expires_at: string | null;
           created_at: string;
           updated_at: string;
         };
         Insert: {
           id: string;
-          name?: string | null;
-          expires_at?: string | null;
           company_id: string;
           username: string;
           role?: UserRole;
@@ -47,8 +43,6 @@ export interface Database {
         };
         Update: {
           id?: string;
-          name?: string | null;
-          expires_at?: string | null;
           company_id?: string;
           username?: string;
           role?: UserRole;
@@ -95,12 +89,6 @@ export interface Database {
         };
         Relationships: [];
       };
-      shared_storage: {
-        Row: { company_id: string; key: string; value: string; updated_at: string; updated_by: string | null };
-        Insert: { company_id: string; key: string; value: string; updated_at?: string; updated_by?: string | null };
-        Update: { company_id?: string; key?: string; value?: string; updated_at?: string; updated_by?: string | null };
-        Relationships: [];
-      };
       app_records: {
         Row: {
           id: string;
@@ -137,6 +125,33 @@ export interface Database {
         };
         Relationships: [];
       };
+      app_data_store: {
+        Row: {
+          id: string;
+          company_id: string;
+          storage_key: string;
+          data: Json;
+          updated_by: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          company_id?: string;
+          storage_key: string;
+          data?: Json;
+          updated_by?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          company_id?: string;
+          storage_key?: string;
+          data?: Json;
+          updated_by?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -145,7 +160,6 @@ export interface Database {
       is_super_admin: { Args: Record<PropertyKey, never>; Returns: boolean };
       has_page_access: { Args: { requested_page: string }; Returns: boolean };
       can_access_any_page: { Args: Record<PropertyKey, never>; Returns: boolean };
-      can_write_data: { Args: Record<PropertyKey, never>; Returns: boolean };
     };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
