@@ -14,6 +14,8 @@ import {
   Building2
 } from 'lucide-react';
 import { canCreateRecords, getSessionUser, isAdminUser } from '../../utils/accessControl';
+import { supabase } from '../../lib/supabase';
+import { cloudStorage } from '../../services/cloudStorage';
 
 export interface ConcreteSiteTest {
   id: string;
@@ -109,35 +111,7 @@ export const AtSiteTestsPage: React.FC = () => {
       }
     } catch {}
 
-    return [
-      {
-        id: 'TEST-101',
-        testDate: new Date().toISOString().split('T')[0],
-        siteKey,
-        mixGrade: 'M25',
-        batchVehicleNo: '7196',
-        slumpMm: 120,
-        concreteTempC: 28,
-        cube7DayMpa: 19.5,
-        cube28DayMpa: 28.2,
-        testStatus: 'PASSED',
-        testedBy: 'QC Engineer',
-        remarks: 'Workability & target slump compliant as per IS 1199'
-      },
-      {
-        id: 'TEST-102',
-        testDate: new Date().toISOString().split('T')[0],
-        siteKey,
-        mixGrade: 'M30',
-        batchVehicleNo: '8797',
-        slumpMm: 135,
-        concreteTempC: 29,
-        cube7DayMpa: 22.8,
-        testStatus: 'PENDING',
-        testedBy: 'QC Engineer',
-        remarks: '28-day water curing in progress in lab tank'
-      }
-    ];
+    return [];
   };
 
   const [tests, setTests] = useState<ConcreteSiteTest[]>(() => loadSiteTests(activeSiteInfo.siteName));
@@ -177,6 +151,8 @@ export const AtSiteTestsPage: React.FC = () => {
   }, [currentSiteKey]);
 
   useEffect(() => {
+    void cloudStorage.pullFromCloud();
+
     const handleSync = () => {
       const details = getOngoingSiteDetails();
       setActiveSiteInfo(details);
@@ -184,16 +160,18 @@ export const AtSiteTestsPage: React.FC = () => {
     };
 
     window.addEventListener('concrete360_site_switched', handleSync);
+    window.addEventListener('concrete360_cloud_synced', handleSync);
     window.addEventListener('storage', handleSync);
     window.addEventListener('focus', handleSync);
     return () => {
       window.removeEventListener('concrete360_site_switched', handleSync);
+      window.removeEventListener('concrete360_cloud_synced', handleSync);
       window.removeEventListener('storage', handleSync);
       window.removeEventListener('focus', handleSync);
     };
   }, []);
 
-  const saveToStorage = (updatedList: ConcreteSiteTest[]) => {
+  const saveToStorage = async (updatedList: ConcreteSiteTest[]) => {
     setTests(updatedList);
     try {
       localStorage.setItem(`concrete360_site_tests_${currentSiteKey}`, JSON.stringify(updatedList));
@@ -263,14 +241,19 @@ export const AtSiteTestsPage: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (!canEditOrDelete) return;
     if (!window.confirm('Delete this quality test record?')) return;
     const updated = tests.filter((t) => String(t.id).trim() !== String(id).trim());
     saveToStorage(updated);
+
+    if (supabase) {
+      await (supabase as any).from('site_tests').delete().eq('id', id);
+      await cloudStorage.pullFromCloud();
+    }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canCreate || (editingTestId && !canEditOrDelete)) return;
 
@@ -304,6 +287,25 @@ export const AtSiteTestsPage: React.FC = () => {
       saveToStorage(updated);
     } else {
       saveToStorage([payload, ...tests]);
+    }
+
+    if (supabase) {
+      await (supabase as any).from('site_tests').upsert({
+        id: payload.id,
+        site_name: currentSiteKey,
+        test_date: payload.testDate,
+        mix_grade: payload.mixGrade,
+        batch_vehicle_no: payload.batchVehicleNo,
+        slump_mm: payload.slumpMm,
+        concrete_temp_c: payload.concreteTempC,
+        cube_7day_mpa: payload.cube7DayMpa || null,
+        cube_28day_mpa: payload.cube28DayMpa || null,
+        test_status: payload.testStatus,
+        tested_by: payload.testedBy,
+        remarks: payload.remarks || '',
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'id' });
+      await cloudStorage.pullFromCloud();
     }
 
     setIsModalOpen(false);
