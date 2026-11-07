@@ -1,5 +1,3 @@
-login tsx git
-
 import React, { useState } from 'react';
 import { HardHat, Lock, User, AlertCircle, ArrowRight, Eye, EyeOff, Moon, Sun } from 'lucide-react';
 import { SessionUser } from '../../utils/accessControl';
