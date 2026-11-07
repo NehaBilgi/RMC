@@ -13,6 +13,8 @@ import {
   Lock,
   Eye
 } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
+import { cloudStorage } from '../../services/cloudStorage';
 
 export interface TransitMixerTruck {
   id: string;
@@ -132,40 +134,25 @@ export const TransitMixerPage: React.FC = () => {
         }
       }
 
-      // Default initial mixer
-      const defaultData: TransitMixerTruck[] = [
-        {
-          id: 'TM-7196',
-          vehicleNo: '7196',
-          equipmentType: 'Transit Mixer',
-          capacityM3: 9,
-          driverName: 'Ramesh Patil',
-          driverPhone: '+91 98450 12345',
-          status: 'Active on Site',
-          ownership: 'Company',
-          isActive: true,
-          notes: 'Standard 9 m³ transit drum',
-          siteKey
-        }
-      ];
-      setMixers(defaultData);
-      localStorage.setItem(siteSpecificKey, JSON.stringify(defaultData));
-      localStorage.setItem(globalKey, JSON.stringify(defaultData));
+      setMixers([]);
     } catch {
       setMixers([]);
     }
   };
 
   useEffect(() => {
+    void cloudStorage.pullFromCloud();
     loadMixers();
 
     const handleSync = () => loadMixers();
     window.addEventListener('concrete360_site_switched', handleSync);
+    window.addEventListener('concrete360_cloud_synced', handleSync);
     window.addEventListener('storage', handleSync);
     window.addEventListener('focus', handleSync);
 
     return () => {
       window.removeEventListener('concrete360_site_switched', handleSync);
+      window.removeEventListener('concrete360_cloud_synced', handleSync);
       window.removeEventListener('storage', handleSync);
       window.removeEventListener('focus', handleSync);
     };
@@ -225,7 +212,7 @@ export const TransitMixerPage: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (!canEditOrDelete) {
       alert('Permission Denied: Only ADMIN accounts can delete vehicles.');
       return;
@@ -233,10 +220,15 @@ export const TransitMixerPage: React.FC = () => {
     if (window.confirm('Are you sure you want to remove this Transit Mixer from the site fleet?')) {
       const updated = mixers.filter(m => m.id !== id);
       saveToStorage(updated);
+
+      if (supabase) {
+        await (supabase as any).from('transit_mixers').delete().eq('id', id);
+        await cloudStorage.pullFromCloud();
+      }
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canCreate) return;
 
@@ -260,6 +252,27 @@ export const TransitMixerPage: React.FC = () => {
         siteKey: currentSiteKey
       } : m);
       saveToStorage(updated);
+
+      if (supabase) {
+        const target = updated.find(m => m.id === editingMixerId);
+        if (target) {
+          await (supabase as any).from('transit_mixers').upsert({
+            id: target.id,
+            vehicle_no: target.vehicleNo,
+            equipment_type: target.equipmentType || 'Transit Mixer (TM)',
+            capacity_m3: Number(target.capacityM3) || 6,
+            driver_name: target.driverName || '',
+            driver_phone: target.driverPhone || '',
+            status: target.status,
+            ownership: target.ownership,
+            is_active: target.isActive,
+            site_key: currentSiteKey,
+            notes: target.notes || '',
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'id' });
+          await cloudStorage.pullFromCloud();
+        }
+      }
     } else {
       const newMixer: TransitMixerTruck = {
         id: `TM-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`,
@@ -275,6 +288,24 @@ export const TransitMixerPage: React.FC = () => {
         siteKey: currentSiteKey
       };
       saveToStorage([newMixer, ...mixers]);
+
+      if (supabase) {
+        await (supabase as any).from('transit_mixers').upsert({
+          id: newMixer.id,
+          vehicle_no: newMixer.vehicleNo,
+          equipment_type: newMixer.equipmentType || 'Transit Mixer (TM)',
+          capacity_m3: Number(newMixer.capacityM3) || 6,
+          driver_name: newMixer.driverName || '',
+          driver_phone: newMixer.driverPhone || '',
+          status: newMixer.status,
+          ownership: newMixer.ownership,
+          is_active: newMixer.isActive,
+          site_key: currentSiteKey,
+          notes: newMixer.notes || '',
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'id' });
+        await cloudStorage.pullFromCloud();
+      }
     }
     setIsModalOpen(false);
   };
