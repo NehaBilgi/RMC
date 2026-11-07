@@ -7,7 +7,9 @@ import { installCloudStorage } from './lib/cloudStorage';
 // Must run before <App /> so every page save is sent to Supabase.
 installCloudStorage();
 
-createRoot(document.getElementById('root')!).render(
+const rootElement = document.getElementById('root');
+if (!rootElement) throw new Error('App root element is missing.');
+createRoot(rootElement).render(
   <StrictMode>
     <App />
   </StrictMode>,
