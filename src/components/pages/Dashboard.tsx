@@ -150,6 +150,7 @@ export const Dashboard: React.FC<Props> = ({ onNavigate }) => {
 
     const handleSync = () => loadDashboardTelemetry();
     window.addEventListener('concrete360_site_switched', handleSync);
+    window.addEventListener('concrete360_cloud_synced', handleSync);
     window.addEventListener('concrete360_transit_mixer_updated', handleSync);
     window.addEventListener('concrete360_trips_updated', handleSync);
     window.addEventListener('concrete360_measurement_updated', handleSync);
@@ -159,6 +160,7 @@ export const Dashboard: React.FC<Props> = ({ onNavigate }) => {
 
     return () => {
       window.removeEventListener('concrete360_site_switched', handleSync);
+      window.removeEventListener('concrete360_cloud_synced', handleSync);
       window.removeEventListener('concrete360_transit_mixer_updated', handleSync);
       window.removeEventListener('concrete360_trips_updated', handleSync);
       window.removeEventListener('concrete360_measurement_updated', handleSync);
