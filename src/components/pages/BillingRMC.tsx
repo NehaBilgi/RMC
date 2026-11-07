@@ -12,6 +12,8 @@ import {
   Eye, 
   AlertTriangle 
 } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
+import { cloudStorage } from '../../services/cloudStorage';
 
 interface RMCInvoice {
   id: string;
@@ -423,23 +425,28 @@ export const BillingRMC: React.FC = () => {
   };
 
   useEffect(() => {
+    void cloudStorage.pullFromCloud();
     loadSiteData();
 
     const handleSync = () => loadSiteData();
     window.addEventListener('concrete360_site_switched', handleSync);
+    window.addEventListener('concrete360_cloud_synced', handleSync);
     window.addEventListener('concrete360_transit_mixer_updated', handleSync);
     window.addEventListener('concrete360_fleet_updated', handleSync);
     window.addEventListener('concrete360_mix_designs_updated', handleSync);
     window.addEventListener('concrete360_measurement_updated', handleSync);
     window.addEventListener('storage', handleSync);
+    window.addEventListener('focus', handleSync);
     
     return () => {
       window.removeEventListener('concrete360_site_switched', handleSync);
+      window.removeEventListener('concrete360_cloud_synced', handleSync);
       window.removeEventListener('concrete360_transit_mixer_updated', handleSync);
       window.removeEventListener('concrete360_fleet_updated', handleSync);
       window.removeEventListener('concrete360_mix_designs_updated', handleSync);
       window.removeEventListener('concrete360_measurement_updated', handleSync);
       window.removeEventListener('storage', handleSync);
+      window.removeEventListener('focus', handleSync);
     };
   }, []);
 
@@ -877,6 +884,37 @@ export const BillingRMC: React.FC = () => {
         localStorage.setItem(`concrete360_site_invoices_${currentSiteKey}`, JSON.stringify(updatedInvoices));
       } catch {}
 
+      if (supabase) {
+        const targetInv = updatedInvoices.find(i => i.id === editingInvoiceId);
+        if (targetInv) {
+          const basic = Number((targetInv.volumeM3 * targetInv.unitRate).toFixed(2));
+          const cgst = targetInv.applyGst ? Number((basic * 0.09).toFixed(2)) : 0;
+          const sgst = targetInv.applyGst ? Number((basic * 0.09).toFixed(2)) : 0;
+          const totalTax = cgst + sgst;
+          void (supabase as any).from('invoices').upsert({
+            id: targetInv.id,
+            site_name: currentSiteKey,
+            invoice_no: targetInv.invoiceNo,
+            date: targetInv.date,
+            customer_name: targetInv.clientName,
+            customer_gst: targetInv.clientGstin,
+            mix_grade: targetInv.mixGrade,
+            volume_m3: targetInv.volumeM3,
+            rate_per_m3: targetInv.unitRate,
+            basic_amount: basic,
+            cgst_amount: cgst,
+            sgst_amount: sgst,
+            total_tax: totalTax,
+            total_amount: targetInv.grandTotal,
+            vehicle_no: targetInv.vehicleNo,
+            payment_mode: 'PENDING',
+            payment_status: 'UNPAID',
+            raw_data: targetInv,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'id' }).then(() => void cloudStorage.pullFromCloud());
+        }
+      }
+
       setInvoices(updatedInvoices);
       setRemainingVolume(prev => Number((prev - volDiff).toFixed(2)));
     } else {
@@ -905,6 +943,34 @@ export const BillingRMC: React.FC = () => {
         localStorage.setItem(`concrete360_site_invoices_${currentSiteKey}`, JSON.stringify(updatedInvoices));
       } catch {}
 
+      if (supabase) {
+        const basic = Number((newInvoice.volumeM3 * newInvoice.unitRate).toFixed(2));
+        const cgst = newInvoice.applyGst ? Number((basic * 0.09).toFixed(2)) : 0;
+        const sgst = newInvoice.applyGst ? Number((basic * 0.09).toFixed(2)) : 0;
+        const totalTax = cgst + sgst;
+        void (supabase as any).from('invoices').upsert({
+          id: newInvoice.id,
+          site_name: currentSiteKey,
+          invoice_no: newInvoice.invoiceNo,
+          date: newInvoice.date,
+          customer_name: newInvoice.clientName,
+          customer_gst: newInvoice.clientGstin,
+          mix_grade: newInvoice.mixGrade,
+          volume_m3: newInvoice.volumeM3,
+          rate_per_m3: newInvoice.unitRate,
+          basic_amount: basic,
+          cgst_amount: cgst,
+          sgst_amount: sgst,
+          total_tax: totalTax,
+          total_amount: newInvoice.grandTotal,
+          vehicle_no: newInvoice.vehicleNo,
+          payment_mode: 'PENDING',
+          payment_status: 'UNPAID',
+          raw_data: newInvoice,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'id' }).then(() => void cloudStorage.pullFromCloud());
+      }
+
       setInvoices(updatedInvoices);
       setRemainingVolume(prev => Number(Math.max(0, prev - numVolume).toFixed(2)));
     }
@@ -913,7 +979,7 @@ export const BillingRMC: React.FC = () => {
   };
 
   // Safe delete execution without native window.confirm hanging
-  const confirmDeleteExecution = () => {
+  const confirmDeleteExecution = async () => {
     if (!invoiceToDelete) return;
 
     const targetId = invoiceToDelete.id;
@@ -923,6 +989,11 @@ export const BillingRMC: React.FC = () => {
     try {
       localStorage.setItem(`concrete360_site_invoices_${currentSiteKey}`, JSON.stringify(updated));
     } catch {}
+
+    if (supabase) {
+      await (supabase as any).from('invoices').delete().eq('id', targetId);
+      await cloudStorage.pullFromCloud();
+    }
 
     setInvoices(updated);
     setRemainingVolume(prev => Number((prev + deletedVol).toFixed(2)));
