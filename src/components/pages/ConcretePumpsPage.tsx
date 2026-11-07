@@ -51,12 +51,7 @@ export const ConcretePumpsPage: React.FC = () => {
           return;
         }
       }
-      // Default initial items
-      setEquipmentList([
-        { id: 'eq-1', vehicleNo: 'KA-01-TM-1234', equipmentType: 'Transit Mixer', rent: 0 },
-        { id: 'eq-2', vehicleNo: 'KA-02-BP-5678', equipmentType: 'Boom Pump', rent: 40000 },
-        { id: 'eq-3', vehicleNo: 'KA-03-SP-9012', equipmentType: 'Stationary Pump', rent: 5000 }
-      ]);
+      setEquipmentList([]);
     } catch {
       setEquipmentList([]);
     }
@@ -66,9 +61,11 @@ export const ConcretePumpsPage: React.FC = () => {
     loadData();
     const handleSync = () => loadData();
     window.addEventListener('concrete360_site_switched', handleSync);
+    window.addEventListener('concrete360_cloud_synced', handleSync);
     window.addEventListener('storage', handleSync);
     return () => {
       window.removeEventListener('concrete360_site_switched', handleSync);
+      window.removeEventListener('concrete360_cloud_synced', handleSync);
       window.removeEventListener('storage', handleSync);
     };
   }, []);
