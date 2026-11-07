@@ -350,7 +350,6 @@ export const Sidebar: React.FC<Props> = ({
               onClick={async () => {
                 setIsManualSyncing(true);
                 try {
-                  await cloudStorage.pushAllLocalToCloud();
                   await cloudStorage.pullFromCloud();
                 } finally {
                   setIsManualSyncing(false);
