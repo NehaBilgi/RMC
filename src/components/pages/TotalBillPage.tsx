@@ -10,6 +10,8 @@ import {
   Eye, 
   FlaskConical
 } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
+import { cloudStorage } from '../../services/cloudStorage';
 
 interface LedgerItem {
   id: string;
@@ -48,7 +50,7 @@ export interface ConcreteSiteTest {
 }
 
 const extractCleanSiteName = (name: string): string => {
-  if (!name) return 'MBBILGI';
+  if (!name) return '';
   let clean = String(name).trim();
   if (clean.includes('(')) {
     clean = clean.split('(')[0].trim();
@@ -116,7 +118,7 @@ export const TotalBillPage: React.FC = () => {
       const selected = sessionStorage.getItem('concrete360_selected_site');
       if (selected) return extractCleanSiteName(selected);
     } catch {}
-    return 'MBBILGI';
+    return '';
   };
 
   const [currentSiteKey, setCurrentSiteKey] = useState<string>(getActiveSiteKey());
@@ -184,22 +186,7 @@ export const TotalBillPage: React.FC = () => {
         const parsedT = JSON.parse(savedTests);
         if (Array.isArray(parsedT)) setSiteTests(parsedT);
       } else {
-        setSiteTests([
-          {
-            id: 'TEST-101',
-            testDate: new Date().toISOString().split('T')[0],
-            siteKey,
-            mixGrade: 'M25',
-            batchVehicleNo: '7196',
-            slumpMm: 120,
-            concreteTempC: 28,
-            cube7DayMpa: 19.5,
-            cube28DayMpa: 28.2,
-            testStatus: 'PASSED',
-            testedBy: 'QC Engineer',
-            remarks: 'Workability & target slump compliant as per IS 1199'
-          }
-        ]);
+        setSiteTests([]);
       }
 
       // 4. Vehicles
@@ -215,15 +202,18 @@ export const TotalBillPage: React.FC = () => {
   };
 
   useEffect(() => {
+    void cloudStorage.pullFromCloud();
     loadData();
     const handleSync = () => loadData();
     window.addEventListener('concrete360_site_switched', handleSync);
+    window.addEventListener('concrete360_cloud_synced', handleSync);
     window.addEventListener('concrete360_transit_mixer_updated', handleSync);
     window.addEventListener('concrete360_site_tests_updated', handleSync);
     window.addEventListener('storage', handleSync);
     window.addEventListener('focus', handleSync);
     return () => {
       window.removeEventListener('concrete360_site_switched', handleSync);
+      window.removeEventListener('concrete360_cloud_synced', handleSync);
       window.removeEventListener('concrete360_transit_mixer_updated', handleSync);
       window.removeEventListener('concrete360_site_tests_updated', handleSync);
       window.removeEventListener('storage', handleSync);
@@ -277,7 +267,7 @@ export const TotalBillPage: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const handleDeleteHaulageTrip = (item: LedgerItem) => {
+  const handleDeleteHaulageTrip = async (item: LedgerItem) => {
     if (!canEditOrDelete) {
       alert('Permission Denied: Only ADMIN accounts can delete records.');
       return;
@@ -286,14 +276,21 @@ export const TotalBillPage: React.FC = () => {
     if (!window.confirm(`Are you sure you want to delete rental record for vehicle ${item.vehicleNo}?`)) return;
 
     try {
+      const targetId = item.id || item.originalData?.id;
       const savedTrips = JSON.parse(localStorage.getItem(`concrete360_site_haulage_trips_${currentSiteKey}`) || '[]');
       const updatedTrips = savedTrips.filter((t: any) => t.id !== item.id && t.id !== item.originalData?.id);
       localStorage.setItem(`concrete360_site_haulage_trips_${currentSiteKey}`, JSON.stringify(updatedTrips));
+      
+      if (supabase && targetId) {
+        await (supabase as any).from('haulage_trips').delete().eq('id', targetId);
+        await cloudStorage.pullFromCloud();
+      }
+
       loadData();
     } catch {}
   };
 
-  const handleSaveTripRecord = () => {
+  const handleSaveTripRecord = async () => {
     if (!canCreate) return;
     if (editingTripId && !canEditOrDelete) {
       alert('Permission Denied: Only ADMIN accounts can modify records.');
@@ -305,10 +302,11 @@ export const TotalBillPage: React.FC = () => {
     const savedTrips = JSON.parse(localStorage.getItem(`concrete360_site_haulage_trips_${currentSiteKey}`) || '[]');
 
     let updatedTrips;
+    let targetTrip: any;
     if (editingTripId) {
       updatedTrips = savedTrips.map((t: any) => {
         if (t.id === editingTripId) {
-          return {
+          targetTrip = {
             ...t,
             date: tripData.trip_date,
             vehicle: selectedVehicleNo,
@@ -316,11 +314,12 @@ export const TotalBillPage: React.FC = () => {
             rentAmount: tripData.rent,
             totalAmount: totalAmount
           };
+          return targetTrip;
         }
         return t;
       });
     } else {
-      const newTrip = {
+      targetTrip = {
         id: 'TRIP-' + Date.now(),
         date: tripData.trip_date,
         vehicle: selectedVehicleNo,
@@ -329,10 +328,28 @@ export const TotalBillPage: React.FC = () => {
         rentAmount: tripData.rent,
         totalAmount: totalAmount
       };
-      updatedTrips = [newTrip, ...savedTrips];
+      updatedTrips = [targetTrip, ...savedTrips];
     }
 
     localStorage.setItem(`concrete360_site_haulage_trips_${currentSiteKey}`, JSON.stringify(updatedTrips));
+
+    if (supabase && targetTrip) {
+      await (supabase as any).from('haulage_trips').upsert({
+        id: targetTrip.id,
+        site_name: currentSiteKey,
+        trip_date: targetTrip.date,
+        vehicle_number: targetTrip.vehicle,
+        material_name: targetTrip.pumpType || 'Pump Rental',
+        purchased_from: 'RENTAL FLEET',
+        day_trips: 1,
+        brass_per_trip: 0,
+        rate_per_brass: targetTrip.rentAmount,
+        total_amount: targetTrip.totalAmount,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'id' });
+      await cloudStorage.pullFromCloud();
+    }
+
     loadData();
     setIsModalOpen(false);
   };
