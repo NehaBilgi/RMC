@@ -194,11 +194,13 @@ export const SiteMaterialReportModule: React.FC = () => {
     const handleMixUpdate = () => syncMixDesigns();
 
     window.addEventListener('concrete360_site_switched', handleSiteSwitch);
+    window.addEventListener('concrete360_cloud_synced', handleSiteSwitch);
     window.addEventListener('concrete360_mix_designs_updated', handleMixUpdate);
     window.addEventListener('storage', handleSiteSwitch);
     window.addEventListener('focus', handleSiteSwitch);
     return () => {
       window.removeEventListener('concrete360_site_switched', handleSiteSwitch);
+      window.removeEventListener('concrete360_cloud_synced', handleSiteSwitch);
       window.removeEventListener('concrete360_mix_designs_updated', handleMixUpdate);
       window.removeEventListener('storage', handleSiteSwitch);
       window.removeEventListener('focus', handleSiteSwitch);
