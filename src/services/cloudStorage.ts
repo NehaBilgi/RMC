@@ -41,57 +41,45 @@ class CloudStorageService {
     }
   }
 
-  /**
-   * Initializes cloud synchronization:
-   * 1. Intercepts localStorage writes to auto-persist to Supabase
-   * 2. Pulls remote state into localStorage
-   * 3. Sets up realtime listener for collaborative cross-device updates
-   */
   public async init() {
     if (this.initialized || typeof window === 'undefined') return;
     this.initialized = true;
 
-    // 1. Install storage interceptor for concrete360_* keys
     this.installInterceptor();
 
-    if (!supabase || !isSupabaseConfigured) {
+    const client = supabase;
+    if (!client || !isSupabaseConfigured) {
       this.setStatus('offline', 'Supabase credentials not configured in environment variables');
       return;
     }
 
-    // 2. Fetch active company if signed in
     try {
-      const { data: authData } = await supabase.auth.getUser();
+      const { data: authData } = await client.auth.getUser();
       if (authData?.user) {
-        const { data: profile } = await supabase
+        const { data: profile } = await (client as any)
           .from('profiles')
           .select('company_id')
           .eq('id', authData.user.id)
-          .single();
+          .maybeSingle();
         if (profile?.company_id) {
           this.currentCompanyId = profile.company_id;
         }
       }
-    } catch (e) {
+    } catch {
       console.warn('[CloudStorage] Profile company lookup skipped, using default company');
     }
 
-    // 3. Pull latest data from Supabase
     await this.pullFromCloud();
-
-    // 4. Listen for realtime cloud updates
     this.subscribeRealtime();
   }
 
-  /**
-   * Reads all data keys from Supabase app_data_store and synchronizes into localStorage
-   */
   public async pullFromCloud() {
-    if (!supabase || !isSupabaseConfigured) return;
+    const client = supabase;
+    if (!client || !isSupabaseConfigured) return;
 
     this.setStatus('syncing', 'Pulling cloud data...');
     try {
-      const { data, error } = await supabase
+      const { data, error } = await (client as any)
         .from('app_data_store')
         .select('storage_key, data')
         .eq('company_id', this.currentCompanyId);
@@ -102,10 +90,10 @@ class CloudStorageService {
         return;
       }
 
-      if (data && data.length > 0) {
+      if (data && Array.isArray(data) && data.length > 0) {
         this.isApplyingRemoteUpdate = true;
         try {
-          data.forEach((row) => {
+          data.forEach((row: any) => {
             if (row.storage_key) {
               const serialized = typeof row.data === 'string' ? row.data : JSON.stringify(row.data);
               window.localStorage.setItem(row.storage_key, serialized);
@@ -115,7 +103,6 @@ class CloudStorageService {
           this.isApplyingRemoteUpdate = false;
         }
 
-        // Notify UI to re-render with new cloud data
         window.dispatchEvent(new CustomEvent('concrete360_cloud_synced', { detail: { count: data.length } }));
         window.dispatchEvent(new CustomEvent('concrete360_site_switched'));
         window.dispatchEvent(new Event('concrete360_user_updated'));
@@ -128,11 +115,9 @@ class CloudStorageService {
     }
   }
 
-  /**
-   * Pushes all local concrete360 keys to Supabase (useful for initial migration or offline recovery)
-   */
   public async pushAllLocalToCloud() {
-    if (!supabase || !isSupabaseConfigured) return;
+    const client = supabase;
+    if (!client || !isSupabaseConfigured) return;
 
     this.setStatus('syncing', 'Uploading local data to Supabase...');
     try {
@@ -157,7 +142,7 @@ class CloudStorageService {
       }
 
       if (payload.length > 0) {
-        const { error } = await supabase
+        const { error } = await (client as any)
           .from('app_data_store')
           .upsert(payload, { onConflict: 'company_id, storage_key' });
 
@@ -171,12 +156,10 @@ class CloudStorageService {
     }
   }
 
-  /**
-   * Schedules a debounced batch upload to Supabase
-   */
   public queueCloudSave(key: string, value: any) {
     if (this.isApplyingRemoteUpdate) return;
-    if (!supabase || !isSupabaseConfigured) return;
+    const client = supabase;
+    if (!client || !isSupabaseConfigured) return;
 
     this.pendingUploads.set(key, value);
     this.setStatus('syncing', 'Saving changes to cloud...');
@@ -187,11 +170,12 @@ class CloudStorageService {
 
     this.debounceTimer = setTimeout(() => {
       this.flushPendingUploads();
-    }, 600); // 600ms debounce
+    }, 600);
   }
 
   private async flushPendingUploads() {
-    if (this.pendingUploads.size === 0 || !supabase) return;
+    const client = supabase;
+    if (this.pendingUploads.size === 0 || !client) return;
 
     const itemsToSave = Array.from(this.pendingUploads.entries()).map(([key, val]) => ({
       company_id: this.currentCompanyId,
@@ -203,7 +187,7 @@ class CloudStorageService {
     this.pendingUploads.clear();
 
     try {
-      const { error } = await supabase
+      const { error } = await (client as any)
         .from('app_data_store')
         .upsert(itemsToSave, { onConflict: 'company_id, storage_key' });
 
@@ -219,10 +203,6 @@ class CloudStorageService {
     }
   }
 
-  /**
-   * Intercepts window.localStorage.setItem and removeItem so ANY component
-   * automatically uploads to Supabase without requiring code rewrite!
-   */
   private installInterceptor() {
     const originalSetItem = window.localStorage.setItem.bind(window.localStorage);
     const originalRemoveItem = window.localStorage.removeItem.bind(window.localStorage);
@@ -230,7 +210,6 @@ class CloudStorageService {
     window.localStorage.setItem = (key: string, value: string) => {
       originalSetItem(key, value);
 
-      // Only sync application data keys, skip themes and ephemeral UI state
       if (
         key.startsWith('concrete360_') &&
         !key.includes('theme') &&
@@ -249,14 +228,15 @@ class CloudStorageService {
     window.localStorage.removeItem = (key: string) => {
       originalRemoveItem(key);
 
+      const client = supabase;
       if (
         key.startsWith('concrete360_') &&
         !key.includes('theme') &&
         !key.includes('selected_site') &&
         !this.isApplyingRemoteUpdate &&
-        supabase
+        client
       ) {
-        void supabase
+        void (client as any)
           .from('app_data_store')
           .delete()
           .eq('company_id', this.currentCompanyId)
@@ -265,14 +245,12 @@ class CloudStorageService {
     };
   }
 
-  /**
-   * Realtime subscription for cross-device live collaboration
-   */
   private subscribeRealtime() {
-    if (!supabase) return;
+    const client = supabase;
+    if (!client) return;
 
     try {
-      supabase
+      client
         .channel('app_data_store_realtime')
         .on(
           'postgres_changes',
@@ -282,7 +260,7 @@ class CloudStorageService {
             table: 'app_data_store',
             filter: `company_id=eq.${this.currentCompanyId}`
           },
-          (payload) => {
+          (payload: any) => {
             if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
               const newRow = payload.new as { storage_key?: string; data?: any };
               if (newRow?.storage_key) {
