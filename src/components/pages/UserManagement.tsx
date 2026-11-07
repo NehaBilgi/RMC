@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, Users, CalendarClock, Shield, X } from 'lucide-react';
 import { isAdminUser, PAGE_ACCESS_OPTIONS } from '../../utils/accessControl';
+import { cloudStorage } from '../../services/cloudStorage';
 
 const ROLES = ['ADMIN', 'EMPLOYEE', 'READ_ONLY'];
 const ALL_PAGE_IDS: string[] = PAGE_ACCESS_OPTIONS.flatMap(section => section.pages.map(page => page.id));
@@ -92,6 +93,7 @@ function UserForm({
         }
       } catch {}
       window.dispatchEvent(new Event('concrete360_user_updated'));
+      void cloudStorage.pullFromCloud();
       onSave(payload);
     } catch (err: any) {
       alert(err.message || 'Error saving user');
@@ -232,11 +234,29 @@ export function UserManagement() {
     } catch {}
   };
 
+  useEffect(() => {
+    void cloudStorage.pullFromCloud();
+    load();
+
+    window.addEventListener('concrete360_cloud_synced', load);
+    window.addEventListener('concrete360_user_updated', load);
+    window.addEventListener('storage', load);
+    window.addEventListener('focus', load);
+    return () => {
+      window.removeEventListener('concrete360_cloud_synced', load);
+      window.removeEventListener('concrete360_user_updated', load);
+      window.removeEventListener('storage', load);
+      window.removeEventListener('focus', load);
+    };
+  }, []);
+
   const del = (id: string) => {
     if (!confirm('Delete this user?')) return;
     const updated = users.filter(u => u.id !== id);
     setUsers(updated);
     localStorage.setItem('concrete360_users', JSON.stringify(updated));
+    window.dispatchEvent(new Event('concrete360_user_updated'));
+    void cloudStorage.pullFromCloud();
   };
 
   const close = () => { setShowForm(false); setEditing(null); };
