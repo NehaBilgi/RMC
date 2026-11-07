@@ -187,10 +187,12 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
     };
 
     window.addEventListener('concrete360_site_switched', handleSiteSwitch);
+    window.addEventListener('concrete360_cloud_synced', handleSiteSwitch);
     window.addEventListener('storage', handleSiteSwitch);
     window.addEventListener('focus', handleSiteSwitch);
     return () => {
       window.removeEventListener('concrete360_site_switched', handleSiteSwitch);
+      window.removeEventListener('concrete360_cloud_synced', handleSiteSwitch);
       window.removeEventListener('storage', handleSiteSwitch);
       window.removeEventListener('focus', handleSiteSwitch);
     };
