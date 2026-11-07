@@ -11,6 +11,7 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { cloudStorage } from '../../services/cloudStorage';
 
 const extractCleanSiteName = (name: string): string => {
   if (!name) return '';
@@ -66,7 +67,9 @@ export const OngoingSiteTransfer: React.FC = () => {
 
   // Re-read storage on window focus or explicit site switch
   useEffect(() => {
-    const handleSync = (e?: any) => {
+    void cloudStorage.pullFromCloud();
+
+    const handleSync = () => {
       const stored = getSitesFromStorage();
       setSites(stored);
 
@@ -126,7 +129,7 @@ export const OngoingSiteTransfer: React.FC = () => {
     window.dispatchEvent(new CustomEvent('concrete360_site_switched', { detail: cleanSiteKey }));
   };
 
-  const handleAddSite = (e: React.FormEvent) => {
+  const handleAddSite = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canCreate) {
       alert('Permission Denied: Read-Only accounts cannot create ongoing sites.');
@@ -140,7 +143,7 @@ export const OngoingSiteTransfer: React.FC = () => {
     const siteTitle = category === 'Building' ? `${cleanKey} (${detail})` : cleanKey;
 
     const newSite = {
-      id: `site-${Date.now()}`,
+      id: cleanKey,
       siteId: `S-0${currentList.length + 1}`,
       category,
       name: cleanKey,
@@ -153,14 +156,14 @@ export const OngoingSiteTransfer: React.FC = () => {
       assignedFleet: 4
     };
 
-    const updated = [newSite, ...currentList];
+    const updated = [newSite, ...currentList.filter(s => extractCleanSiteName(s.name || s.siteName) !== cleanKey)];
 
     // Write to both keys synchronously
     localStorage.setItem('concrete360_sites', JSON.stringify(updated));
     localStorage.setItem('concrete360_ongoing_sites', JSON.stringify(updated));
 
     if (supabase) {
-      void (supabase as any)
+      await (supabase as any)
         .from('sites')
         .upsert({
           id: cleanKey,
@@ -174,8 +177,10 @@ export const OngoingSiteTransfer: React.FC = () => {
           gstin: newSite.gstin,
           scope: detail,
           assigned_fleet: 4,
-          status: 'active'
+          status: 'active',
+          updated_at: new Date().toISOString()
         }, { onConflict: 'id' });
+      await cloudStorage.pullFromCloud();
     }
 
     // Update local React state
@@ -192,13 +197,13 @@ export const OngoingSiteTransfer: React.FC = () => {
     handleSelectActiveSite(newSite);
   };
 
-  const confirmDeleteExecution = () => {
+  const confirmDeleteExecution = async () => {
     if (!siteToDelete) return;
 
     const targetSite = siteToDelete;
     const targetId = String(targetSite.id || '');
     const targetSiteId = String(targetSite.siteId || '');
-    const targetName = extractCleanSiteName(targetSite.name || targetSite.siteName || '');
+    const targetName = extractCleanSiteName(targetSite.name || targetSite.siteName || targetId);
 
     const currentList = getSitesFromStorage();
     const updated = currentList.filter(s => {
@@ -231,10 +236,16 @@ export const OngoingSiteTransfer: React.FC = () => {
     localStorage.setItem('concrete360_ongoing_sites', JSON.stringify(updated));
 
     if (supabase) {
-      void (supabase as any)
+      await (supabase as any)
         .from('sites')
         .delete()
-        .or(`id.eq.${targetName},name.eq.${targetName}`);
+        .or(`id.eq.${targetName},name.eq.${targetName},id.eq.${targetId}`);
+
+      await (supabase as any).from('invoices').delete().eq('site_name', targetName);
+      await (supabase as any).from('haulage_trips').delete().eq('site_name', targetName);
+      await (supabase as any).from('site_tests').delete().eq('site_name', targetName);
+
+      await cloudStorage.pullFromCloud();
     }
 
     setSites(updated);
