@@ -84,6 +84,26 @@ export const MaterialCategory: React.FC = () => {
     } catch {}
   }, [rawMaterials]);
 
+  useEffect(() => {
+    const handleSync = () => {
+      try {
+        const savedG = localStorage.getItem('concrete360_grades');
+        if (savedG) setConcreteGrades(JSON.parse(savedG));
+        const savedR = localStorage.getItem('concrete360_raw_materials');
+        if (savedR) setRawMaterials(JSON.parse(savedR));
+      } catch {}
+    };
+
+    window.addEventListener('concrete360_cloud_synced', handleSync);
+    window.addEventListener('storage', handleSync);
+    window.addEventListener('focus', handleSync);
+    return () => {
+      window.removeEventListener('concrete360_cloud_synced', handleSync);
+      window.removeEventListener('storage', handleSync);
+      window.removeEventListener('focus', handleSync);
+    };
+  }, []);
+
   // Modal States
   const [isConcreteModalOpen, setIsConcreteModalOpen] = useState(false);
   const [isRawModalOpen, setIsRawModalOpen] = useState(false);
