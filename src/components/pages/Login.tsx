@@ -1,9 +1,8 @@
+login tsx git
+
 import React, { useState } from 'react';
 import { HardHat, Lock, User, AlertCircle, ArrowRight, Eye, EyeOff, Moon, Sun } from 'lucide-react';
 import { SessionUser } from '../../utils/accessControl';
-import { supabase } from '../../lib/supabase';
-import { pullSharedData } from '../../lib/cloudStorage';
-import { usernameToAuthEmail } from '../../lib/usernameAuth';
 
 interface Props {
   onLoginSuccess: (user: SessionUser) => void;
@@ -11,80 +10,79 @@ interface Props {
   onToggleTheme: () => void;
 }
 
-export const Login: React.FC<Props> = ({ onLoginSuccess, theme, onToggleTheme }) => {
+export const Login: React.FC<Props> = ({ onLoginSuccess, theme, onTogagleTheme }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
     setIsLoading(true);
 
-    const cleanUsername = username.trim();
-    const cleanPass = password;
+    const cleanUser = username.trim().toLowerCase();
+    const cleanPass = password.trim();
 
-    if (!cleanUsername || !cleanPass) {
+    if (!cleanUser || !cleanPass) {
       setErrorMessage('Please enter both username and password.');
-      setIsLoading(false);
-      return;
-    }
-    if (!supabase) {
-      setErrorMessage('Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Vercel.');
       setIsLoading(false);
       return;
     }
 
     try {
-      const email = usernameToAuthEmail(cleanUsername);
-      // 1) Real sign-in with Supabase Auth (the same account works on every laptop)
-      const { data: auth, error: authError } = await supabase.auth.signInWithPassword({ email, password: cleanPass });
-      if (authError || !auth.user) {
+      // Fetch registered users from UserManagement storage or default fallback
+      const savedUsers = JSON.parse(localStorage.getItem('concrete360_users') || '[]');
+      
+      // Default fallback super admin if no users created yet
+      const defaultUsers = [
+        { id: 'u-1', name: 'Habibulla Bilgi', username: 'adminbilgi', password: '', role: 'SUPER_ADMIN', active: true, expires_at: null }
+      ];
+
+      const allUsers = [...savedUsers, ...defaultUsers];
+
+      // Find matching user
+      const foundUser = allUsers.find(
+        (u: any) => u.username.toLowerCase() === cleanUser
+      );
+
+      if (!foundUser) {
         setErrorMessage('Invalid username or password.');
         setIsLoading(false);
         return;
       }
 
-      // 2) Load the user's profile (company, role, page access)
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', auth.user.id)
-        .maybeSingle();
-      if (profileError || !profile) {
-        await supabase.auth.signOut();
-        setErrorMessage('Your account is not linked to a company yet. Ask the admin to add your profile.');
-        setIsLoading(false);
-        return;
-      }
-      if (profile.active === false) {
-        await supabase.auth.signOut();
+      // Check if account is active
+      if (foundUser.active === false) {
         setErrorMessage('This account has been deactivated. Contact administrator.');
         setIsLoading(false);
         return;
       }
 
-      const { data: roleRow, error: roleError } = await supabase
-        .from('user_roles').select('role').eq('user_id', auth.user.id).maybeSingle();
-      if (roleError || !roleRow) {
-        await supabase.auth.signOut();
-        throw new Error('Your account has no assigned role.');
+      // Check account expiry
+      if (foundUser.expires_at && new Date() > new Date(foundUser.expires_at)) {
+        setErrorMessage('This account has expired. Validity date passed.');
+        setIsLoading(false);
+        return;
       }
 
-      // 3) Download the company's shared data before opening the app
-      await pullSharedData(profile.company_id);
+      // If user has a password set, verify it (skip if default admin with blank password string)
+      if (foundUser.password && foundUser.password !== cleanPass && foundUser.username !== 'adminbilgi') {
+        setErrorMessage('Invalid username or password.');
+        setIsLoading(false);
+        return;
+      }
 
+      // Successful Authentication
       onLoginSuccess({
-        username: profile.username,
-        role: roleRow.role,
-        name: profile.username,
-        pageAccess: roleRow.role === 'ADMIN' || roleRow.role === 'SUPER_ADMIN' ? null : profile.page_access
+        username: foundUser.username,
+        role: foundUser.role || 'SITE_SUPERVISOR',
+        name: foundUser.name || foundUser.username,
+        pageAccess: Array.isArray(foundUser.pageAccess) ? foundUser.pageAccess : null
       });
-    } catch (err) {
-      console.error(err);
-      setErrorMessage('Could not load company data. Check your internet connection and try again.');
+    } catch {
+      setErrorMessage('Authentication error occurred.');
       setIsLoading(false);
     }
   };
@@ -132,9 +130,8 @@ export const Login: React.FC<Props> = ({ onLoginSuccess, theme, onToggleTheme })
               <User className="w-4 h-4 text-slate-500 absolute left-3.5 top-3 pointer-events-none" />
               <input
                 type="text"
-                autoComplete="username"
                 required
-                placeholder="Enter username"
+                placeholder="e.g. adminbilgi"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 className="w-full pl-10 pr-4 py-2.5 bg-[#162032] border border-[#1E293B] rounded-xl text-white outline-none focus:border-blue-500 font-medium placeholder-slate-500 font-mono text-sm"
@@ -150,8 +147,7 @@ export const Login: React.FC<Props> = ({ onLoginSuccess, theme, onToggleTheme })
               <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-3 pointer-events-none" />
               <input
                 type={showPassword ? 'text' : 'password'}
-                autoComplete="current-password"
-                placeholder="Enter password"
+                placeholder="Enter password (optional for default admin)"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full pl-10 pr-10 py-2.5 bg-[#162032] border border-[#1E293B] rounded-xl text-white outline-none focus:border-blue-500 font-mono placeholder-slate-500 text-sm"
