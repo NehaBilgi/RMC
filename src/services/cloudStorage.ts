@@ -10,6 +10,7 @@ const DEDICATED_STORAGE_KEYS = new Set([
   'concrete360_ongoing_sites',
   'concrete360_company_profile',
   'concrete360_transit_mixers',
+  'concrete360_users',
   'concrete360_theme',
   'concrete360_selected_site',
   'concrete360_active_site'
@@ -313,7 +314,42 @@ class CloudStorageService {
         });
       }
 
-      // 8. PULL APP DATA STORE (Auxiliary Keys ONLY, NEVER overwrite dedicated table keys)
+      // 8. PULL DEDICATED APP USERS TABLE
+      try {
+        const { data: usersData, error: usersErr } = await (client as any)
+          .from('app_users')
+          .select('*');
+
+        if (!usersErr && usersData && Array.isArray(usersData) && usersData.length > 0) {
+          const formattedUsers = usersData.map((u: any) => ({
+            id: u.id,
+            username: u.username,
+            name: u.name || u.username,
+            password: u.password || '',
+            role: u.role,
+            pageAccess: Array.isArray(u.page_access) ? u.page_access : [],
+            active: u.active !== false,
+            expires_at: u.expires_at,
+            created_at: u.created_at
+          }));
+          window.localStorage.setItem('concrete360_users', JSON.stringify(formattedUsers));
+        } else if (usersErr) {
+          // Fallback: check app_data_store for saved users if app_users table is not yet created
+          const { data: storeUserRow } = await (client as any)
+            .from('app_data_store')
+            .select('data')
+            .eq('storage_key', 'concrete360_users')
+            .maybeSingle();
+
+          if (storeUserRow?.data && Array.isArray(storeUserRow.data) && storeUserRow.data.length > 0) {
+            window.localStorage.setItem('concrete360_users', JSON.stringify(storeUserRow.data));
+          }
+        }
+      } catch (e) {
+        console.warn('[CloudStorage] app_users pull fallback warning:', e);
+      }
+
+      // 9. PULL APP DATA STORE (Auxiliary Keys ONLY, NEVER overwrite dedicated table keys)
       const { data: storeData } = await (client as any)
         .from('app_data_store')
         .select('storage_key, data');
@@ -678,6 +714,44 @@ class CloudStorageService {
           }
         }
       }
+
+      // APP USERS
+      else if (key === 'concrete360_users') {
+        if (Array.isArray(data)) {
+          const userRows = data.map((u: any) => ({
+            id: String(u.id || `u-${Date.now()}`),
+            username: String(u.username || '').trim(),
+            name: u.name || u.username,
+            password: u.password || '',
+            role: u.role || 'EMPLOYEE',
+            page_access: Array.isArray(u.pageAccess) ? u.pageAccess : (Array.isArray(u.page_access) ? u.page_access : []),
+            active: u.active !== false,
+            expires_at: u.expires_at || null,
+            updated_at: new Date().toISOString()
+          })).filter((u: any) => u.username.length > 0);
+
+          if (userRows.length > 0) {
+            try {
+              await (client as any)
+                .from('app_users')
+                .upsert(userRows, { onConflict: 'username' });
+            } catch (err) {
+              console.warn('[CloudStorage] app_users upsert warning, backing up to app_data_store:', err);
+            }
+
+            // Always write dual backup to app_data_store
+            try {
+              await (client as any)
+                .from('app_data_store')
+                .upsert([{
+                  storage_key: 'concrete360_users',
+                  data: data,
+                  updated_at: new Date().toISOString()
+                }], { onConflict: 'storage_key' });
+            } catch {}
+          }
+        }
+      }
     } catch (e) {
       console.warn('[CloudStorage] Relational sync warning:', e);
     }
@@ -741,6 +815,7 @@ class CloudStorageService {
         .on('postgres_changes', { event: '*', schema: 'public', table: 'transit_mixers' }, () => void this.pullFromCloud())
         .on('postgres_changes', { event: '*', schema: 'public', table: 'site_measurements' }, () => void this.pullFromCloud())
         .on('postgres_changes', { event: '*', schema: 'public', table: 'company_profile' }, () => void this.pullFromCloud())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'app_users' }, () => void this.pullFromCloud())
         .on('postgres_changes', { event: '*', schema: 'public', table: 'app_data_store' }, () => void this.pullFromCloud())
         .subscribe();
     } catch (e) {
