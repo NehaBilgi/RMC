@@ -393,111 +393,21 @@ export const INITIAL_ORDERS: RMCOrder[] = [
 
 export const INITIAL_MEASUREMENT_SESSION: SiteMeasurementSession = {
   id: 'meas-session-01',
-  projectName: 'Skyline Pinnacle Commercial Center',
-  contractor: 'BuildWell Constructions Ltd.',
-  siteLocation: 'Plot 88, Financial District, Sector 48',
-  salesRepName: 'Habib U.',
-  date: '2026-09-24',
-  structures: [
-    {
-      id: 'str-1',
-      name: 'Main Podium Slab B2',
-      type: 'slab',
-      lengthM: 32.0,
-      widthM: 18.5,
-      depthM: 0.22,
-      quantity: 1,
-      rebarDeductionPercent: 2.0,
-      calculatedNetVolumeM3: 127.7,
-      color: '#3b82f6'
-    },
-    {
-      id: 'str-2',
-      name: 'Heavy Columns Grid C1-C8',
-      type: 'rectangular_column',
-      lengthM: 0.75,
-      widthM: 0.60,
-      depthM: 3.8,
-      quantity: 16,
-      rebarDeductionPercent: 3.5,
-      calculatedNetVolumeM3: 26.4,
-      color: '#10b981'
-    },
-    {
-      id: 'str-3',
-      name: 'Circular Aesthetic Columns (Atrium)',
-      type: 'circular_column',
-      lengthM: 4.2, // height
-      widthM: 0.8, // diameter
-      depthM: 4.2, // height
-      diameterM: 0.8,
-      quantity: 6,
-      rebarDeductionPercent: 3.0,
-      calculatedNetVolumeM3: 12.3,
-      color: '#8b5cf6'
-    },
-    {
-      id: 'str-4',
-      name: 'Peripheral Perimeter Beams',
-      type: 'beam',
-      lengthM: 101.0,
-      widthM: 0.40,
-      depthM: 0.65,
-      quantity: 1,
-      rebarDeductionPercent: 2.5,
-      calculatedNetVolumeM3: 25.6,
-      color: '#f59e0b'
-    }
-  ],
-  stockpiles: [
-    {
-      id: 'stk-1',
-      materialName: '20mm Aggregate',
-      shape: 'trapezoidal_pile',
-      baseLengthM: 16.0,
-      baseWidthM: 9.0,
-      heightM: 3.2,
-      bulkDensityTonsPerM3: 1.60,
-      calculatedVolumeM3: 254.2,
-      calculatedWeightTons: 406.7,
-      reorderThresholdTons: 150,
-      lastMeasuredDate: '2026-09-24'
-    },
-    {
-      id: 'stk-2',
-      materialName: 'Manufactured Sand (M-Sand)',
-      shape: 'cone',
-      baseLengthM: 12.0,
-      baseWidthM: 12.0,
-      heightM: 3.8,
-      bulkDensityTonsPerM3: 1.52,
-      calculatedVolumeM3: 143.3,
-      calculatedWeightTons: 217.8,
-      reorderThresholdTons: 100,
-      lastMeasuredDate: '2026-09-24'
-    },
-    {
-      id: 'stk-3',
-      materialName: '10mm Aggregate',
-      shape: 'trapezoidal_pile',
-      baseLengthM: 11.0,
-      baseWidthM: 7.5,
-      heightM: 2.8,
-      bulkDensityTonsPerM3: 1.58,
-      calculatedVolumeM3: 132.5,
-      calculatedWeightTons: 209.3,
-      reorderThresholdTons: 80,
-      lastMeasuredDate: '2026-09-24'
-    }
-  ],
+  projectName: '',
+  contractor: '',
+  siteLocation: '',
+  salesRepName: '',
+  date: new Date().toISOString().split('T')[0],
+  structures: [],
+  stockpiles: [],
   safetyWastagePercent: 5.0,
-  recommendedMixGrade: 'M35',
-  recommendedPourType: 'Boom Pump (42m)',
-  totalNetM3: 192.0,
-  totalGrossM3: 201.6,
-  transitTruckCapacityM3: 8,
-  requiredTruckLoads: 26,
-  notes: 'Slab reinforcement is dense. High slump SCC or M35 with superplasticizer recommended. 42m boom required to clear facade scaffolding.'
+  recommendedMixGrade: 'M25',
+  recommendedPourType: 'Boom Pump',
+  totalNetM3: 0,
+  totalGrossM3: 0,
+  transitTruckCapacityM3: 6,
+  requiredTruckLoads: 0,
+  notes: ''
 };
 
 export const INITIAL_SITE_VISITS: SiteVisitRecord[] = [
