@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, Users, CalendarClock, Shield, X } from 'lucide-react';
 import { isAdminUser, PAGE_ACCESS_OPTIONS } from '../../utils/accessControl';
 import { cloudStorage } from '../../services/cloudStorage';
+import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 
 const ROLES = ['ADMIN', 'EMPLOYEE', 'READ_ONLY'];
 const ALL_PAGE_IDS: string[] = PAGE_ACCESS_OPTIONS.flatMap(section => section.pages.map(page => page.id));
@@ -69,32 +70,85 @@ function UserForm({
     }
     setSaving(true);
     try {
-      const payload: any = { 
-        ...f,
-        name: f.username.trim(),
-        pageAccess: f.role === 'ADMIN' ? [...ALL_PAGE_IDS] : f.pageAccess.filter((id: string) => ALL_PAGE_IDS.includes(id))
-      };
-      if (!payload.password) delete payload.password;
-      if (!payload.expires_at || payload.expires_at.trim() === '') payload.expires_at = null;
+      const cleanUsername = f.username.trim().toLowerCase();
+      const pageAccessList = f.role === 'ADMIN' ? [...ALL_PAGE_IDS] : f.pageAccess.filter((id: string) => ALL_PAGE_IDS.includes(id));
+      const expiresAtIso = f.expires_at ? new Date(f.expires_at).toISOString() : null;
+      const userPassword = f.password ? f.password : (initial?.password || '');
 
+      const userRecord = {
+        id: initial?.id || `u-${Date.now()}`,
+        username: cleanUsername,
+        name: f.username.trim(),
+        password: userPassword,
+        role: f.role,
+        page_access: pageAccessList,
+        active: f.active ?? true,
+        expires_at: expiresAtIso,
+        created_at: initial?.created_at || new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      // 1. Direct write to Supabase dedicated app_users table
+      if (supabase && isSupabaseConfigured) {
+        try {
+          const { error: dbErr } = await (supabase as any)
+            .from('app_users')
+            .upsert({
+              id: userRecord.id,
+              username: userRecord.username,
+              name: userRecord.name,
+              password: userRecord.password,
+              role: userRecord.role,
+              page_access: userRecord.page_access,
+              active: userRecord.active,
+              expires_at: userRecord.expires_at,
+              updated_at: userRecord.updated_at
+            }, { onConflict: 'username' });
+
+          if (dbErr) {
+            console.warn('[UserManagement] app_users direct write warning:', dbErr);
+          }
+        } catch (err) {
+          console.warn('[UserManagement] Supabase write error:', err);
+        }
+      }
+
+      // 2. Synchronize localStorage
       const savedUsers = JSON.parse(localStorage.getItem('concrete360_users') || '[]');
+      const localFormatted = {
+        ...userRecord,
+        pageAccess: pageAccessList
+      };
+
       let updatedUsers = [];
-      if (initial?.id) {
-        updatedUsers = savedUsers.map((u: any) => u.id === initial.id ? { ...u, ...payload } : u);
+      const existingIdx = savedUsers.findIndex(
+        (u: any) => String(u.username || '').toLowerCase() === cleanUsername || u.id === userRecord.id
+      );
+
+      if (existingIdx >= 0) {
+        updatedUsers = [...savedUsers];
+        updatedUsers[existingIdx] = { ...savedUsers[existingIdx], ...localFormatted };
       } else {
-        const newUser = { id: `u-${Date.now()}`, ...payload, created_at: new Date().toISOString() };
-        updatedUsers = [newUser, ...savedUsers];
+        updatedUsers = [localFormatted, ...savedUsers];
       }
       localStorage.setItem('concrete360_users', JSON.stringify(updatedUsers));
+
+      // 3. Update current session if editing own account
       try {
         const activeUser = JSON.parse(sessionStorage.getItem('concrete360_user') || 'null');
-        if (activeUser?.username?.toLowerCase() === f.username.trim().toLowerCase()) {
-          sessionStorage.setItem('concrete360_user', JSON.stringify({ ...activeUser, ...payload }));
+        if (activeUser?.username?.toLowerCase() === cleanUsername) {
+          sessionStorage.setItem('concrete360_user', JSON.stringify({
+            ...activeUser,
+            role: f.role,
+            name: f.username.trim(),
+            pageAccess: pageAccessList
+          }));
         }
       } catch {}
+
       window.dispatchEvent(new Event('concrete360_user_updated'));
       void cloudStorage.pullFromCloud();
-      onSave(payload);
+      onSave(localFormatted);
     } catch (err: any) {
       alert(err.message || 'Error saving user');
     } finally {
@@ -227,16 +281,43 @@ export function UserManagement() {
   const [editing, setEditing] = useState<any | null>(null);
   const [showForm, setShowForm] = useState(false);
 
-  const load = () => {
+  const load = async () => {
     try {
       const saved = localStorage.getItem('concrete360_users');
       if (saved) setUsers(JSON.parse(saved));
     } catch {}
+
+    if (supabase && isSupabaseConfigured) {
+      try {
+        const { data: dbUsers, error } = await (supabase as any)
+          .from('app_users')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (!error && Array.isArray(dbUsers) && dbUsers.length > 0) {
+          const formatted = dbUsers.map((u: any) => ({
+            id: u.id,
+            username: u.username,
+            name: u.name || u.username,
+            password: u.password || '',
+            role: u.role,
+            pageAccess: Array.isArray(u.page_access) ? u.page_access : [],
+            active: u.active !== false,
+            expires_at: u.expires_at,
+            created_at: u.created_at
+          }));
+          setUsers(formatted);
+          localStorage.setItem('concrete360_users', JSON.stringify(formatted));
+        }
+      } catch (err) {
+        console.warn('Error loading users from Supabase:', err);
+      }
+    }
   };
 
   useEffect(() => {
     void cloudStorage.pullFromCloud();
-    load();
+    void load();
 
     window.addEventListener('concrete360_cloud_synced', load);
     window.addEventListener('concrete360_user_updated', load);
@@ -250,9 +331,25 @@ export function UserManagement() {
     };
   }, []);
 
-  const del = (id: string) => {
-    if (!confirm('Delete this user?')) return;
-    const updated = users.filter(u => u.id !== id);
+  const del = async (id: string, username: string) => {
+    if (username === 'adminbilgi') {
+      alert('The primary administrator account cannot be deleted.');
+      return;
+    }
+    if (!confirm(`Delete user "${username}" permanently?`)) return;
+
+    if (supabase && isSupabaseConfigured) {
+      try {
+        await (supabase as any)
+          .from('app_users')
+          .delete()
+          .eq('id', id);
+      } catch (err) {
+        console.warn('Error deleting user from Supabase:', err);
+      }
+    }
+
+    const updated = users.filter(u => u.id !== id && u.username !== username);
     setUsers(updated);
     localStorage.setItem('concrete360_users', JSON.stringify(updated));
     window.dispatchEvent(new Event('concrete360_user_updated'));
@@ -370,7 +467,7 @@ export function UserManagement() {
                           <Edit2 size={13} />
                         </button>
                         {u.username !== 'adminbilgi' && (
-                          <button onClick={() => del(u.id)} className="p-1.5 rounded-lg bg-[#121c2f] hover:bg-rose-600/20 text-slate-400 hover:text-rose-400 cursor-pointer transition">
+                          <button onClick={() => del(u.id, u.username)} className="p-1.5 rounded-lg bg-[#121c2f] hover:bg-rose-600/20 text-slate-400 hover:text-rose-400 cursor-pointer transition">
                             <Trash2 size={13} />
                           </button>
                         )}
