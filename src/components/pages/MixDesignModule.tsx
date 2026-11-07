@@ -135,10 +135,12 @@ export const MixDesignModule: React.FC = () => {
 
   useEffect(() => {
     window.addEventListener('concrete360_site_switched', handleSiteSync);
+    window.addEventListener('concrete360_cloud_synced', handleSiteSync);
     window.addEventListener('storage', handleSiteSync);
     window.addEventListener('focus', handleSiteSync);
     return () => {
       window.removeEventListener('concrete360_site_switched', handleSiteSync);
+      window.removeEventListener('concrete360_cloud_synced', handleSiteSync);
       window.removeEventListener('storage', handleSiteSync);
       window.removeEventListener('focus', handleSiteSync);
     };
