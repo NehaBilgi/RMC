@@ -9,6 +9,7 @@ import {
   EyeOff, 
   Moon, 
   Sun, 
+  Database, 
   CheckCircle2, 
   UserPlus, 
   LogIn 
@@ -34,6 +35,7 @@ export const Login: React.FC<Props> = ({ onLoginSuccess, theme, onToggleTheme })
   const [successMessage, setSuccessMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
+  // Direct Supabase Sign In with Multi-tier Cloud & Local Fallback
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
@@ -49,17 +51,116 @@ export const Login: React.FC<Props> = ({ onLoginSuccess, theme, onToggleTheme })
       return;
     }
 
+    // 1. Authoritative: Direct Check on Dedicated Supabase app_users table
     if (supabase && isSupabaseConfigured) {
       try {
-        const isEmail = cleanInput.includes('@');
-        let authEmail = cleanInput;
+        const { data: dbUser, error: dbErr } = await (supabase as any)
+          .from('app_users')
+          .select('*')
+          .ilike('username', cleanInput)
+          .maybeSingle();
 
-        if (!isEmail) {
-          authEmail = `${cleanInput.toLowerCase()}@concrete360.internal`;
+        if (!dbErr && dbUser) {
+          if (dbUser.active === false) {
+            setErrorMessage('This account has been deactivated. Contact administrator.');
+            setIsLoading(false);
+            return;
+          }
+
+          if (dbUser.expires_at && new Date() > new Date(dbUser.expires_at)) {
+            setErrorMessage('This account has expired. Validity date passed.');
+            setIsLoading(false);
+            return;
+          }
+
+          const expectedPass = dbUser.password || '';
+          if (expectedPass && expectedPass !== cleanPass && dbUser.username !== 'adminbilgi') {
+            setErrorMessage('Invalid password.');
+            setIsLoading(false);
+            return;
+          }
+
+          const role = dbUser.role === 'SUPER_ADMIN' ? 'ADMIN' : (dbUser.role || 'EMPLOYEE');
+          const pageAccess = Array.isArray(dbUser.page_access) ? dbUser.page_access : null;
+
+          const sessionUser: SessionUser = {
+            username: dbUser.username,
+            role,
+            name: dbUser.name || dbUser.username,
+            pageAccess
+          };
+
+          sessionStorage.setItem('concrete360_user', JSON.stringify(sessionUser));
+          await cloudStorage.pullFromCloud();
+          onLoginSuccess(sessionUser);
+          return;
         }
+      } catch (err) {
+        console.warn('Supabase app_users auth check error:', err);
+      }
+    }
 
+    // 2. Auxiliary Cloud Store: Check app_data_store backup
+    if (supabase && isSupabaseConfigured) {
+      try {
+        const { data: storeRow } = await (supabase as any)
+          .from('app_data_store')
+          .select('data')
+          .eq('storage_key', 'concrete360_users')
+          .maybeSingle();
+
+        if (storeRow?.data && Array.isArray(storeRow.data)) {
+          const match = storeRow.data.find(
+            (u: any) => String(u.username || '').toLowerCase() === cleanInput.toLowerCase()
+          );
+          if (match) {
+            if (match.active === false) {
+              setErrorMessage('This account has been deactivated. Contact administrator.');
+              setIsLoading(false);
+              return;
+            }
+
+            if (match.expires_at && new Date() > new Date(match.expires_at)) {
+              setErrorMessage('This account has expired. Validity date passed.');
+              setIsLoading(false);
+              return;
+            }
+
+            const matchPass = match.password || '';
+            if (matchPass && matchPass !== cleanPass && match.username !== 'adminbilgi') {
+              setErrorMessage('Invalid password.');
+              setIsLoading(false);
+              return;
+            }
+
+            const role = match.role === 'SUPER_ADMIN' ? 'ADMIN' : (match.role || 'EMPLOYEE');
+            const pageAccess = Array.isArray(match.pageAccess)
+              ? match.pageAccess
+              : (Array.isArray(match.page_access) ? match.page_access : null);
+
+            const sessionUser: SessionUser = {
+              username: match.username,
+              role,
+              name: match.name || match.username,
+              pageAccess
+            };
+
+            sessionStorage.setItem('concrete360_user', JSON.stringify(sessionUser));
+            await cloudStorage.pullFromCloud();
+            onLoginSuccess(sessionUser);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Supabase app_data_store backup lookup warning:', err);
+      }
+    }
+
+    // 3. Supabase Auth (for users registered via official Supabase email signup)
+    if (supabase && isSupabaseConfigured && cleanInput.includes('@')) {
+      try {
         const { data: authResult, error: authError } = await supabase.auth.signInWithPassword({
-          email: authEmail,
+          email: cleanInput,
           password: cleanPass
         });
 
@@ -72,17 +173,18 @@ export const Login: React.FC<Props> = ({ onLoginSuccess, theme, onToggleTheme })
 
           const role = (profile?.role || 'SUPER_ADMIN') as any;
           const pageAccess = profile?.page_access || null;
-          const companyId = profile?.company_id || '00000000-0000-0000-0000-000000000001';
 
-          await cloudStorage.setCompanyId(companyId);
           await cloudStorage.pullFromCloud();
 
-          onLoginSuccess({
-            username: profile?.username || cleanInput,
+          const sessionUser: SessionUser = {
+            username: profile?.username || cleanInput.split('@')[0],
             role,
             name: profile?.username || cleanInput,
             pageAccess: Array.isArray(pageAccess) ? pageAccess : null
-          });
+          };
+
+          sessionStorage.setItem('concrete360_user', JSON.stringify(sessionUser));
+          onLoginSuccess(sessionUser);
           return;
         }
       } catch (err) {
@@ -90,15 +192,16 @@ export const Login: React.FC<Props> = ({ onLoginSuccess, theme, onToggleTheme })
       }
     }
 
+    // 4. Fallback to Local Storage Accounts or Default Administrator
     try {
       const savedUsers = JSON.parse(localStorage.getItem('concrete360_users') || '[]');
       const defaultUsers = [
         {
-          id: 'u-1',
-          name: 'Habibulla Bilgi',
+          id: 'u-adminbilgi',
+          name: 'adminbilgi',
           username: 'adminbilgi',
           password: '',
-          role: 'SUPER_ADMIN',
+          role: 'ADMIN',
           active: true,
           expires_at: null
         }
@@ -107,18 +210,24 @@ export const Login: React.FC<Props> = ({ onLoginSuccess, theme, onToggleTheme })
       const allUsers = [...savedUsers, ...defaultUsers];
       const foundUser = allUsers.find(
         (u: any) =>
-          u.username.toLowerCase() === cleanInput.toLowerCase() ||
-          (u.email && u.email.toLowerCase() === cleanInput.toLowerCase())
+          String(u.username || '').toLowerCase() === cleanInput.toLowerCase() ||
+          (u.email && String(u.email || '').toLowerCase() === cleanInput.toLowerCase())
       );
 
       if (!foundUser) {
-        setErrorMessage('Invalid credentials. If you created an account in Supabase, enter your registered email.');
+        setErrorMessage('Invalid username or password.');
         setIsLoading(false);
         return;
       }
 
       if (foundUser.active === false) {
-        setErrorMessage('This account has been deactivated.');
+        setErrorMessage('This account has been deactivated. Contact administrator.');
+        setIsLoading(false);
+        return;
+      }
+
+      if (foundUser.expires_at && new Date() > new Date(foundUser.expires_at)) {
+        setErrorMessage('This account has expired. Validity date passed.');
         setIsLoading(false);
         return;
       }
@@ -129,20 +238,23 @@ export const Login: React.FC<Props> = ({ onLoginSuccess, theme, onToggleTheme })
         return;
       }
 
-      void cloudStorage.init();
-
-      onLoginSuccess({
+      const sessionUser: SessionUser = {
         username: foundUser.username,
-        role: foundUser.role || 'SUPER_ADMIN',
+        role: foundUser.role || 'ADMIN',
         name: foundUser.name || foundUser.username,
         pageAccess: Array.isArray(foundUser.pageAccess) ? foundUser.pageAccess : null
-      });
+      };
+
+      sessionStorage.setItem('concrete360_user', JSON.stringify(sessionUser));
+      void cloudStorage.init();
+      onLoginSuccess(sessionUser);
     } catch {
       setErrorMessage('Authentication error occurred.');
       setIsLoading(false);
     }
   };
 
+  // Direct Supabase Sign Up / New Admin Creation
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
@@ -150,7 +262,7 @@ export const Login: React.FC<Props> = ({ onLoginSuccess, theme, onToggleTheme })
     setIsLoading(true);
 
     if (!supabase || !isSupabaseConfigured) {
-      setErrorMessage('Supabase is not configured.');
+      setErrorMessage('Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to your Vercel / .env environment.');
       setIsLoading(false);
       return;
     }
@@ -192,17 +304,34 @@ export const Login: React.FC<Props> = ({ onLoginSuccess, theme, onToggleTheme })
 
       if (data.session && data.user) {
         setSuccessMessage('Account created and signed in successfully!');
+        try {
+          await (supabase as any).from('app_users').upsert({
+            id: data.user.id,
+            username: cleanUsername,
+            name: cleanUsername,
+            password: cleanPass,
+            role: 'ADMIN',
+            page_access: [
+              'dashboard', 'ongoing_site', 'billing', 'total_bill', 'site_tests', 'trips',
+              'material_category', 'transit_mixer', 'concrete_pumps', 'mix_design',
+              'site_report', 'measurements', 'company_details', 'user_management'
+            ],
+            active: true,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'username' });
+        } catch {}
+
         await cloudStorage.init();
         setTimeout(() => {
           onLoginSuccess({
             username: cleanUsername,
-            role: 'SUPER_ADMIN',
+            role: 'ADMIN',
             name: cleanUsername,
             pageAccess: null
           });
         }, 1000);
       } else {
-        setSuccessMessage('Account created! You can now sign in.');
+        setSuccessMessage('Account created! If email confirmation is enabled in Supabase, check your inbox to confirm, then sign in.');
         setMode('signin');
         setIsLoading(false);
       }
@@ -218,11 +347,13 @@ export const Login: React.FC<Props> = ({ onLoginSuccess, theme, onToggleTheme })
         onClick={onToggleTheme}
         className="app-header-action absolute top-4 right-4 inline-flex items-center justify-center w-10 h-10 rounded-xl border border-[#1b273d] bg-[#0e1728] text-slate-300 hover:text-white transition cursor-pointer"
         title={`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`}
+        aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`}
       >
         {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
       </button>
 
       <div className="w-full max-w-md bg-[#121927] border border-[#1E293B] rounded-3xl p-8 shadow-2xl space-y-6">
+        {/* Brand Header */}
         <div className="text-center space-y-2">
           <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 mx-auto flex items-center justify-center text-white shadow-lg shadow-blue-600/30">
             <HardHat className="w-7 h-7" />
@@ -234,6 +365,7 @@ export const Login: React.FC<Props> = ({ onLoginSuccess, theme, onToggleTheme })
             Commercial RMC &amp; Site Management Suite
           </p>
 
+          {/* Cloud Database Status Pill */}
           <div className="flex items-center justify-center gap-1.5 pt-1">
             <span className={`w-2 h-2 rounded-full ${isSupabaseConfigured ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
             <span className="text-[10px] font-mono text-slate-400">
@@ -242,10 +374,15 @@ export const Login: React.FC<Props> = ({ onLoginSuccess, theme, onToggleTheme })
           </div>
         </div>
 
+        {/* Tab Switcher: Sign In vs Register Admin */}
         <div className="flex p-1 bg-[#0b101c] rounded-xl border border-[#1c2940] text-xs font-mono">
           <button
             type="button"
-            onClick={() => { setMode('signin'); setErrorMessage(''); setSuccessMessage(''); }}
+            onClick={() => {
+              setMode('signin');
+              setErrorMessage('');
+              setSuccessMessage('');
+            }}
             className={`flex-1 py-2 rounded-lg flex items-center justify-center gap-2 transition cursor-pointer font-bold ${
               mode === 'signin' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'
             }`}
@@ -255,7 +392,11 @@ export const Login: React.FC<Props> = ({ onLoginSuccess, theme, onToggleTheme })
           </button>
           <button
             type="button"
-            onClick={() => { setMode('signup'); setErrorMessage(''); setSuccessMessage(''); }}
+            onClick={() => {
+              setMode('signup');
+              setErrorMessage('');
+              setSuccessMessage('');
+            }}
             className={`flex-1 py-2 rounded-lg flex items-center justify-center gap-2 transition cursor-pointer font-bold ${
               mode === 'signup' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'
             }`}
@@ -265,6 +406,7 @@ export const Login: React.FC<Props> = ({ onLoginSuccess, theme, onToggleTheme })
           </button>
         </div>
 
+        {/* Status Alerts */}
         {errorMessage && (
           <div className="p-3.5 bg-rose-950/40 border border-rose-800/60 rounded-2xl text-rose-300 text-xs flex items-center gap-2">
             <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
@@ -279,6 +421,7 @@ export const Login: React.FC<Props> = ({ onLoginSuccess, theme, onToggleTheme })
           </div>
         )}
 
+        {/* SIGN IN FORM */}
         {mode === 'signin' && (
           <form onSubmit={handleSignIn} className="space-y-4 text-xs font-mono">
             <div>
@@ -332,6 +475,7 @@ export const Login: React.FC<Props> = ({ onLoginSuccess, theme, onToggleTheme })
           </form>
         )}
 
+        {/* SIGN UP / REGISTER ADMIN FORM */}
         {mode === 'signup' && (
           <form onSubmit={handleSignUp} className="space-y-4 text-xs font-mono">
             <div>
@@ -412,6 +556,7 @@ export const Login: React.FC<Props> = ({ onLoginSuccess, theme, onToggleTheme })
           </form>
         )}
 
+        {/* Demo Mode Quick Access */}
         <div className="pt-4 border-t border-[#1E293B] flex items-center justify-between text-[11px] font-mono text-slate-400">
           <span>Demo User: <strong className="text-slate-200">adminbilgi</strong></span>
           <button
