@@ -17,8 +17,12 @@ import {
   Wrench,
   LogOut,
   Moon,
-  Sun
+  Sun,
+  Cloud,
+  CloudOff,
+  RefreshCw
 } from 'lucide-react';
+import { cloudStorage, SyncStatus } from '../../services/cloudStorage';
 import { SiteMeasurementSession } from '../../types/rmc';
 import { SiteMeasurementStudio } from '../measurement/SiteMeasurementStudio';
 import { OngoingSiteTransfer } from '../pages/OngoingSiteTransfer';
@@ -104,8 +108,14 @@ export const Sidebar: React.FC<Props> = ({
     return user;
   });
 
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>(() => cloudStorage.getStatus());
+  const [isManualSyncing, setIsManualSyncing] = useState(false);
+
   // Keep currentSite synchronized across site creations, selections, and deletions
   useEffect(() => {
+    const unsub = cloudStorage.onStatusChange((status) => {
+      setSyncStatus(status);
+    });
     const handleSiteSwitch = (e?: any) => {
       const siteName = e?.detail !== undefined ? normalizeSiteKey(e.detail) : getActiveSiteKey();
       setCurrentSite(siteName);
@@ -132,6 +142,7 @@ export const Sidebar: React.FC<Props> = ({
     window.addEventListener('concrete360_user_updated', handleUserSync);
 
     return () => {
+      unsub();
       window.removeEventListener('concrete360_site_switched', handleSiteSwitch);
       window.removeEventListener('storage', handleSiteSwitch);
       window.removeEventListener('storage', handleUserSync);
@@ -334,6 +345,46 @@ export const Sidebar: React.FC<Props> = ({
             </h1>
           </div>
           <div className="flex items-center justify-end gap-1.5 sm:gap-2 shrink-0">
+            {/* Supabase Cloud Sync Status Pill */}
+            <button
+              onClick={async () => {
+                setIsManualSyncing(true);
+                try {
+                  await cloudStorage.pushAllLocalToCloud();
+                  await cloudStorage.pullFromCloud();
+                } finally {
+                  setIsManualSyncing(false);
+                }
+              }}
+              title="Click to sync local data with Supabase Cloud Database"
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[10px] font-mono font-bold transition cursor-pointer ${
+                syncStatus === 'synced'
+                  ? 'bg-emerald-950/40 border-emerald-800/60 text-emerald-300'
+                  : syncStatus === 'syncing' || isManualSyncing
+                  ? 'bg-blue-950/40 border-blue-800/60 text-blue-300'
+                  : syncStatus === 'error'
+                  ? 'bg-rose-950/40 border-rose-800/60 text-rose-300'
+                  : 'bg-slate-900 border-slate-800 text-slate-400'
+              }`}
+            >
+              {syncStatus === 'syncing' || isManualSyncing ? (
+                <RefreshCw className="w-3 h-3 animate-spin text-blue-400" />
+              ) : syncStatus === 'synced' ? (
+                <Cloud className="w-3 h-3 text-emerald-400" />
+              ) : (
+                <CloudOff className="w-3 h-3 text-amber-400" />
+              )}
+              <span className="hidden sm:inline">
+                {syncStatus === 'syncing' || isManualSyncing
+                  ? 'Syncing...'
+                  : syncStatus === 'synced'
+                  ? 'Cloud Synced'
+                  : syncStatus === 'error'
+                  ? 'Sync Error'
+                  : 'Offline Cache'}
+              </span>
+            </button>
+
             <span className="hidden lg:inline-flex text-[10px] font-mono font-bold text-cyan-400 bg-[#0e1728] border border-[#1b273d] px-2.5 py-1 rounded-xl max-w-40 truncate">
               Active: {currentSite || 'None'}
             </span>
