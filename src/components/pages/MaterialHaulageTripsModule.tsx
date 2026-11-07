@@ -15,6 +15,8 @@ import {
   Eye,
   Lock
 } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
+import { cloudStorage } from '../../services/cloudStorage';
 
 export interface HaulageTripRecord {
   id: string;
@@ -248,8 +250,10 @@ export const MaterialHaulageTripsModule: React.FC = () => {
   const [brassPerTrip, setBrassPerTrip] = useState<number | ''>(6);
   const [ratePerBrass, setRatePerBrass] = useState<number | ''>(defaultMat.rate);
 
-  // Sync state cleanly whenever site is switched
+  // Sync state cleanly whenever site is switched or cloud tables update
   useEffect(() => {
+    void cloudStorage.pullFromCloud();
+
     const handleSync = () => {
       const siteKey = getActiveSiteKey();
       setCurrentSiteKey(siteKey);
@@ -257,11 +261,13 @@ export const MaterialHaulageTripsModule: React.FC = () => {
     };
 
     window.addEventListener('concrete360_site_switched', handleSync);
+    window.addEventListener('concrete360_cloud_synced', handleSync);
     window.addEventListener('storage', handleSync);
     window.addEventListener('focus', handleSync);
 
     return () => {
       window.removeEventListener('concrete360_site_switched', handleSync);
+      window.removeEventListener('concrete360_cloud_synced', handleSync);
       window.removeEventListener('storage', handleSync);
       window.removeEventListener('focus', handleSync);
     };
@@ -449,17 +455,26 @@ export const MaterialHaulageTripsModule: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (!canEditOrDelete) {
       alert('Permission Denied: Only ADMIN accounts can delete trips.');
       return;
     }
     if (window.confirm('Delete this trip record for current site?')) {
-      setTrips((prev) => prev.filter((t) => t.id !== id));
+      const updated = trips.filter((t) => t.id !== id);
+      setTrips(updated);
+      try {
+        localStorage.setItem(`concrete360_site_haulage_trips_${currentSiteKey}`, JSON.stringify(updated));
+      } catch {}
+
+      if (supabase) {
+        await (supabase as any).from('haulage_trips').delete().eq('id', id);
+        await cloudStorage.pullFromCloud();
+      }
     }
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canCreate) return;
     if (dayTrips === '' || brassPerTrip === '' || ratePerBrass === '') return;
@@ -482,11 +497,34 @@ export const MaterialHaulageTripsModule: React.FC = () => {
       totalAmount: computedTotalAmount
     };
 
+    let updatedTrips: HaulageTripRecord[];
     if (editingId) {
-      setTrips(trips.map((t) => (t.id === editingId ? record : t)));
+      updatedTrips = trips.map((t) => (t.id === editingId ? record : t));
     } else {
-      setTrips([record, ...trips]);
+      updatedTrips = [record, ...trips];
     }
+    setTrips(updatedTrips);
+    try {
+      localStorage.setItem(`concrete360_site_haulage_trips_${currentSiteKey}`, JSON.stringify(updatedTrips));
+    } catch {}
+
+    if (supabase) {
+      await (supabase as any).from('haulage_trips').upsert({
+        id: record.id,
+        site_name: currentSiteKey,
+        trip_date: record.tripDate,
+        vehicle_number: record.vehicleNumber,
+        material_name: record.materialName,
+        purchased_from: record.purchasedFrom,
+        day_trips: record.dayTrips,
+        brass_per_trip: record.brassPerTrip,
+        rate_per_brass: record.ratePerBrass,
+        total_amount: record.totalAmount,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'id' });
+      await cloudStorage.pullFromCloud();
+    }
+
     setIsModalOpen(false);
   };
 
