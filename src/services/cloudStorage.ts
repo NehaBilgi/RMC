@@ -4,6 +4,17 @@ export type SyncStatus = 'synced' | 'syncing' | 'offline' | 'error';
 
 type StatusListener = (status: SyncStatus, message?: string) => void;
 
+// Dedicated tables manage these keys — app_data_store MUST NOT overwrite them
+const DEDICATED_STORAGE_KEYS = new Set([
+  'concrete360_sites',
+  'concrete360_ongoing_sites',
+  'concrete360_company_profile',
+  'concrete360_transit_mixers',
+  'concrete360_theme',
+  'concrete360_selected_site',
+  'concrete360_active_site'
+]);
+
 class CloudStorageService {
   private status: SyncStatus = 'offline';
   private listeners: Set<StatusListener> = new Set();
@@ -11,6 +22,7 @@ class CloudStorageService {
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private initialized = false;
   private isApplyingRemoteUpdate = false;
+  private isPulling = false;
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -34,7 +46,6 @@ class CloudStorageService {
   }
 
   public async setCompanyId(_companyId: string) {
-    // Shared global database across all company devices
     await this.pullFromCloud();
   }
 
@@ -50,28 +61,67 @@ class CloudStorageService {
       return;
     }
 
+    // Purge any colliding cache keys from app_data_store once on startup
+    try {
+      void (client as any)
+        .from('app_data_store')
+        .delete()
+        .in('storage_key', ['concrete360_sites', 'concrete360_ongoing_sites', 'concrete360_selected_site']);
+    } catch {}
+
     await this.pullFromCloud();
     this.subscribeRealtime();
+    this.startActivePolling();
   }
 
   /**
-   * Pulls all records from both dedicated relational tables and app_data_store
+   * Active polling and focus triggers guarantee cross-device sync
+   * even when WebSockets sleep on mobile phones or background tabs.
+   */
+  private startActivePolling() {
+    if (typeof window === 'undefined') return;
+
+    // Background poll every 4 seconds
+    setInterval(() => {
+      void this.pullFromCloud();
+    }, 4000);
+
+    // Immediate sync when tab/window receives focus
+    window.addEventListener('focus', () => {
+      void this.pullFromCloud();
+    });
+
+    // Handle mobile screen wake / tab switching
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        void this.pullFromCloud();
+      }
+    });
+
+    window.addEventListener('online', () => {
+      void this.pullFromCloud();
+    });
+  }
+
+  /**
+   * Pulls all records from dedicated relational tables first (Sole Source of Truth)
    */
   public async pullFromCloud() {
     const client = supabase;
     if (!client || !isSupabaseConfigured) return;
+    if (this.isPulling) return;
 
-    this.setStatus('syncing', 'Syncing cloud tables...');
+    this.isPulling = true;
     try {
       this.isApplyingRemoteUpdate = true;
 
-      // 1. Pull Dedicated Sites Table
-      const { data: sitesData } = await (client as any)
+      // 1. PULL DEDICATED SITES TABLE (Sole Authority for Sites)
+      const { data: sitesData, error: sitesErr } = await (client as any)
         .from('sites')
         .select('*')
         .order('name');
 
-      if (sitesData && Array.isArray(sitesData) && sitesData.length > 0) {
+      if (!sitesErr && Array.isArray(sitesData)) {
         const formattedSites = sitesData.map((s: any) => ({
           id: s.id,
           siteId: s.site_id || 'S-01',
@@ -88,25 +138,130 @@ class CloudStorageService {
           status: s.status || 'active'
         }));
 
+        // Write directly to both storage keys
         window.localStorage.setItem('concrete360_sites', JSON.stringify(formattedSites));
         window.localStorage.setItem('concrete360_ongoing_sites', JSON.stringify(formattedSites));
       }
 
-      // 2. Pull Unified App Data Store (Invoices, Tests, Trips, Mixers, Users)
-      const { data: storeData } = await (client as any)
-        .from('app_data_store')
-        .select('storage_key, data');
+      // 2. PULL DEDICATED INVOICES TABLE
+      const { data: invoicesData } = await (client as any)
+        .from('invoices')
+        .select('*');
 
-      if (storeData && Array.isArray(storeData)) {
-        storeData.forEach((row: any) => {
-          if (row.storage_key) {
-            const serialized = typeof row.data === 'string' ? row.data : JSON.stringify(row.data);
-            window.localStorage.setItem(row.storage_key, serialized);
-          }
+      if (invoicesData && Array.isArray(invoicesData)) {
+        const invoicesBySite: Record<string, any[]> = {};
+        invoicesData.forEach((inv: any) => {
+          const sName = inv.site_name;
+          if (!sName) return;
+          if (!invoicesBySite[sName]) invoicesBySite[sName] = [];
+          invoicesBySite[sName].push(inv.raw_data || {
+            id: inv.id,
+            invoiceNo: inv.invoice_no,
+            date: inv.date,
+            customerName: inv.customer_name,
+            customerGst: inv.customer_gst,
+            mixGrade: inv.mix_grade,
+            volumeM3: Number(inv.volume_m3 || 0),
+            ratePerM3: Number(inv.rate_per_m3 || 0),
+            basicAmount: Number(inv.basic_amount || 0),
+            cgstAmount: Number(inv.cgst_amount || 0),
+            sgstAmount: Number(inv.sgst_amount || 0),
+            totalTax: Number(inv.total_tax || 0),
+            totalAmount: Number(inv.total_amount || 0),
+            vehicleNo: inv.vehicle_no || '',
+            paymentMode: inv.payment_mode || 'PENDING',
+            paymentStatus: inv.payment_status || 'UNPAID'
+          });
+        });
+        Object.entries(invoicesBySite).forEach(([sName, list]) => {
+          window.localStorage.setItem(`concrete360_site_invoices_${sName}`, JSON.stringify(list));
         });
       }
 
-      // 3. Pull Company Profile Table
+      // 3. PULL DEDICATED HAULAGE TRIPS TABLE
+      const { data: tripsData } = await (client as any)
+        .from('haulage_trips')
+        .select('*');
+
+      if (tripsData && Array.isArray(tripsData)) {
+        const tripsBySite: Record<string, any[]> = {};
+        tripsData.forEach((t: any) => {
+          const sName = t.site_name;
+          if (!sName) return;
+          if (!tripsBySite[sName]) tripsBySite[sName] = [];
+          tripsBySite[sName].push({
+            id: t.id,
+            siteName: t.site_name,
+            tripDate: t.trip_date,
+            vehicleNumber: t.vehicle_number,
+            materialName: t.material_name,
+            purchasedFrom: t.purchased_from,
+            dayTrips: Number(t.day_trips || 1),
+            brassPerTrip: Number(t.brass_per_trip || 0),
+            ratePerBrass: Number(t.rate_per_brass || 0),
+            totalAmount: Number(t.total_amount || 0)
+          });
+        });
+        Object.entries(tripsBySite).forEach(([sName, list]) => {
+          window.localStorage.setItem(`concrete360_site_haulage_trips_${sName}`, JSON.stringify(list));
+        });
+      }
+
+      // 4. PULL DEDICATED SITE TESTS TABLE
+      const { data: testsData } = await (client as any)
+        .from('site_tests')
+        .select('*');
+
+      if (testsData && Array.isArray(testsData)) {
+        const testsBySite: Record<string, any[]> = {};
+        testsData.forEach((st: any) => {
+          const sName = st.site_name;
+          if (!sName) return;
+          if (!testsBySite[sName]) testsBySite[sName] = [];
+          testsBySite[sName].push({
+            id: st.id,
+            siteName: st.site_name,
+            testDate: st.test_date,
+            mixGrade: st.mix_grade,
+            batchVehicleNo: st.batch_vehicle_no,
+            slumpMm: Number(st.slump_mm || 0),
+            concreteTempC: Number(st.concrete_temp_c || 0),
+            cube7DayMpa: st.cube_7day_mpa ? Number(st.cube_7day_mpa) : null,
+            cube28DayMpa: st.cube_28day_mpa ? Number(st.cube_28day_mpa) : null,
+            testStatus: st.test_status,
+            testedBy: st.tested_by,
+            remarks: st.remarks
+          });
+        });
+        Object.entries(testsBySite).forEach(([sName, list]) => {
+          window.localStorage.setItem(`concrete360_site_tests_${sName}`, JSON.stringify(list));
+        });
+      }
+
+      // 5. PULL DEDICATED TRANSIT MIXERS TABLE
+      const { data: mixersData } = await (client as any)
+        .from('transit_mixers')
+        .select('*');
+
+      if (mixersData && Array.isArray(mixersData) && mixersData.length > 0) {
+        const formattedMixers = mixersData.map((tm: any) => ({
+          id: tm.id,
+          vehicleNo: tm.vehicle_no,
+          truckNumber: tm.vehicle_no,
+          equipmentType: tm.equipment_type || 'Transit Mixer (TM)',
+          capacityM3: Number(tm.capacity_m3 || 6),
+          driverName: tm.driver_name || '',
+          driverPhone: tm.driver_phone || '',
+          status: tm.status || 'Active on Site',
+          ownership: tm.ownership || 'Company',
+          isActive: tm.is_active !== false,
+          siteKey: tm.site_key || '',
+          notes: tm.notes || ''
+        }));
+        window.localStorage.setItem('concrete360_transit_mixers', JSON.stringify(formattedMixers));
+      }
+
+      // 6. PULL DEDICATED COMPANY PROFILE TABLE
       const { data: companyData } = await (client as any)
         .from('company_profile')
         .select('*')
@@ -129,9 +284,30 @@ class CloudStorageService {
         );
       }
 
+      // 7. PULL APP DATA STORE (Auxiliary Keys ONLY, NEVER overwrite dedicated table keys)
+      const { data: storeData } = await (client as any)
+        .from('app_data_store')
+        .select('storage_key, data');
+
+      if (storeData && Array.isArray(storeData)) {
+        storeData.forEach((row: any) => {
+          const k = row.storage_key;
+          if (
+            k &&
+            !DEDICATED_STORAGE_KEYS.has(k) &&
+            !k.startsWith('concrete360_site_invoices_') &&
+            !k.startsWith('concrete360_site_haulage_trips_') &&
+            !k.startsWith('concrete360_site_tests_')
+          ) {
+            const serialized = typeof row.data === 'string' ? row.data : JSON.stringify(row.data);
+            window.localStorage.setItem(k, serialized);
+          }
+        });
+      }
+
       this.isApplyingRemoteUpdate = false;
 
-      // Notify UI of synchronized state
+      // Broadcast synchronized state to all listening components
       window.dispatchEvent(new CustomEvent('concrete360_cloud_synced'));
       const activeSite =
         sessionStorage.getItem('concrete360_selected_site') ||
@@ -141,11 +317,13 @@ class CloudStorageService {
       }
       window.dispatchEvent(new Event('concrete360_user_updated'));
 
-      this.setStatus('synced', 'All systems synchronized with Supabase');
+      this.setStatus('synced', 'Live synced with Supabase');
     } catch (err: any) {
       this.isApplyingRemoteUpdate = false;
       console.error('[CloudStorage] Pull error:', err);
       this.setStatus('error', err?.message || 'Sync failed');
+    } finally {
+      this.isPulling = false;
     }
   }
 
@@ -162,18 +340,33 @@ class CloudStorageService {
 
       for (let i = 0; i < window.localStorage.length; i++) {
         const key = window.localStorage.key(i);
-        if (key && key.startsWith('concrete360_') && !key.includes('theme') && !key.includes('selected_site')) {
+        if (
+          key &&
+          key.startsWith('concrete360_') &&
+          !key.includes('theme') &&
+          !key.includes('selected_site') &&
+          !key.includes('active_site')
+        ) {
           try {
             const rawVal = window.localStorage.getItem(key);
             if (rawVal) {
               const parsedVal = JSON.parse(rawVal);
-              storePayload.push({
-                storage_key: key,
-                data: parsedVal,
-                updated_at: new Date().toISOString()
-              });
 
-              // Write to dedicated relational tables
+              // Auxiliary keys to app_data_store
+              if (
+                !DEDICATED_STORAGE_KEYS.has(key) &&
+                !key.startsWith('concrete360_site_invoices_') &&
+                !key.startsWith('concrete360_site_haulage_trips_') &&
+                !key.startsWith('concrete360_site_tests_')
+              ) {
+                storePayload.push({
+                  storage_key: key,
+                  data: parsedVal,
+                  updated_at: new Date().toISOString()
+                });
+              }
+
+              // Dedicated relational tables
               await this.syncToRelationalTable(key, parsedVal);
             }
           } catch {}
@@ -201,13 +394,13 @@ class CloudStorageService {
     this.pendingUploads.set(key, value);
     this.setStatus('syncing', 'Saving changes to cloud...');
 
-    // Immediately sync critical data (sites, invoices, trips, users)
     const isCritical =
       key.includes('site') ||
       key.includes('invoice') ||
       key.includes('trip') ||
       key.includes('test') ||
-      key.includes('user');
+      key.includes('user') ||
+      key.includes('mixer');
 
     if (isCritical) {
       if (this.debounceTimer) clearTimeout(this.debounceTimer);
@@ -228,19 +421,28 @@ class CloudStorageService {
     const items = Array.from(this.pendingUploads.entries());
     this.pendingUploads.clear();
 
-    const storePayload = items.map(([key, val]) => ({
-      storage_key: key,
-      data: val,
-      updated_at: new Date().toISOString()
-    }));
+    const storePayload = items
+      .filter(
+        ([key]) =>
+          !DEDICATED_STORAGE_KEYS.has(key) &&
+          !key.startsWith('concrete360_site_invoices_') &&
+          !key.startsWith('concrete360_site_haulage_trips_') &&
+          !key.startsWith('concrete360_site_tests_')
+      )
+      .map(([key, val]) => ({
+        storage_key: key,
+        data: val,
+        updated_at: new Date().toISOString()
+      }));
 
     try {
-      // 1. Save to app_data_store
-      await (client as any)
-        .from('app_data_store')
-        .upsert(storePayload, { onConflict: 'storage_key' });
+      if (storePayload.length > 0) {
+        await (client as any)
+          .from('app_data_store')
+          .upsert(storePayload, { onConflict: 'storage_key' });
+      }
 
-      // 2. Save directly to dedicated relational tables
+      // Sync dedicated relational tables
       for (const [key, val] of items) {
         await this.syncToRelationalTable(key, val);
       }
@@ -475,78 +677,13 @@ class CloudStorageService {
     try {
       client
         .channel('schema_sync_realtime')
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'sites' },
-          () => void this.pullFromCloud()
-        )
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'invoices' },
-          () => void this.pullFromCloud()
-        )
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'haulage_trips' },
-          () => void this.pullFromCloud()
-        )
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'site_tests' },
-          () => void this.pullFromCloud()
-        )
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'transit_mixers' },
-          () => void this.pullFromCloud()
-        )
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'app_data_store' },
-          (payload: any) => {
-            if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-              const newRow = payload.new as { storage_key?: string; data?: any };
-              if (newRow?.storage_key) {
-                this.isApplyingRemoteUpdate = true;
-                try {
-                  const serialized =
-                    typeof newRow.data === 'string' ? newRow.data : JSON.stringify(newRow.data);
-                  window.localStorage.setItem(newRow.storage_key, serialized);
-                } finally {
-                  this.isApplyingRemoteUpdate = false;
-                }
-
-                window.dispatchEvent(
-                  new CustomEvent('concrete360_remote_update', { detail: { key: newRow.storage_key } })
-                );
-
-                if (newRow.storage_key.includes('site')) {
-                  const currentActive =
-                    sessionStorage.getItem('concrete360_selected_site') ||
-                    localStorage.getItem('concrete360_selected_site');
-                  if (currentActive) {
-                    window.dispatchEvent(
-                      new CustomEvent('concrete360_site_switched', { detail: currentActive })
-                    );
-                  }
-                }
-                if (newRow.storage_key.includes('user')) {
-                  window.dispatchEvent(new Event('concrete360_user_updated'));
-                }
-              }
-            } else if (payload.eventType === 'DELETE') {
-              const oldRow = payload.old as { storage_key?: string };
-              if (oldRow?.storage_key) {
-                this.isApplyingRemoteUpdate = true;
-                try {
-                  window.localStorage.removeItem(oldRow.storage_key);
-                } finally {
-                  this.isApplyingRemoteUpdate = false;
-                }
-              }
-            }
-          }
-        )
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'sites' }, () => void this.pullFromCloud())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'invoices' }, () => void this.pullFromCloud())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'haulage_trips' }, () => void this.pullFromCloud())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'site_tests' }, () => void this.pullFromCloud())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'transit_mixers' }, () => void this.pullFromCloud())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'company_profile' }, () => void this.pullFromCloud())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'app_data_store' }, () => void this.pullFromCloud())
         .subscribe();
     } catch (e) {
       console.warn('[CloudStorage] Realtime subscription warning:', e);
