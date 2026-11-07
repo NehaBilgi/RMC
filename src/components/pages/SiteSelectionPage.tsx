@@ -9,9 +9,12 @@ import {
   ArrowLeft,
   X,
   Moon,
-  Sun
+  Sun,
+  RefreshCw,
+  Cloud
 } from 'lucide-react';
 import { canViewPage } from '../../utils/accessControl';
+import { cloudStorage } from '../../services/cloudStorage';
 
 interface Props {
   projectType?: 'ROAD' | 'BUILDING';
@@ -107,12 +110,17 @@ export const SiteSelectionPage: React.FC<Props> = ({
   const [buildingFloors, setBuildingFloors] = useState<string>('G + 3 Floors');
 
   useEffect(() => {
+    void cloudStorage.pullFromCloud();
     const handleSync = () => setSites(loadStoredSites());
     window.addEventListener('storage', handleSync);
     window.addEventListener('concrete360_site_switched', handleSync);
+    window.addEventListener('concrete360_cloud_synced', handleSync);
+    window.addEventListener('concrete360_remote_update', handleSync);
     return () => {
       window.removeEventListener('storage', handleSync);
       window.removeEventListener('concrete360_site_switched', handleSync);
+      window.removeEventListener('concrete360_cloud_synced', handleSync);
+      window.removeEventListener('concrete360_remote_update', handleSync);
     };
   }, []);
 
@@ -238,6 +246,19 @@ export const SiteSelectionPage: React.FC<Props> = ({
         </div>
 
         <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={async () => {
+              await cloudStorage.pushAllLocalToCloud();
+              await cloudStorage.pullFromCloud();
+              setSites(loadStoredSites());
+            }}
+            className="app-header-action inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-[#1b273d] bg-[#121927] text-slate-300 hover:text-emerald-400 text-xs font-mono transition cursor-pointer"
+            title="Refresh & sync with Supabase cloud database"
+          >
+            <RefreshCw className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="hidden sm:inline">Sync Cloud</span>
+          </button>
           <button
             type="button"
             onClick={onToggleTheme}
