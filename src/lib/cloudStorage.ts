@@ -40,17 +40,18 @@ export function installCloudStorage() {
   if (installed || typeof window === 'undefined') return;
   installed = true;
   companyId = sessionStorage.getItem(COMPANY_KEY);
-  const store = window.localStorage;
-  const origSet = store.setItem.bind(store);
-  const origRemove = store.removeItem.bind(store);
-  store.setItem = (key: string, value: string) => {
-    const before = store.getItem(key);
-    origSet(key, value);
-    if (isShared(key) && before !== value) push(key, value);
+  // Storage instances have exotic setters: assigning store.setItem may store
+  // a string key rather than override the method. Intercept the prototype.
+  const origSet = Storage.prototype.setItem;
+  const origRemove = Storage.prototype.removeItem;
+  Storage.prototype.setItem = function (key: string, value: string) {
+    const before = this.getItem(key);
+    origSet.call(this, key, value);
+    if (this === window.localStorage && isShared(key) && before !== value) push(key, value);
   };
-  store.removeItem = (key: string) => {
-    origRemove(key);
-    if (isShared(key)) push(key, null);
+  Storage.prototype.removeItem = function (key: string) {
+    origRemove.call(this, key);
+    if (this === window.localStorage && isShared(key)) push(key, null);
   };
 }
 
