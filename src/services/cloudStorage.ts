@@ -104,7 +104,12 @@ class CloudStorageService {
         }
 
         window.dispatchEvent(new CustomEvent('concrete360_cloud_synced', { detail: { count: data.length } }));
-        window.dispatchEvent(new CustomEvent('concrete360_site_switched'));
+        const activeSite =
+          sessionStorage.getItem('concrete360_selected_site') ||
+          localStorage.getItem('concrete360_selected_site');
+        if (activeSite) {
+          window.dispatchEvent(new CustomEvent('concrete360_site_switched', { detail: activeSite }));
+        }
         window.dispatchEvent(new Event('concrete360_user_updated'));
       }
 
@@ -278,7 +283,14 @@ class CloudStorageService {
                 );
 
                 if (newRow.storage_key.includes('site')) {
-                  window.dispatchEvent(new CustomEvent('concrete360_site_switched'));
+                  const currentActive =
+                    sessionStorage.getItem('concrete360_selected_site') ||
+                    localStorage.getItem('concrete360_selected_site');
+                  if (currentActive) {
+                    window.dispatchEvent(
+                      new CustomEvent('concrete360_site_switched', { detail: currentActive })
+                    );
+                  }
                 }
                 if (newRow.storage_key.includes('user')) {
                   window.dispatchEvent(new Event('concrete360_user_updated'));
