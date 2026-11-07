@@ -125,18 +125,6 @@ export interface Database {
         };
         Relationships: [];
       };
-      shared_storage: {
-        Row: { company_id: string; key: string; value: string; updated_by: string | null; updated_at: string };
-        Insert: { company_id: string; key: string; value: string; updated_by?: string | null; updated_at?: string };
-        Update: { company_id?: string; key?: string; value?: string; updated_by?: string | null; updated_at?: string };
-        Relationships: [];
-      };
-      user_roles: {
-        Row: { user_id: string; role: UserRole };
-        Insert: { user_id: string; role: UserRole };
-        Update: { role?: UserRole };
-        Relationships: [];
-      };
     };
     Views: Record<string, never>;
     Functions: {
