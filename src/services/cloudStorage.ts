@@ -284,7 +284,36 @@ class CloudStorageService {
         );
       }
 
-      // 7. PULL APP DATA STORE (Auxiliary Keys ONLY, NEVER overwrite dedicated table keys)
+      // 7. PULL DEDICATED SITE MEASUREMENTS TABLE
+      const { data: measurementsData } = await (client as any)
+        .from('site_measurements')
+        .select('*');
+
+      if (measurementsData && Array.isArray(measurementsData)) {
+        const measurementsBySite: Record<string, any[]> = {};
+        measurementsData.forEach((m: any) => {
+          const sName = m.site_name;
+          if (!sName) return;
+          if (!measurementsBySite[sName]) measurementsBySite[sName] = [];
+          measurementsBySite[sName].push({
+            id: m.id,
+            elementName: m.element_name,
+            mixGrade: m.mix_grade,
+            lengthM: Number(m.length_m || 0),
+            widthM: Number(m.width_m || 0),
+            depthM: Number(m.depth_m || 0),
+            quantity: Number(m.quantity || 1),
+            volumeM3: Number(m.volume_m3 || 0),
+            remarks: m.remarks || '',
+            date: m.date || new Date().toISOString().split('T')[0]
+          });
+        });
+        Object.entries(measurementsBySite).forEach(([sName, list]) => {
+          window.localStorage.setItem(`concrete360_advanced_measurements_${sName}`, JSON.stringify(list));
+        });
+      }
+
+      // 8. PULL APP DATA STORE (Auxiliary Keys ONLY, NEVER overwrite dedicated table keys)
       const { data: storeData } = await (client as any)
         .from('app_data_store')
         .select('storage_key, data');
@@ -297,7 +326,8 @@ class CloudStorageService {
             !DEDICATED_STORAGE_KEYS.has(k) &&
             !k.startsWith('concrete360_site_invoices_') &&
             !k.startsWith('concrete360_site_haulage_trips_') &&
-            !k.startsWith('concrete360_site_tests_')
+            !k.startsWith('concrete360_site_tests_') &&
+            !k.startsWith('concrete360_advanced_measurements_')
           ) {
             const serialized = typeof row.data === 'string' ? row.data : JSON.stringify(row.data);
             window.localStorage.setItem(k, serialized);
@@ -621,6 +651,33 @@ class CloudStorageService {
             updated_at: new Date().toISOString()
           }, { onConflict: 'id' });
       }
+
+      // SITE MEASUREMENTS
+      else if (key.startsWith('concrete360_advanced_measurements_')) {
+        const siteName = key.replace('concrete360_advanced_measurements_', '');
+        if (Array.isArray(data)) {
+          const measurementRows = data.map((m: any) => ({
+            id: String(m.id || `MEAS-${Date.now()}`),
+            site_name: siteName,
+            element_name: m.elementName || m.name || 'Structural Element',
+            mix_grade: m.mixGrade || 'M25',
+            length_m: Number(m.lengthM || 0),
+            width_m: Number(m.widthM || 0),
+            depth_m: Number(m.depthM || 0),
+            quantity: Number(m.quantity || 1),
+            volume_m3: Number(m.volumeM3 || 0),
+            remarks: m.remarks || '',
+            date: m.date || new Date().toISOString().split('T')[0],
+            updated_at: new Date().toISOString()
+          }));
+
+          if (measurementRows.length > 0) {
+            await (client as any)
+              .from('site_measurements')
+              .upsert(measurementRows, { onConflict: 'id' });
+          }
+        }
+      }
     } catch (e) {
       console.warn('[CloudStorage] Relational sync warning:', e);
     }
@@ -682,6 +739,7 @@ class CloudStorageService {
         .on('postgres_changes', { event: '*', schema: 'public', table: 'haulage_trips' }, () => void this.pullFromCloud())
         .on('postgres_changes', { event: '*', schema: 'public', table: 'site_tests' }, () => void this.pullFromCloud())
         .on('postgres_changes', { event: '*', schema: 'public', table: 'transit_mixers' }, () => void this.pullFromCloud())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'site_measurements' }, () => void this.pullFromCloud())
         .on('postgres_changes', { event: '*', schema: 'public', table: 'company_profile' }, () => void this.pullFromCloud())
         .on('postgres_changes', { event: '*', schema: 'public', table: 'app_data_store' }, () => void this.pullFromCloud())
         .subscribe();
