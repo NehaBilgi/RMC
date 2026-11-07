@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { canViewPage } from '../../utils/accessControl';
 import { cloudStorage } from '../../services/cloudStorage';
+import { supabase } from '../../lib/supabase';
 
 interface Props {
   projectType?: 'ROAD' | 'BUILDING';
@@ -205,6 +206,27 @@ export const SiteSelectionPage: React.FC<Props> = ({
       const finalOngoing = [newOngoingEntry, ...ongoingArr.filter((s: any) => extractCleanSiteName(s.name || s.siteName) !== cleanKey)];
       localStorage.setItem('concrete360_ongoing_sites', JSON.stringify(finalOngoing));
       localStorage.setItem('concrete360_sites', JSON.stringify(finalOngoing));
+
+      if (supabase) {
+        void (supabase as any)
+          .from('sites')
+          .upsert({
+            id: cleanKey,
+            site_id: newOngoingEntry.siteId,
+            name: cleanKey,
+            site_name: cleanKey,
+            category: projectType === 'ROAD' ? 'Road' : 'Building',
+            location: loc,
+            supervisor: currentUser.username || 'adminbilgi',
+            client_name: cleanKey,
+            gstin: '29UNREGISTERED',
+            scope: buildingFloors || 'G + 3 Floors',
+            assigned_fleet: 4,
+            status: 'active',
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'id' })
+          .then(() => void cloudStorage.pullFromCloud());
+      }
     } catch {}
 
     setIsAddModalOpen(false);
@@ -410,7 +432,7 @@ export const SiteSelectionPage: React.FC<Props> = ({
                 <input
                   type="text"
                   required
-                  placeholder="e.g. WW or FATIMA COMPLEX"
+                  placeholder="e.g. Sector 4 High-Rise or Metro Corridor"
                   value={newSiteName}
                   onChange={(e) => setNewSiteName(e.target.value)}
                   className="w-full px-3.5 py-2.5 bg-[#162032] border border-[#1E293B] rounded-xl text-white outline-none focus:border-blue-500 uppercase font-bold"
