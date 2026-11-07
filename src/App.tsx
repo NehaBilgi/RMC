@@ -5,6 +5,8 @@ import { Sidebar } from './components/construction/Sidebar';
 import { Login } from './components/pages/Login';
 import { SiteSelectionPage } from './components/pages/SiteSelectionPage';
 import { SessionUser } from './utils/accessControl';
+import { supabase } from './lib/supabase';
+import { pullSharedData, clearCloudSession } from './lib/cloudStorage';
 
 export default function App() {
   // 1. Session-only user authentication (clears when browser/PWA window closes)
@@ -16,6 +18,15 @@ export default function App() {
       return null;
     }
   });
+
+  // Re-download shared company data after a page refresh, before showing pages.
+  const [cloudReady, setCloudReady] = useState<boolean>(() => !user);
+  useEffect(() => {
+    if (cloudReady) return;
+    pullSharedData()
+      .catch((error) => console.error('Could not load shared data:', error))
+      .finally(() => setCloudReady(true));
+  }, [cloudReady]);
 
   // 2. Session-only active site selection (clears when browser/PWA window closes)
   const [selectedSite, setSelectedSite] = useState<string | null>(() => {
@@ -115,12 +126,22 @@ export default function App() {
 
   // Logout action resets session completely
   const handleLogout = () => {
+    void supabase?.auth.signOut();
+    clearCloudSession();
     sessionStorage.removeItem('concrete360_user');
     sessionStorage.removeItem('concrete360_selected_site');
     localStorage.removeItem('concrete360_active_site');
     setUser(null);
     setSelectedSite(null);
   };
+
+  if (!cloudReady) {
+    return (
+      <div className={`app-theme ${themeClass} min-h-screen flex items-center justify-center`}>
+        Loading company data...
+      </div>
+    );
+  }
 
   // STEP 1: Always show Login page if no active user session
   if (!user) {
