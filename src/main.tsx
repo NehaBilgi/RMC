@@ -2,6 +2,10 @@ import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
+import { installCloudStorage } from './lib/cloudStorage';
+
+// Must run before <App /> so every page save is sent to Supabase.
+installCloudStorage();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
