@@ -5,6 +5,8 @@ import { Sidebar } from './components/construction/Sidebar';
 import { Login } from './components/pages/Login';
 import { SiteSelectionPage } from './components/pages/SiteSelectionPage';
 import { SessionUser } from './utils/accessControl';
+import { cloudStorage } from './services/cloudStorage';
+import { supabase } from './lib/supabase';
 
 export default function App() {
   // 1. Session-only user authentication (clears when browser/PWA window closes)
@@ -44,6 +46,31 @@ export default function App() {
   });
 
   const themeClass = theme === 'light' ? 'theme-light' : 'theme-dark';
+
+  // Initialize Supabase Cloud Persistence & Data Synchronization Engine
+  useEffect(() => {
+    void cloudStorage.init();
+
+    // Check if an existing Supabase session is active
+    if (supabase) {
+      void supabase.auth.getSession().then(({ data }) => {
+        if (data.session?.user && !user) {
+          const email = data.session.user.email || '';
+          const metaUsername = data.session.user.user_metadata?.username;
+          const metaRole = data.session.user.user_metadata?.role || 'SUPER_ADMIN';
+
+          const sessionUser: SessionUser = {
+            username: metaUsername || email.split('@')[0] || 'admin',
+            role: metaRole,
+            name: metaUsername || email,
+            pageAccess: null
+          };
+          setUser(sessionUser);
+          sessionStorage.setItem('concrete360_user', JSON.stringify(sessionUser));
+        }
+      });
+    }
+  }, []);
 
   useEffect(() => {
     try {
@@ -113,11 +140,14 @@ export default function App() {
     } catch {}
   }, [measurementSession]);
 
-  // Logout action resets session completely
+  // Logout action resets session completely and signs out of Supabase
   const handleLogout = () => {
     sessionStorage.removeItem('concrete360_user');
     sessionStorage.removeItem('concrete360_selected_site');
     localStorage.removeItem('concrete360_active_site');
+    if (supabase) {
+      void supabase.auth.signOut();
+    }
     setUser(null);
     setSelectedSite(null);
   };
