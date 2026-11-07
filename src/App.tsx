@@ -115,14 +115,21 @@ export default function App() {
   // Listen for site deletions and switch events
   useEffect(() => {
     const handleSiteSwitch = (e: any) => {
-      const newSiteKey = e?.detail || '';
-      if (!newSiteKey) {
-        // If all sites were deleted, send back to site selection page
+      // Only reset if detail is explicitly an empty string or null (indicating an explicit deletion)
+      if (e?.detail === '' || e?.detail === null) {
         setSelectedSite(null);
         sessionStorage.removeItem('concrete360_selected_site');
         localStorage.removeItem('concrete360_active_site');
+      } else if (typeof e?.detail === 'string' && e.detail.trim().length > 0) {
+        setSelectedSite(e.detail.trim());
       } else {
-        setSelectedSite(newSiteKey);
+        // If an update or sync occurred without passing a new site key, retain active site
+        const existingSite =
+          sessionStorage.getItem('concrete360_selected_site') ||
+          localStorage.getItem('concrete360_selected_site');
+        if (existingSite) {
+          setSelectedSite(existingSite);
+        }
       }
     };
 
