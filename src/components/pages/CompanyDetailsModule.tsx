@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Building, Edit2, Save, X, Check, Landmark } from 'lucide-react';
 import { getSessionUser, isAdminUser } from '../../utils/accessControl';
+import { supabase } from '../../lib/supabase';
+import { cloudStorage } from '../../services/cloudStorage';
 
 export const CompanyDetailsModule: React.FC = () => {
   const canEditCompany = isAdminUser(getSessionUser());
@@ -19,7 +21,7 @@ export const CompanyDetailsModule: React.FC = () => {
     branch: 'Expressway Central Hub'
   });
 
-  useEffect(() => {
+  const loadData = () => {
     try {
       const raw = localStorage.getItem('concrete360_company_profile');
       if (raw) {
@@ -27,13 +29,45 @@ export const CompanyDetailsModule: React.FC = () => {
         setCompanyData(prev => ({ ...prev, ...parsed }));
       }
     } catch {}
+  };
+
+  useEffect(() => {
+    void cloudStorage.pullFromCloud();
+    loadData();
+
+    window.addEventListener('concrete360_cloud_synced', loadData);
+    window.addEventListener('storage', loadData);
+    window.addEventListener('focus', loadData);
+    return () => {
+      window.removeEventListener('concrete360_cloud_synced', loadData);
+      window.removeEventListener('storage', loadData);
+      window.removeEventListener('focus', loadData);
+    };
   }, []);
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canEditCompany) return;
     try {
       localStorage.setItem('concrete360_company_profile', JSON.stringify(companyData));
+
+      if (supabase) {
+        await (supabase as any).from('company_profile').upsert({
+          id: 'primary_company',
+          name: companyData.name,
+          gstin: companyData.gstin,
+          address: companyData.address,
+          division: companyData.division,
+          bank_name: companyData.bankName,
+          account_name: companyData.accountName,
+          account_no: companyData.accountNo,
+          ifsc_swift: companyData.ifscSwift,
+          branch: companyData.branch,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'id' });
+        await cloudStorage.pullFromCloud();
+      }
+
       setSavedSuccess(true);
       setIsEditing(false);
       setTimeout(() => setSavedSuccess(false), 3000);
