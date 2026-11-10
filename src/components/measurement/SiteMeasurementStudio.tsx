@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { SiteMeasurementSession, StructuralMeasurementItem } from '../../types/rmc';
+import { supabase } from '../../lib/supabase';
+import { cloudStorage } from '../../services/cloudStorage';
 import { 
   Plus, 
   Trash2, 
@@ -106,7 +108,7 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
 
   const userRole = getUserRole();
   const canCreate = userRole === 'ADMIN' || userRole === 'EMPLOYEE';
-  const canEditOrDelete = userRole === 'ADMIN';
+  const canEditOrDelete = userRole === 'ADMIN' || userRole === 'EMPLOYEE';
 
   const getActiveSiteKey = () => {
     try {
@@ -628,28 +630,24 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
         }
       } catch {}
     } else {
+      let itemToSave: ConcreteItem;
       if (editingItem) {
-        setItems((prev) =>
-          prev.map((it) =>
-            it.id === editingItem.id
-              ? {
-                  ...it,
-                  siteKey: currentSiteKey,
-                  mixGrade: modalMixGrade,
-                  date: modalWorkDate,
-                  categories: selectedCategories,
-                  label: label.trim() || `Structural Work`,
-                  breakdownText,
-                  volumeM3: Number(grandTotalComputed.totalM3.toFixed(3)),
-                  volumeCft: Number(grandTotalComputed.totalCft.toFixed(2)),
-                  unitSystem: unitMode,
-                  dimensionsSnapshot: snapshot
-                }
-              : it
-          )
-        );
+        itemToSave = {
+          ...editingItem,
+          siteKey: currentSiteKey,
+          mixGrade: modalMixGrade,
+          date: modalWorkDate,
+          categories: selectedCategories,
+          label: label.trim() || `Structural Work`,
+          breakdownText,
+          volumeM3: Number(grandTotalComputed.totalM3.toFixed(3)),
+          volumeCft: Number(grandTotalComputed.totalCft.toFixed(2)),
+          unitSystem: unitMode,
+          dimensionsSnapshot: snapshot
+        };
+        setItems((prev) => prev.map((it) => it.id === editingItem.id ? itemToSave : it));
       } else {
-        const newItem: ConcreteItem = {
+        itemToSave = {
           id: `RCC-${Math.floor(1000 + Math.random() * 9000)}`,
           siteKey: currentSiteKey,
           mixGrade: modalMixGrade,
@@ -662,19 +660,40 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
           unitSystem: unitMode,
           dimensionsSnapshot: snapshot
         };
-        setItems((prev) => [newItem, ...prev]);
+        setItems((prev) => [itemToSave, ...prev]);
+      }
+
+      if (supabase) {
+        void (supabase as any).from('site_measurements').upsert({
+          id: itemToSave.id,
+          site_name: currentSiteKey,
+          element_name: itemToSave.label,
+          mix_grade: itemToSave.mixGrade,
+          length_m: 0,
+          width_m: 0,
+          depth_m: 0,
+          quantity: 1,
+          volume_m3: itemToSave.volumeM3,
+          remarks: itemToSave.breakdownText,
+          date: itemToSave.date,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'id' }).then(() => void cloudStorage.pullFromCloud());
       }
     }
     setIsModalOpen(false);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (!canEditOrDelete) {
       alert('Permission Denied: Only ADMIN accounts can delete structural works.');
       return;
     }
     if (window.confirm('Delete this structural work record?')) {
       setItems((prev) => prev.filter((it) => it.id !== id));
+      if (supabase) {
+        await (supabase as any).from('site_measurements').delete().eq('id', id);
+        await cloudStorage.pullFromCloud();
+      }
     }
   };
 
