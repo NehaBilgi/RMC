@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Layers, Edit2, Save, X, Check, RotateCcw, Lock, Zap, Droplets } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
+import { cloudStorage } from '../../services/cloudStorage';
 
 export type AdmixtureMode = 'FLY_ASH' | 'GGBS';
 
@@ -65,7 +67,7 @@ export const MixDesignModule: React.FC = () => {
   };
 
   const userRole = getUserRole();
-  const canModifyMixes = userRole === 'ADMIN';
+  const canModifyMixes = userRole === 'ADMIN' || userRole === 'EMPLOYEE';
 
   const getActiveSiteKey = (): string => {
     try {
@@ -241,7 +243,7 @@ export const MixDesignModule: React.FC = () => {
     setEditForm(updated);
   };
 
-  const handleSaveEdit = (e: React.FormEvent) => {
+  const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canModifyMixes) return;
 
@@ -252,6 +254,26 @@ export const MixDesignModule: React.FC = () => {
       [activeGrade]: { ...finalBalanced }
     }));
     setIsEditing(false);
+
+    if (supabase) {
+      await (supabase as any).from('mix_designs').upsert({
+        grade: finalBalanced.grade,
+        target_mpa: finalBalanced.targetMpa,
+        wcr: finalBalanced.wcr,
+        cement_kg: finalBalanced.cementKg,
+        mineral_admixture_kg: finalBalanced.mineralAdmixtureKg,
+        water_litres: finalBalanced.waterLitres,
+        m_sand_kg: finalBalanced.mSandKg,
+        agg_20mm_kg: finalBalanced.agg20mmKg,
+        agg_10mm_kg: finalBalanced.agg10mmKg,
+        admixture_kg: finalBalanced.admixtureKg,
+        total_density: 2400,
+        mode: admixtureMode,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'grade' });
+      await cloudStorage.pullFromCloud();
+    }
+
     setSuccessMessage(`Mix design for ${activeGrade} saved with exact 2400 kg/m³ yield!`);
     setTimeout(() => setSuccessMessage(null), 3000);
   };
