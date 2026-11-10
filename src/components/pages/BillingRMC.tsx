@@ -120,7 +120,7 @@ export const BillingRMC: React.FC = () => {
 
   const userRole = getUserRole();
   const canCreate = userRole === 'ADMIN' || userRole === 'EMPLOYEE';
-  const canEditOrDelete = userRole === 'ADMIN';
+  const canEditOrDelete = userRole === 'ADMIN' || userRole === 'EMPLOYEE';
   const canPrint = userRole === 'ADMIN' || userRole === 'EMPLOYEE';
 
   const getActiveSiteKey = () => {
