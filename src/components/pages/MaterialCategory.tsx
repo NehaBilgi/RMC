@@ -11,6 +11,8 @@ import {
   Eye,
   Lock
 } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
+import { cloudStorage } from '../../services/cloudStorage';
 
 export const MaterialCategory: React.FC = () => {
   // Retrieve Active User Role
@@ -148,27 +150,31 @@ export const MaterialCategory: React.FC = () => {
     setIsConcreteModalOpen(true);
   };
 
-  const handleSaveConcrete = (e: React.FormEvent) => {
+  const handleSaveConcrete = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canCreate) return;
     if (!code.trim()) return;
+
+    let targetItem: any;
+    let updated: any[];
 
     if (editingConcrete) {
       if (!canEditOrDelete) {
         alert('Permission Denied: Only ADMIN accounts can edit concrete grades.');
         return;
       }
-      setConcreteGrades(prev => prev.map(item => item.id === editingConcrete.id ? {
-        ...item,
+      targetItem = {
+        ...editingConcrete,
         code: code.toUpperCase(),
         type,
         targetStrength,
         slump,
         ratePerM3: Number(ratePerM3)
-      } : item));
+      };
+      updated = concreteGrades.map(item => item.id === editingConcrete.id ? targetItem : item);
     } else {
-      const newItem = {
-        id: `c-${Date.now()}`,
+      targetItem = {
+        id: `c-${code.trim().toUpperCase()}`,
         code: code.toUpperCase(),
         type,
         targetStrength,
@@ -176,18 +182,48 @@ export const MaterialCategory: React.FC = () => {
         ratePerM3: Number(ratePerM3),
         status: 'Active'
       };
-      setConcreteGrades(prev => [...prev, newItem]);
+      updated = [...concreteGrades, targetItem];
     }
+
+    setConcreteGrades(updated);
+    try {
+      localStorage.setItem('concrete360_grades', JSON.stringify(updated));
+    } catch {}
+
+    if (supabase) {
+      await (supabase as any).from('material_categories').upsert({
+        id: targetItem.id,
+        category_type: 'concrete',
+        code: targetItem.code,
+        name: targetItem.type,
+        unit: 'm³',
+        rate: targetItem.ratePerM3,
+        target_strength: targetItem.targetStrength,
+        slump: targetItem.slump,
+        status: targetItem.status || 'Active'
+      }, { onConflict: 'id' });
+      await cloudStorage.pullFromCloud();
+    }
+
     setIsConcreteModalOpen(false);
   };
 
-  const handleDeleteConcrete = (id: string) => {
+  const handleDeleteConcrete = async (id: string) => {
     if (!canEditOrDelete) {
       alert('Permission Denied: Only ADMIN accounts can delete concrete grades.');
       return;
     }
     if (!window.confirm('Are you sure you want to delete this concrete grade?')) return;
-    setConcreteGrades(prev => prev.filter(c => c.id !== id));
+    const updated = concreteGrades.filter(c => c.id !== id);
+    setConcreteGrades(updated);
+    try {
+      localStorage.setItem('concrete360_grades', JSON.stringify(updated));
+    } catch {}
+
+    if (supabase) {
+      await (supabase as any).from('material_categories').delete().eq('id', id);
+      await cloudStorage.pullFromCloud();
+    }
   };
 
   const handleOpenAddRaw = () => {
@@ -200,30 +236,57 @@ export const MaterialCategory: React.FC = () => {
     setIsRawModalOpen(true);
   };
 
-  const handleSaveRawMaterial = (e: React.FormEvent) => {
+  const handleSaveRawMaterial = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canCreate) return;
     if (!rawName.trim()) return;
 
     const newItem = {
-      id: `RM-0${rawMaterials.length + 1}`,
+      id: `RM-${rawName.trim().toUpperCase().replace(/[^A-Z0-9]/g, '_')}`,
       name: rawName.trim(),
       ratePerBrass: Number(ratePerBrass)
     };
 
-    setRawMaterials(prev => [newItem, ...prev]);
+    const updated = [newItem, ...rawMaterials.filter(r => r.id !== newItem.id)];
+    setRawMaterials(updated);
+    try {
+      localStorage.setItem('concrete360_raw_materials', JSON.stringify(updated));
+    } catch {}
+
+    if (supabase) {
+      await (supabase as any).from('material_categories').upsert({
+        id: newItem.id,
+        category_type: 'raw',
+        code: newItem.id,
+        name: newItem.name,
+        unit: 'Brass',
+        rate: newItem.ratePerBrass,
+        status: 'Active'
+      }, { onConflict: 'id' });
+      await cloudStorage.pullFromCloud();
+    }
+
     setIsRawModalOpen(false);
     setRawName('');
     setRatePerBrass(1200);
   };
 
-  const handleDeleteRawMaterial = (id: string) => {
+  const handleDeleteRawMaterial = async (id: string) => {
     if (!canEditOrDelete) {
       alert('Permission Denied: Only ADMIN accounts can delete raw material stocks.');
       return;
     }
     if (!window.confirm('Are you sure you want to delete this raw material?')) return;
-    setRawMaterials(prev => prev.filter(r => r.id !== id));
+    const updated = rawMaterials.filter(r => r.id !== id);
+    setRawMaterials(updated);
+    try {
+      localStorage.setItem('concrete360_raw_materials', JSON.stringify(updated));
+    } catch {}
+
+    if (supabase) {
+      await (supabase as any).from('material_categories').delete().eq('id', id);
+      await cloudStorage.pullFromCloud();
+    }
   };
 
   return (
