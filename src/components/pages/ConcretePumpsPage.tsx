@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Truck, Plus, Trash2, Edit3, X, Wrench } from 'lucide-react';
 import { canCreateRecords, getSessionUser, isAdminUser } from '../../utils/accessControl';
+import { supabase } from '../../lib/supabase';
+import { cloudStorage } from '../../services/cloudStorage';
 
 interface EquipmentItem {
   id: string;
@@ -96,34 +98,61 @@ export const ConcretePumpsPage: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (!canEditOrDelete) return;
     if (!window.confirm('Are you sure you want to delete this equipment record?')) return;
     const updated = equipmentList.filter(e => e.id !== id);
     saveToStorage(updated);
+
+    if (supabase) {
+      await (supabase as any).from('transit_mixers').delete().eq('id', id);
+      await cloudStorage.pullFromCloud();
+    }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canCreate || (editingId && !canEditOrDelete)) return;
-    if (!formData.vehicleNo.trim()) return;
+    const cleanVNo = formData.vehicleNo.trim().toUpperCase();
+    if (!cleanVNo) return;
+
+    let targetItem: EquipmentItem;
+    let updated: EquipmentItem[];
 
     if (editingId) {
-      const updated = equipmentList.map(eq => eq.id === editingId ? {
-        ...eq,
-        vehicleNo: formData.vehicleNo.trim().toUpperCase(),
-        equipmentType: formData.equipmentType,
-        rent: Number(formData.rent)
-      } : eq);
-      saveToStorage(updated);
-    } else {
-      const newItem: EquipmentItem = {
-        id: 'eq-' + Date.now(),
-        vehicleNo: formData.vehicleNo.trim().toUpperCase(),
+      targetItem = {
+        id: editingId,
+        vehicleNo: cleanVNo,
         equipmentType: formData.equipmentType,
         rent: Number(formData.rent)
       };
-      saveToStorage([newItem, ...equipmentList]);
+      updated = equipmentList.map(eq => eq.id === editingId ? targetItem : eq);
+    } else {
+      targetItem = {
+        id: 'eq-' + Date.now(),
+        vehicleNo: cleanVNo,
+        equipmentType: formData.equipmentType,
+        rent: Number(formData.rent)
+      };
+      updated = [targetItem, ...equipmentList];
+    }
+
+    saveToStorage(updated);
+
+    if (supabase) {
+      await (supabase as any).from('transit_mixers').upsert({
+        id: targetItem.id,
+        vehicle_no: targetItem.vehicleNo,
+        equipment_type: targetItem.equipmentType,
+        capacity_m3: 0,
+        notes: `Rent: ₹${targetItem.rent}`,
+        status: 'Active on Site',
+        ownership: 'Company',
+        is_active: true,
+        site_key: currentSiteKey,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'id' });
+      await cloudStorage.pullFromCloud();
     }
 
     setIsModalOpen(false);
