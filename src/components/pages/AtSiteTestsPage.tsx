@@ -98,7 +98,7 @@ const getOngoingSiteDetails = () => {
 export const AtSiteTestsPage: React.FC = () => {
   const sessionUser = getSessionUser();
   const canCreate = canCreateRecords(sessionUser);
-  const canEditOrDelete = isAdminUser(sessionUser);
+  const canEditOrDelete = isAdminUser(sessionUser) || canCreateRecords(sessionUser);
   const [activeSiteInfo, setActiveSiteInfo] = useState(getOngoingSiteDetails());
   const currentSiteKey = activeSiteInfo.siteName;
 
