@@ -13,7 +13,10 @@ const DEDICATED_STORAGE_KEYS = new Set([
   'concrete360_users',
   'concrete360_theme',
   'concrete360_selected_site',
-  'concrete360_active_site'
+  'concrete360_active_site',
+  'concrete360_grades',
+  'concrete360_raw_materials',
+  'concrete360_mix_designs'
 ]);
 
 class CloudStorageService {
@@ -122,37 +125,60 @@ class CloudStorageService {
         .select('*')
         .order('name');
 
+      const allKnownSiteNames = new Set<string>();
+
       if (!sitesErr && Array.isArray(sitesData)) {
-        const formattedSites = sitesData.map((s: any) => ({
-          id: s.id,
-          siteId: s.site_id || 'S-01',
-          name: s.name,
-          siteName: s.site_name || s.name,
-          category: s.category || 'Building',
-          location: s.location || '',
-          supervisor: s.supervisor || 'adminbilgi',
-          clientName: s.client_name || s.name,
-          gstin: s.gstin || '29UNREGISTERED',
-          detail: s.scope || 'G + 3 Floors',
-          structureScope: s.scope || 'G + 3 Floors',
-          assignedFleet: s.assigned_fleet || 4,
-          status: s.status || 'active'
-        }));
+        const formattedSites = sitesData.map((s: any) => {
+          const sName = (s.name || s.site_name || s.id || '').trim();
+          if (sName) allKnownSiteNames.add(sName.toUpperCase());
+          return {
+            id: s.id,
+            siteId: s.site_id || 'S-01',
+            name: s.name,
+            siteName: s.site_name || s.name,
+            category: s.category || 'Building',
+            location: s.location || '',
+            supervisor: s.supervisor || 'adminbilgi',
+            clientName: s.client_name || s.name,
+            gstin: s.gstin || '29UNREGISTERED',
+            detail: s.scope || 'G + 3 Floors',
+            structureScope: s.scope || 'G + 3 Floors',
+            assignedFleet: s.assigned_fleet || 4,
+            status: s.status || 'active'
+          };
+        });
 
         // Write directly to both storage keys
         window.localStorage.setItem('concrete360_sites', JSON.stringify(formattedSites));
         window.localStorage.setItem('concrete360_ongoing_sites', JSON.stringify(formattedSites));
       }
 
-      // 2. PULL DEDICATED INVOICES TABLE
+      // Collect all local site names from existing storage keys
+      for (let i = 0; i < window.localStorage.length; i++) {
+        const k = window.localStorage.key(i);
+        if (!k) continue;
+        if (k.startsWith('concrete360_site_invoices_')) {
+          allKnownSiteNames.add(k.replace('concrete360_site_invoices_', '').trim().toUpperCase());
+        } else if (k.startsWith('concrete360_site_haulage_trips_')) {
+          allKnownSiteNames.add(k.replace('concrete360_site_haulage_trips_', '').trim().toUpperCase());
+        } else if (k.startsWith('concrete360_site_tests_')) {
+          allKnownSiteNames.add(k.replace('concrete360_site_tests_', '').trim().toUpperCase());
+        } else if (k.startsWith('concrete360_advanced_measurements_')) {
+          allKnownSiteNames.add(k.replace('concrete360_advanced_measurements_', '').trim().toUpperCase());
+        }
+      }
+
+      // 2. PULL DEDICATED INVOICES TABLE (Clean Slate ensures deletions reflect everywhere)
       const { data: invoicesData } = await (client as any)
         .from('invoices')
         .select('*');
 
+      const invoicesBySite: Record<string, any[]> = {};
+      allKnownSiteNames.forEach(s => { invoicesBySite[s] = []; });
+
       if (invoicesData && Array.isArray(invoicesData)) {
-        const invoicesBySite: Record<string, any[]> = {};
         invoicesData.forEach((inv: any) => {
-          const sName = inv.site_name;
+          const sName = (inv.site_name || '').trim().toUpperCase();
           if (!sName) return;
           if (!invoicesBySite[sName]) invoicesBySite[sName] = [];
           invoicesBySite[sName].push(inv.raw_data || {
@@ -174,20 +200,22 @@ class CloudStorageService {
             paymentStatus: inv.payment_status || 'UNPAID'
           });
         });
-        Object.entries(invoicesBySite).forEach(([sName, list]) => {
-          window.localStorage.setItem(`concrete360_site_invoices_${sName}`, JSON.stringify(list));
-        });
       }
+      Object.entries(invoicesBySite).forEach(([sName, list]) => {
+        window.localStorage.setItem(`concrete360_site_invoices_${sName}`, JSON.stringify(list));
+      });
 
       // 3. PULL DEDICATED HAULAGE TRIPS TABLE
       const { data: tripsData } = await (client as any)
         .from('haulage_trips')
         .select('*');
 
+      const tripsBySite: Record<string, any[]> = {};
+      allKnownSiteNames.forEach(s => { tripsBySite[s] = []; });
+
       if (tripsData && Array.isArray(tripsData)) {
-        const tripsBySite: Record<string, any[]> = {};
         tripsData.forEach((t: any) => {
-          const sName = t.site_name;
+          const sName = (t.site_name || '').trim().toUpperCase();
           if (!sName) return;
           if (!tripsBySite[sName]) tripsBySite[sName] = [];
           tripsBySite[sName].push({
@@ -203,20 +231,22 @@ class CloudStorageService {
             totalAmount: Number(t.total_amount || 0)
           });
         });
-        Object.entries(tripsBySite).forEach(([sName, list]) => {
-          window.localStorage.setItem(`concrete360_site_haulage_trips_${sName}`, JSON.stringify(list));
-        });
       }
+      Object.entries(tripsBySite).forEach(([sName, list]) => {
+        window.localStorage.setItem(`concrete360_site_haulage_trips_${sName}`, JSON.stringify(list));
+      });
 
       // 4. PULL DEDICATED SITE TESTS TABLE
       const { data: testsData } = await (client as any)
         .from('site_tests')
         .select('*');
 
+      const testsBySite: Record<string, any[]> = {};
+      allKnownSiteNames.forEach(s => { testsBySite[s] = []; });
+
       if (testsData && Array.isArray(testsData)) {
-        const testsBySite: Record<string, any[]> = {};
         testsData.forEach((st: any) => {
-          const sName = st.site_name;
+          const sName = (st.site_name || '').trim().toUpperCase();
           if (!sName) return;
           if (!testsBySite[sName]) testsBySite[sName] = [];
           testsBySite[sName].push({
@@ -234,33 +264,35 @@ class CloudStorageService {
             remarks: st.remarks
           });
         });
-        Object.entries(testsBySite).forEach(([sName, list]) => {
-          window.localStorage.setItem(`concrete360_site_tests_${sName}`, JSON.stringify(list));
-        });
       }
+      Object.entries(testsBySite).forEach(([sName, list]) => {
+        window.localStorage.setItem(`concrete360_site_tests_${sName}`, JSON.stringify(list));
+      });
 
-      // 5. PULL DEDICATED TRANSIT MIXERS TABLE
+      // 5. PULL DEDICATED TRANSIT MIXERS & PUMPS TABLE
       const { data: mixersData } = await (client as any)
         .from('transit_mixers')
         .select('*');
 
-      if (mixersData && Array.isArray(mixersData) && mixersData.length > 0) {
-        const formattedMixers = mixersData.map((tm: any) => ({
-          id: tm.id,
-          vehicleNo: tm.vehicle_no,
-          truckNumber: tm.vehicle_no,
-          equipmentType: tm.equipment_type || 'Transit Mixer (TM)',
-          capacityM3: Number(tm.capacity_m3 || 6),
-          driverName: tm.driver_name || '',
-          driverPhone: tm.driver_phone || '',
-          status: tm.status || 'Active on Site',
-          ownership: tm.ownership || 'Company',
-          isActive: tm.is_active !== false,
-          siteKey: tm.site_key || '',
-          notes: tm.notes || ''
-        }));
-        window.localStorage.setItem('concrete360_transit_mixers', JSON.stringify(formattedMixers));
-      }
+      const formattedMixers = Array.isArray(mixersData) ? mixersData.map((tm: any) => ({
+        id: tm.id,
+        vehicleNo: tm.vehicle_no,
+        truckNumber: tm.vehicle_no,
+        equipmentType: tm.equipment_type || 'Transit Mixer (TM)',
+        capacityM3: Number(tm.capacity_m3 || 6),
+        driverName: tm.driver_name || '',
+        driverPhone: tm.driver_phone || '',
+        status: tm.status || 'Active on Site',
+        ownership: tm.ownership || 'Company',
+        isActive: tm.is_active !== false,
+        siteKey: tm.site_key || '',
+        notes: tm.notes || ''
+      })) : [];
+
+      window.localStorage.setItem('concrete360_transit_mixers', JSON.stringify(formattedMixers));
+      allKnownSiteNames.forEach(sName => {
+        window.localStorage.setItem(`concrete360_transit_mixers_${sName}`, JSON.stringify(formattedMixers));
+      });
 
       // 6. PULL DEDICATED COMPANY PROFILE TABLE
       const { data: companyData } = await (client as any)
@@ -290,10 +322,12 @@ class CloudStorageService {
         .from('site_measurements')
         .select('*');
 
+      const measurementsBySite: Record<string, any[]> = {};
+      allKnownSiteNames.forEach(s => { measurementsBySite[s] = []; });
+
       if (measurementsData && Array.isArray(measurementsData)) {
-        const measurementsBySite: Record<string, any[]> = {};
         measurementsData.forEach((m: any) => {
-          const sName = m.site_name;
+          const sName = (m.site_name || '').trim().toUpperCase();
           if (!sName) return;
           if (!measurementsBySite[sName]) measurementsBySite[sName] = [];
           measurementsBySite[sName].push({
@@ -309,10 +343,78 @@ class CloudStorageService {
             date: m.date || new Date().toISOString().split('T')[0]
           });
         });
-        Object.entries(measurementsBySite).forEach(([sName, list]) => {
-          window.localStorage.setItem(`concrete360_advanced_measurements_${sName}`, JSON.stringify(list));
-        });
       }
+      Object.entries(measurementsBySite).forEach(([sName, list]) => {
+        window.localStorage.setItem(`concrete360_advanced_measurements_${sName}`, JSON.stringify(list));
+      });
+
+      // 8. PULL DEDICATED MATERIAL CATEGORIES TABLE
+      try {
+        const { data: categoriesData } = await (client as any)
+          .from('material_categories')
+          .select('*');
+
+        if (Array.isArray(categoriesData) && categoriesData.length > 0) {
+          const concreteGrades = categoriesData
+            .filter((c: any) => c.category_type === 'concrete')
+            .map((c: any) => ({
+              id: c.id,
+              code: c.code,
+              type: c.name || c.code,
+              targetStrength: c.target_strength || `${c.code.replace(/\D/g, '')} N/mm²`,
+              slump: c.slump || '120 ± 25 mm',
+              ratePerM3: Number(c.rate || 0),
+              status: c.status || 'Active'
+            }));
+          const rawMaterials = categoriesData
+            .filter((c: any) => c.category_type === 'raw')
+            .map((c: any) => ({
+              id: c.id,
+              name: c.name || c.code,
+              ratePerBrass: Number(c.rate || 0)
+            }));
+          if (concreteGrades.length > 0) {
+            window.localStorage.setItem('concrete360_grades', JSON.stringify(concreteGrades));
+          }
+          if (rawMaterials.length > 0) {
+            window.localStorage.setItem('concrete360_raw_materials', JSON.stringify(rawMaterials));
+          }
+        }
+      } catch {}
+
+      // 9. PULL DEDICATED MIX DESIGNS TABLE
+      try {
+        const { data: mixData } = await (client as any)
+          .from('mix_designs')
+          .select('*');
+
+        if (Array.isArray(mixData) && mixData.length > 0) {
+          const arr = mixData.map((m: any) => ({
+            grade: m.grade,
+            code: m.grade,
+            targetMpa: Number(m.target_mpa || 0),
+            wcr: Number(m.wcr || 0),
+            cementKg: Number(m.cement_kg || 0),
+            cementKgPerM3: Number(m.cement_kg || 0),
+            mineralAdmixtureKg: Number(m.mineral_admixture_kg || 0),
+            flyAshKgPerM3: m.mode === 'FLY_ASH' ? Number(m.mineral_admixture_kg || 0) : 0,
+            ggbsKgPerM3: m.mode === 'GGBS' ? Number(m.mineral_admixture_kg || 0) : 0,
+            waterLitres: Number(m.water_litres || 0),
+            waterLitresPerM3: Number(m.water_litres || 0),
+            mSandKg: Number(m.m_sand_kg || 0),
+            mSandKgPerM3: Number(m.m_sand_kg || 0),
+            agg20mmKg: Number(m.agg_20mm_kg || 0),
+            agg20mmKgPerM3: Number(m.agg_20mm_kg || 0),
+            agg10mmKg: Number(m.agg_10mm_kg || 0),
+            agg10mmKgPerM3: Number(m.agg_10mm_kg || 0),
+            admixtureKg: Number(m.admixture_kg || 0),
+            admixtureKgPerM3: Number(m.admixture_kg || 0),
+            totalDensity: Number(m.total_density || 2400),
+            mode: m.mode || 'FLY_ASH'
+          }));
+          window.localStorage.setItem('concrete360_mix_designs', JSON.stringify(arr));
+        }
+      } catch {}
 
       // 8. PULL DEDICATED APP USERS TABLE
       try {
@@ -715,6 +817,74 @@ class CloudStorageService {
         }
       }
 
+      // MATERIAL CATEGORIES
+      else if (key === 'concrete360_grades') {
+        if (Array.isArray(data)) {
+          const categoryRows = data.map((g: any) => ({
+            id: String(g.id || `c-${g.code || Date.now()}`),
+            category_type: 'concrete',
+            code: g.code || 'M20',
+            name: g.type || g.name || g.code,
+            unit: 'm³',
+            rate: Number(g.ratePerM3 || g.rate || 0),
+            target_strength: g.targetStrength || `${(g.code || 'M20').replace(/\D/g, '')} N/mm²`,
+            slump: g.slump || '120 ± 25 mm',
+            status: g.status || 'Active'
+          }));
+          if (categoryRows.length > 0) {
+            await (client as any)
+              .from('material_categories')
+              .upsert(categoryRows, { onConflict: 'id' });
+          }
+        }
+      }
+
+      // RAW MATERIALS
+      else if (key === 'concrete360_raw_materials') {
+        if (Array.isArray(data)) {
+          const rawRows = data.map((r: any) => ({
+            id: String(r.id || `RM-${Date.now()}`),
+            category_type: 'raw',
+            code: r.id || r.name,
+            name: r.name,
+            unit: 'Brass',
+            rate: Number(r.ratePerBrass || r.rate || 0),
+            status: 'Active'
+          }));
+          if (rawRows.length > 0) {
+            await (client as any)
+              .from('material_categories')
+              .upsert(rawRows, { onConflict: 'id' });
+          }
+        }
+      }
+
+      // MIX DESIGNS
+      else if (key === 'concrete360_mix_designs' || key.startsWith('concrete360_mix_designs_')) {
+        if (Array.isArray(data)) {
+          const mixRows = data.map((m: any) => ({
+            grade: m.grade || m.code,
+            target_mpa: Number(m.targetMpa || 0),
+            wcr: Number(m.wcr || 0),
+            cement_kg: Number(m.cementKg || m.cementKgPerM3 || 0),
+            mineral_admixture_kg: Number(m.mineralAdmixtureKg || m.flyAshKgPerM3 || m.ggbsKgPerM3 || 0),
+            water_litres: Number(m.waterLitres || m.waterLitresPerM3 || 0),
+            m_sand_kg: Number(m.mSandKg || m.mSandKgPerM3 || 0),
+            agg_20mm_kg: Number(m.agg20mmKg || m.agg20mmKgPerM3 || 0),
+            agg_10mm_kg: Number(m.agg10mmKg || m.agg10mmKgPerM3 || 0),
+            admixture_kg: Number(m.admixtureKg || m.admixtureKgPerM3 || 0),
+            total_density: Number(m.totalDensity || 2400),
+            mode: m.admixtureMode || m.mode || 'FLY_ASH',
+            updated_at: new Date().toISOString()
+          }));
+          if (mixRows.length > 0) {
+            await (client as any)
+              .from('mix_designs')
+              .upsert(mixRows, { onConflict: 'grade' });
+          }
+        }
+      }
+
       // APP USERS
       else if (key === 'concrete360_users') {
         if (Array.isArray(data)) {
@@ -815,6 +985,8 @@ class CloudStorageService {
         .on('postgres_changes', { event: '*', schema: 'public', table: 'transit_mixers' }, () => void this.pullFromCloud())
         .on('postgres_changes', { event: '*', schema: 'public', table: 'site_measurements' }, () => void this.pullFromCloud())
         .on('postgres_changes', { event: '*', schema: 'public', table: 'company_profile' }, () => void this.pullFromCloud())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'material_categories' }, () => void this.pullFromCloud())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'mix_designs' }, () => void this.pullFromCloud())
         .on('postgres_changes', { event: '*', schema: 'public', table: 'app_users' }, () => void this.pullFromCloud())
         .on('postgres_changes', { event: '*', schema: 'public', table: 'app_data_store' }, () => void this.pullFromCloud())
         .subscribe();
