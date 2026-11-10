@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Building, Edit2, Save, X, Check, Landmark } from 'lucide-react';
-import { getSessionUser, isAdminUser } from '../../utils/accessControl';
+import { getSessionUser, isAdminUser, canCreateRecords } from '../../utils/accessControl';
 import { supabase } from '../../lib/supabase';
 import { cloudStorage } from '../../services/cloudStorage';
 
 export const CompanyDetailsModule: React.FC = () => {
-  const canEditCompany = isAdminUser(getSessionUser());
+  const sessionUser = getSessionUser();
+  const canEditCompany = isAdminUser(sessionUser) || canCreateRecords(sessionUser);
   const [isEditing, setIsEditing] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
 
