@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { SiteMeasurementSession, StructuralMeasurementItem } from '../../types/rmc';
 import { supabase } from '../../lib/supabase';
 import { cloudStorage } from '../../services/cloudStorage';
@@ -14,17 +14,10 @@ import {
   Search, 
   X, 
   Layers, 
-  Ruler, 
-  ZoomIn, 
-  ZoomOut, 
-  RotateCcw, 
-  Eye, 
-  Info,
-  Filter,
-  Building2,
-  SlidersHorizontal,
-  Calendar,
-  Lock
+  Building2, 
+  SlidersHorizontal, 
+  Calendar, 
+  Lock 
 } from 'lucide-react';
 
 export type StructuralType = 'SLAB' | 'COLUMN' | 'BEAM' | 'RCC_WALL' | 'STAIRS' | 'FOOTING' | 'ROAD_WORK';
@@ -212,20 +205,11 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
 
   const [searchQuery, setSearchQuery] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isBlueprintModalOpen, setIsBlueprintModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<ConcreteItem | null>(null);
 
-  const [blueprintFilterId, setBlueprintFilterId] = useState<string>('ALL');
   const [modalTargetSiteKey, setModalTargetSiteKey] = useState<string>(currentSiteKey);
   const [modalMixGrade, setModalMixGrade] = useState<string>('M25');
   const [modalWorkDate, setModalWorkDate] = useState<string>(new Date().toISOString().split('T')[0]);
-
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [scale, setScale] = useState<number>(20);
-  const [pan, setPan] = useState<{ x: number; y: number }>({ x: 380, y: 320 });
-  const [isPanning, setIsPanning] = useState(false);
-  const [startPan, setStartPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const [viewMode, setViewMode] = useState<'2d' | '3d'>('2d');
 
   const [mixerCapacityM3, setMixerCapacityM3] = useState<number>(session?.transitTruckCapacityM3 || 7.0);
   const [wastagePercent, setWastagePercent] = useState<number>(session?.safetyWastagePercent || 5);
@@ -241,171 +225,6 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
   const [stairsList, setStairsList] = useState<{ flights: number | ''; width: number | ''; steps: number | ''; tread: number | ''; riser: number | ''; waist: number | '' }[]>([{ flights: '', width: '', steps: '', tread: '', riser: '', waist: '' }]);
   const [footings, setFootings] = useState<{ count: number | ''; length: number | ''; width: number | ''; depth: number | '' }[]>([{ count: '', length: '', width: '', depth: '' }]);
   const [roads, setRoads] = useState<{ lengthKm: number | ''; width: number | ''; thickness: number | '' }[]>([{ lengthKm: '', width: '', thickness: '' }]);
-
-  const isoProject = (x: number, y: number, z: number, originX: number, originY: number, s: number) => {
-    const cos30 = 0.866;
-    const sin30 = 0.5;
-    const screenX = originX + (x - y) * cos30 * s;
-    const screenY = originY + (x + y) * sin30 * s - z * s;
-    return { x: screenX, y: screenY };
-  };
-
-  const drawIsometricPrism = (
-    ctx: CanvasRenderingContext2D,
-    x: number,
-    y: number,
-    z: number,
-    dx: number,
-    dy: number,
-    dz: number,
-    originX: number,
-    originY: number,
-    s: number,
-    fillTop: string,
-    fillLeft: string,
-    fillRight: string,
-    strokeColor: string
-  ) => {
-    const p100 = isoProject(x + dx, y, z, originX, originY, s);
-    const p110 = isoProject(x + dx, y + dy, z, originX, originY, s);
-    const p010 = isoProject(x, y + dy, z, originX, originY, s);
-
-    const p001 = isoProject(x, y, z + dz, originX, originY, s);
-    const p101 = isoProject(x + dx, y, z + dz, originX, originY, s);
-    const p111 = isoProject(x + dx, y + dy, z + dz, originX, originY, s);
-    const p011 = isoProject(x, y + dy, z + dz, originX, originY, s);
-
-    ctx.lineWidth = 1.2;
-    ctx.strokeStyle = strokeColor;
-
-    ctx.beginPath();
-    ctx.moveTo(p100.x, p100.y);
-    ctx.lineTo(p110.x, p110.y);
-    ctx.lineTo(p111.x, p111.y);
-    ctx.lineTo(p101.x, p101.y);
-    ctx.closePath();
-    ctx.fillStyle = fillRight;
-    ctx.fill();
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.moveTo(p010.x, p010.y);
-    ctx.lineTo(p110.x, p110.y);
-    ctx.lineTo(p111.x, p111.y);
-    ctx.lineTo(p011.x, p011.y);
-    ctx.closePath();
-    ctx.fillStyle = fillLeft;
-    ctx.fill();
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.moveTo(p001.x, p001.y);
-    ctx.lineTo(p101.x, p101.y);
-    ctx.lineTo(p111.x, p111.y);
-    ctx.lineTo(p011.x, p011.y);
-    ctx.closePath();
-    ctx.fillStyle = fillTop;
-    ctx.fill();
-    ctx.stroke();
-  };
-
-  useEffect(() => {
-    if (!isBlueprintModalOpen) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const dpr = window.devicePixelRatio || 1;
-    const rect = canvas.getBoundingClientRect();
-    canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
-    ctx.scale(dpr, dpr);
-
-    const width = rect.width;
-    const height = rect.height;
-
-    ctx.fillStyle = '#060a13';
-    ctx.fillRect(0, 0, width, height);
-
-    const gridSize = scale * 1.5;
-    ctx.lineWidth = 1;
-    ctx.strokeStyle = '#121e33';
-
-    if (viewMode === '2d') {
-      const startX = pan.x % gridSize;
-      const startY = pan.y % gridSize;
-      for (let x = startX; x < width; x += gridSize) {
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, height);
-        ctx.stroke();
-      }
-      for (let y = startY; y < height; y += gridSize) {
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(width, y);
-        ctx.stroke();
-      }
-    } else {
-      const gridExtent = 12;
-      for (let i = -gridExtent; i <= gridExtent; i += 2) {
-        const p1 = isoProject(-gridExtent, i, 0, pan.x, pan.y, scale);
-        const p2 = isoProject(gridExtent, i, 0, pan.x, pan.y, scale);
-        ctx.beginPath();
-        ctx.moveTo(p1.x, p1.y);
-        ctx.lineTo(p2.x, p2.y);
-        ctx.stroke();
-
-        const q1 = isoProject(i, -gridExtent, 0, pan.x, pan.y, scale);
-        const q2 = isoProject(i, gridExtent, 0, pan.x, pan.y, scale);
-        ctx.beginPath();
-        ctx.moveTo(q1.x, q1.y);
-        ctx.lineTo(q2.x, q2.y);
-        ctx.stroke();
-      }
-    }
-
-    const targetItems = blueprintFilterId === 'ALL' 
-      ? items 
-      : items.filter(it => it.id === blueprintFilterId);
-
-    targetItems.forEach(it => {
-      const snap = it.dimensionsSnapshot;
-      if (!snap) return;
-
-      if (it.categories.includes('SLAB') && snap.slab) {
-        drawIsometricPrism(
-          ctx, 0, 0, 0,
-          snap.slab.length || 10,
-          snap.slab.width || 8,
-          snap.slab.thickness || 0.15,
-          pan.x, pan.y, scale,
-          'rgba(59, 130, 246, 0.65)',
-          'rgba(29, 78, 216, 0.75)',
-          'rgba(37, 99, 235, 0.75)',
-          '#60a5fa'
-        );
-      }
-    });
-  }, [items, scale, pan, viewMode, isBlueprintModalOpen, blueprintFilterId]);
-
-  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    setIsPanning(true);
-    setStartPan({ x: e.clientX - pan.x, y: e.clientY - pan.y });
-  };
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isPanning) return;
-    setPan({
-      x: e.clientX - startPan.x,
-      y: e.clientY - startPan.y
-    });
-  };
-
-  const handleMouseUp = () => {
-    setIsPanning(false);
-  };
 
   const handleToggleCategory = (catId: StructuralType) => {
     if (selectedCategories.includes(catId)) {
@@ -624,7 +443,6 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
         };
         localStorage.setItem(targetStorageKey, JSON.stringify([newItem, ...existingParsed]));
         
-        // If editing an item that got moved to another site, remove from current site
         if (editingItem) {
           setItems((prev) => prev.filter((it) => it.id !== editingItem.id));
         }
@@ -766,7 +584,7 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h3 className="text-xl font-black text-white tracking-tight uppercase">
-            Concrete Master &amp; Structural Calculator ({currentSiteKey})
+            Concrete Master & Structural Calculator ({currentSiteKey})
           </h3>
           <p className="text-xs text-slate-400 mt-1">
             Calculate concrete for slabs, columns, beams, walls, footings, stairs, and road works. Data is strictly isolated per site.
@@ -774,17 +592,6 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
         </div>
 
         <div className="flex items-center gap-2.5 shrink-0">
-          <button
-            onClick={() => {
-              setBlueprintFilterId('ALL');
-              setIsBlueprintModalOpen(true);
-            }}
-            className="px-4 py-2.5 bg-[#121d2f] hover:bg-[#1a2942] text-cyan-400 border border-cyan-500/30 font-bold text-xs rounded-xl shadow-lg transition-all flex items-center gap-2 cursor-pointer active:scale-95"
-          >
-            <Eye className="w-4 h-4 text-cyan-400" />
-            <span>See Blueprint</span>
-          </button>
-
           {canCreate && (
             <button
               onClick={handleOpenAddModal}
@@ -876,10 +683,10 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
           <table className="w-full text-left text-xs border-collapse">
             <thead>
               <tr className="border-b border-[#162238] text-[10px] font-bold uppercase tracking-wider text-slate-400 bg-[#080D1A] font-mono">
-                <th className="py-4 px-6 w-[12%]">ID &amp; MIX</th>
+                <th className="py-4 px-6 w-[12%]">ID & MIX</th>
                 <th className="py-4 px-6 w-[15%]">DATE</th>
                 <th className="py-4 px-6 w-[20%]">CATEGORIES INCLUDED</th>
-                <th className="py-4 px-6 w-[25%]">DESCRIPTION &amp; BREAKDOWN</th>
+                <th className="py-4 px-6 w-[25%]">DESCRIPTION & BREAKDOWN</th>
                 <th className="py-4 px-6 text-center w-[14%]">TOTAL VOLUME (M³ / CFT)</th>
                 <th className="py-4 px-6 text-right w-[14%]">ACTIONS</th>
               </tr>
@@ -888,7 +695,7 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
               {filteredItems.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="py-12 text-center text-slate-500 font-sans text-xs">
-                    No structural concrete works logged for site <strong>{currentSiteKey}</strong>. Click &quot;+ Add Structural Work&quot; to add.
+                    No structural concrete works logged for site <strong>{currentSiteKey}</strong>. Click "+ Add Structural Work" to add.
                   </td>
                 </tr>
               ) : (
@@ -934,17 +741,6 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
 
                     <td className="py-4 px-6 text-right">
                       <div className="inline-flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => {
-                            setBlueprintFilterId(item.id);
-                            setIsBlueprintModalOpen(true);
-                          }}
-                          className="text-slate-400 hover:text-cyan-400 cursor-pointer transition-colors p-1"
-                          title="View CAD Layout"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-
                         {canEditOrDelete ? (
                           <>
                             <button
@@ -986,94 +782,6 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* FULL STRUCTURAL BLUEPRINT MODAL */}
-      {isBlueprintModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in">
-          <div className="bg-[#0B1322] border border-[#1A2640] rounded-3xl w-full max-w-5xl shadow-2xl p-6 space-y-4 max-h-[92vh] flex flex-col">
-            <div className="flex items-center justify-between border-b border-[#1A2640] pb-3 flex-wrap gap-3">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
-                  <Ruler className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-black text-white uppercase tracking-wider">
-                    {blueprintFilterId === 'ALL' 
-                      ? `Combined CAD Blueprint (${currentSiteKey})` 
-                      : (items.find(i => i.id === blueprintFilterId)?.label || 'Isolated Element View')}
-                  </h3>
-                  <p className="text-xs text-slate-400 font-mono">
-                    Precision engineering CAD preview with structural dimensions.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2.5">
-                <div className="flex items-center gap-1.5 bg-[#121d2f] border border-[#22334f] px-3 py-1.5 rounded-xl text-xs font-mono">
-                  <Filter className="w-3.5 h-3.5 text-slate-400" />
-                  <select
-                    value={blueprintFilterId}
-                    onChange={(e) => setBlueprintFilterId(e.target.value)}
-                    className="bg-transparent text-white font-bold outline-none cursor-pointer text-xs"
-                  >
-                    <option value="ALL">All Added Works</option>
-                    {items.map(it => (
-                      <option key={it.id} value={it.id}>
-                        {it.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="flex items-center bg-[#121d2f] rounded-xl border border-[#22334f] p-1 text-xs">
-                  <button
-                    onClick={() => setViewMode('2d')}
-                    className={`px-3 py-1 font-bold rounded-lg transition cursor-pointer ${viewMode === '2d' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}
-                  >
-                    2D Plan
-                  </button>
-                  <button
-                    onClick={() => setViewMode('3d')}
-                    className={`px-3 py-1 font-bold rounded-lg transition cursor-pointer ${viewMode === '3d' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}
-                  >
-                    3D Isometric
-                  </button>
-                </div>
-
-                <div className="flex items-center bg-[#121d2f] rounded-xl border border-[#22334f] p-1 font-mono text-xs">
-                  <button onClick={() => setScale(s => Math.max(8, s - 3))} className="p-1.5 text-slate-400 hover:text-white cursor-pointer"><ZoomOut className="w-3.5 h-3.5" /></button>
-                  <span className="px-2 text-white">{Math.round(scale)}x</span>
-                  <button onClick={() => setScale(s => Math.min(45, s + 3))} className="p-1.5 text-slate-400 hover:text-white cursor-pointer"><ZoomIn className="w-3.5 h-3.5" /></button>
-                  <button onClick={() => { setScale(20); setPan({ x: 380, y: 320 }); }} className="p-1.5 text-slate-400 hover:text-white border-l border-[#22334f] cursor-pointer" title="Reset View"><RotateCcw className="w-3.5 h-3.5" /></button>
-                </div>
-
-                <button
-                  onClick={() => setIsBlueprintModalOpen(false)}
-                  className="p-1.5 text-slate-400 hover:text-white rounded-lg bg-[#121c2d] cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-
-            {/* Canvas Viewport */}
-            <div className="relative flex-1 w-full min-h-[480px] bg-[#060a12] border border-[#172439] rounded-2xl overflow-hidden cursor-grab active:cursor-grabbing">
-              <canvas
-                ref={canvasRef}
-                onMouseDown={handleMouseDown}
-                onMouseMove={handleMouseMove}
-                onMouseUp={handleMouseUp}
-                onMouseLeave={handleMouseUp}
-                className="w-full h-full block"
-              />
-              <div className="absolute bottom-3 left-3 bg-slate-900/90 backdrop-blur-md px-3 py-1.5 rounded-lg border border-slate-800 text-[11px] text-slate-400 flex items-center gap-2 pointer-events-none font-mono">
-                <Info className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Showing exact measurements. Drag to pan. Scroll or use controls to zoom.</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Modal: Multi-Category Concrete Calculator */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in">
@@ -1084,7 +792,7 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
                   {editingItem ? 'Edit Structural Work' : 'Add Structural Concrete Work'}
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5 font-mono">
-                  Calculate concrete work in m³ with multi-category &amp; multi-row entry support.
+                  Calculate concrete work in m³ with multi-category & multi-row entry support.
                 </p>
               </div>
               <button
@@ -1165,14 +873,14 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
                     onClick={() => setUnitMode('METRIC')}
                     className={`px-3 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer transition-all ${unitMode === 'METRIC' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
                   >
-                    Metric (m &amp; mm)
+                    Metric (m & mm)
                   </button>
                   <button
                     type="button"
                     onClick={() => setUnitMode('IMPERIAL')}
                     className={`px-3 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer transition-all ${unitMode === 'IMPERIAL' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
                   >
-                    Imperial (ft &amp; in)
+                    Imperial (ft & in)
                   </button>
                 </div>
               </div>
@@ -1188,8 +896,8 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
                     const isSelected = selectedCategories.includes(cat.id);
                     return (
                       <button
-                        key={cat.id}
                         type="button"
+                        key={cat.id}
                         onClick={() => handleToggleCategory(cat.id)}
                         className={`flex items-center gap-2 py-3 px-3 rounded-2xl font-bold text-xs transition-all cursor-pointer ${
                           isSelected ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30 border border-blue-500' : 'bg-[#070B16] hover:bg-[#141F38] text-slate-400 hover:text-white border border-[#17243F]'
@@ -1540,7 +1248,7 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
                     <div className="flex items-center justify-between pb-2 border-b border-[#141E33]">
                       <div className="flex items-center gap-2 text-cyan-400 font-bold">
                         <Footprints className="w-4 h-4" />
-                        <span>Staircase Steps &amp; Waist Slab</span>
+                        <span>Staircase Steps & Waist Slab</span>
                       </div>
                       <div className="flex items-center gap-3">
                         <span className="font-mono font-bold text-cyan-300 text-xs">{subVolumesM3.STAIRS.toFixed(2)} m³</span>
