@@ -19,7 +19,7 @@ export interface MixRecipe {
   totalDensity: number;
 }
 
-// Bilgi Buildcon RMC 1 m³ Quality Assurance Cards (Rev. 2, Target Yield: 2,400.0 kg/m³)
+// Bilgi Buildcon RMC 1 m³ Quality Assurance Standards (Rev. 2, Yield: 2,400.0 kg/m³)
 export const BILGI_QA_REV2_GGBS: Record<string, MixRecipe> = {
   'M10': { grade: 'M10', targetMpa: 15.0, wcr: 0.65, cementKg: 168, mineralAdmixtureKg: 42, waterLitres: 136, mSandKg: 1057, agg20mmKg: 597, agg10mmKg: 398, admixtureKg: 1.68, totalDensity: 2400 },
   'M15': { grade: 'M15', targetMpa: 20.8, wcr: 0.56, cementKg: 200, mineralAdmixtureKg: 50, waterLitres: 140, mSandKg: 1034, agg20mmKg: 584, agg10mmKg: 390, admixtureKg: 2.00, totalDensity: 2400 },
@@ -91,19 +91,6 @@ export const MixDesignModule: React.FC = () => {
   const getSiteModeKey = (site: string) => `concrete360_admixture_mode_${site}`;
   const getSiteMixKey = (site: string, mode: AdmixtureMode) => `concrete360_mixes_${site}_${mode}`;
 
-  // Check and upgrade outdated local storage values automatically
-  const checkAndUpgradeStorage = (site: string, mode: AdmixtureMode) => {
-    try {
-      const schemaKey = 'concrete360_mix_schema_v2';
-      const isUpgraded = localStorage.getItem(schemaKey);
-      if (!isUpgraded) {
-        localStorage.setItem(getSiteMixKey(site, 'GGBS'), JSON.stringify(BILGI_QA_REV2_GGBS));
-        localStorage.setItem(getSiteMixKey(site, 'FLY_ASH'), JSON.stringify(BILGI_QA_REV2_FLY_ASH));
-        localStorage.setItem(schemaKey, 'true');
-      }
-    } catch {}
-  };
-
   const [admixtureMode, setAdmixtureMode] = useState<AdmixtureMode>(() => {
     try {
       const site = getActiveSiteKey();
@@ -114,17 +101,14 @@ export const MixDesignModule: React.FC = () => {
   });
 
   const getInitialMixes = (site: string, mode: AdmixtureMode): Record<string, MixRecipe> => {
-    checkAndUpgradeStorage(site, mode);
     try {
       const saved = localStorage.getItem(getSiteMixKey(site, mode));
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed && parsed['M10'] && parsed['M30']?.waterLitres === 160) {
-          return parsed;
-        }
+        if (parsed && typeof parsed === 'object') return parsed;
       }
     } catch {}
-    return mode === 'GGBS' ? BILGI_QA_REV2_GGBS : BILGI_QA_REV2_FLY_ASH;
+    return mode === 'GGBS' ? { ...BILGI_QA_REV2_GGBS } : { ...BILGI_QA_REV2_FLY_ASH };
   };
 
   const [mixes, setMixes] = useState<Record<string, MixRecipe>>(() => getInitialMixes(currentSiteKey, admixtureMode));
@@ -140,29 +124,21 @@ export const MixDesignModule: React.FC = () => {
     let siteMode: AdmixtureMode = 'GGBS';
     try {
       const savedMode = localStorage.getItem(getSiteModeKey(site)) || localStorage.getItem('concrete360_admixture_mode');
-      if (savedMode === 'GGBS' || savedMode === 'FLY_ASH') {
-        siteMode = savedMode;
-      }
+      if (savedMode === 'GGBS' || savedMode === 'FLY_ASH') siteMode = savedMode;
     } catch {}
 
     setAdmixtureMode(siteMode);
     const resolvedMixes = getInitialMixes(site, siteMode);
     setMixes(resolvedMixes);
-    setIsEditing(false);
     setEditForm(resolvedMixes[activeGrade] || (siteMode === 'GGBS' ? BILGI_QA_REV2_GGBS[activeGrade] : BILGI_QA_REV2_FLY_ASH[activeGrade]));
   };
 
   useEffect(() => {
-    syncActiveState();
     window.addEventListener('concrete360_site_switched', syncActiveState);
-    window.addEventListener('concrete360_cloud_synced', syncActiveState);
-    window.addEventListener('storage', syncActiveState);
     return () => {
       window.removeEventListener('concrete360_site_switched', syncActiveState);
-      window.removeEventListener('concrete360_cloud_synced', syncActiveState);
-      window.removeEventListener('storage', syncActiveState);
     };
-  }, []);
+  }, [activeGrade]);
 
   const handleModeSwitch = (newMode: AdmixtureMode) => {
     setAdmixtureMode(newMode);
@@ -175,18 +151,62 @@ export const MixDesignModule: React.FC = () => {
     setMixes(newMixes);
     setIsEditing(false);
     setEditForm(newMixes[activeGrade] || (newMode === 'GGBS' ? BILGI_QA_REV2_GGBS[activeGrade] : BILGI_QA_REV2_FLY_ASH[activeGrade]));
-    setSuccessMessage(`Switched to ${newMode === 'GGBS' ? 'GGBS (20% Binder Replacement)' : 'Fly Ash'} proportions!`);
+    setSuccessMessage(`Switched to ${newMode === 'GGBS' ? 'GGBS (20% Binder Replacement)' : 'Fly Ash'} mode!`);
     setTimeout(() => setSuccessMessage(null), 3000);
   };
 
-  // Broadcast to other components & storage
-  useEffect(() => {
-    try {
-      localStorage.setItem(getSiteMixKey(currentSiteKey, admixtureMode), JSON.stringify(mixes));
-      localStorage.setItem(getSiteModeKey(currentSiteKey), admixtureMode);
-      localStorage.setItem('concrete360_admixture_mode', admixtureMode);
+  const currentMix = mixes[activeGrade] || (admixtureMode === 'GGBS' ? BILGI_QA_REV2_GGBS[activeGrade] : BILGI_QA_REV2_FLY_ASH[activeGrade]);
 
-      const arr = Object.values(mixes).map(m => ({
+  const handleStartEdit = () => {
+    if (!canModifyMixes) {
+      alert('Permission Denied: Only ADMIN or EMPLOYEE accounts can modify mix proportions.');
+      return;
+    }
+    setEditForm({ ...currentMix });
+    setIsEditing(true);
+  };
+
+  // Dynamically update field values and recalculate w/b and total density in real time
+  const handleFieldChange = (field: keyof MixRecipe, value: number) => {
+    setEditForm(prev => {
+      const updated = { ...prev, [field]: value };
+      const totalBinder = (updated.cementKg || 0) + (updated.mineralAdmixtureKg || 0);
+      const calculatedWcr = totalBinder > 0 ? Number(((updated.waterLitres || 0) / totalBinder).toFixed(2)) : 0.45;
+      const calculatedDensity = Math.round(
+        (updated.cementKg || 0) +
+        (updated.mineralAdmixtureKg || 0) +
+        (updated.waterLitres || 0) +
+        (updated.mSandKg || 0) +
+        (updated.agg20mmKg || 0) +
+        (updated.agg10mmKg || 0) +
+        (updated.admixtureKg || 0)
+      );
+
+      return {
+        ...updated,
+        wcr: calculatedWcr,
+        totalDensity: calculatedDensity
+      };
+    });
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!canModifyMixes) return;
+
+    const updatedMixes = {
+      ...mixes,
+      [activeGrade]: { ...editForm }
+    };
+
+    setMixes(updatedMixes);
+    setIsEditing(false);
+
+    try {
+      localStorage.setItem(getSiteMixKey(currentSiteKey, admixtureMode), JSON.stringify(updatedMixes));
+      localStorage.setItem(getSiteModeKey(currentSiteKey), admixtureMode);
+
+      const arr = Object.values(updatedMixes).map(m => ({
         grade: m.grade,
         code: m.grade,
         admixtureMode,
@@ -200,94 +220,46 @@ export const MixDesignModule: React.FC = () => {
         agg20mmKgPerM3: m.agg20mmKg,
         agg10mmKgPerM3: m.agg10mmKg,
         admixtureKgPerM3: m.admixtureKg,
-        totalDensity: 2400
+        totalDensity: m.totalDensity
       }));
 
       localStorage.setItem('concrete360_mix_designs', JSON.stringify(arr));
       localStorage.setItem(`concrete360_mix_designs_${currentSiteKey}`, JSON.stringify(arr));
       window.dispatchEvent(new CustomEvent('concrete360_mix_designs_updated', { detail: arr }));
     } catch {}
-  }, [mixes, admixtureMode, currentSiteKey]);
-
-  const currentMix = mixes[activeGrade] || (admixtureMode === 'GGBS' ? BILGI_QA_REV2_GGBS[activeGrade] : BILGI_QA_REV2_FLY_ASH[activeGrade]);
-
-  const handleStartEdit = () => {
-    if (!canModifyMixes) {
-      alert('Permission Denied: Only ADMIN accounts can modify mix proportions.');
-      return;
-    }
-    setEditForm({ ...currentMix });
-    setIsEditing(true);
-  };
-
-  const balanceAggregatesTo2400 = (baseForm: MixRecipe): MixRecipe => {
-    const fixedWeight = baseForm.cementKg + baseForm.mineralAdmixtureKg + baseForm.waterLitres + baseForm.admixtureKg;
-    const remainingAggregateWeight = Math.max(0, 2400 - fixedWeight);
-
-    const mSand = Math.round(remainingAggregateWeight * 0.515);
-    const coarseTotal = remainingAggregateWeight - mSand;
-    const agg20mm = Math.round(coarseTotal * 0.60);
-    const agg10mm = coarseTotal - agg20mm;
-
-    const totalBinder = baseForm.cementKg + baseForm.mineralAdmixtureKg;
-    const calculatedWcr = totalBinder > 0 ? Number((baseForm.waterLitres / totalBinder).toFixed(2)) : 0.45;
-
-    return {
-      ...baseForm,
-      mSandKg: mSand,
-      agg20mmKg: agg20mm,
-      agg10mmKg: agg10mm,
-      wcr: calculatedWcr,
-      totalDensity: 2400
-    };
-  };
-
-  const handleSaveEdit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!canModifyMixes) return;
-
-    const finalBalanced = balanceAggregatesTo2400(editForm);
-
-    setMixes(prev => ({
-      ...prev,
-      [activeGrade]: { ...finalBalanced }
-    }));
-    setIsEditing(false);
 
     if (supabase) {
       await (supabase as any).from('mix_designs').upsert({
-        grade: finalBalanced.grade,
-        target_mpa: finalBalanced.targetMpa,
-        wcr: finalBalanced.wcr,
-        cement_kg: finalBalanced.cementKg,
-        mineral_admixture_kg: finalBalanced.mineralAdmixtureKg,
-        water_litres: finalBalanced.waterLitres,
-        m_sand_kg: finalBalanced.mSandKg,
-        agg_20mm_kg: finalBalanced.agg20mmKg,
-        agg_10mm_kg: finalBalanced.agg10mmKg,
-        admixture_kg: finalBalanced.admixtureKg,
-        total_density: 2400,
+        grade: editForm.grade,
+        target_mpa: editForm.targetMpa,
+        wcr: editForm.wcr,
+        cement_kg: editForm.cementKg,
+        mineral_admixture_kg: editForm.mineralAdmixtureKg,
+        water_litres: editForm.waterLitres,
+        m_sand_kg: editForm.mSandKg,
+        agg_20mm_kg: editForm.agg20mmKg,
+        agg_10mm_kg: editForm.agg10mmKg,
+        admixture_kg: editForm.admixtureKg,
+        total_density: editForm.totalDensity,
         mode: admixtureMode,
         updated_at: new Date().toISOString()
       }, { onConflict: 'grade' });
       await cloudStorage.pullFromCloud();
     }
 
-    setSuccessMessage(`Mix design for ${activeGrade} saved with exact 2,400.0 kg/m³ yield!`);
+    setSuccessMessage(`Mix design for ${activeGrade} saved successfully!`);
     setTimeout(() => setSuccessMessage(null), 3000);
   };
 
-  // Restores all grades to QA Card defaults immediately
   const handleForceResetAll = () => {
     if (!canModifyMixes) return;
-    if (window.confirm(`Force-load Bilgi QA Batch Cards (Rev. 2, M10-M40) for ${currentSiteKey}?`)) {
+    if (window.confirm(`Force-load Bilgi QA Batch Cards (Rev. 2) for ${currentSiteKey}?`)) {
       const freshMixes = admixtureMode === 'GGBS' ? { ...BILGI_QA_REV2_GGBS } : { ...BILGI_QA_REV2_FLY_ASH };
       setMixes(freshMixes);
       localStorage.setItem(getSiteMixKey(currentSiteKey, admixtureMode), JSON.stringify(freshMixes));
-      localStorage.setItem('concrete360_mix_schema_v2', 'true');
       setEditForm(freshMixes[activeGrade]);
       setIsEditing(false);
-      setSuccessMessage('Successfully loaded Bilgi Buildcon RMC QA Cards (Rev. 2)!');
+      setSuccessMessage('Successfully reloaded Bilgi Buildcon RMC QA Cards (Rev. 2)!');
       setTimeout(() => setSuccessMessage(null), 3500);
     }
   };
@@ -296,7 +268,7 @@ export const MixDesignModule: React.FC = () => {
 
   return (
     <div className="space-y-6 font-sans text-slate-100 w-full max-w-full">
-      {/* Top Header & Admixture Commander */}
+      {/* Top Header & Admixture Controls */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-0.5 rounded-full">
@@ -305,9 +277,9 @@ export const MixDesignModule: React.FC = () => {
           <h2 className="text-xl font-black text-white mt-1">Ready-Mix Concrete Mix Proportioning & Quality Control</h2>
         </div>
 
-        {/* Command Controls */}
         <div className="flex items-center gap-2">
           <button
+            type="button"
             onClick={handleForceResetAll}
             className="px-3.5 py-2 rounded-xl text-xs font-mono font-bold text-amber-400 hover:text-white bg-amber-500/10 hover:bg-amber-600/30 border border-amber-500/30 transition flex items-center gap-1.5 cursor-pointer"
             title="Reload Bilgi QA Rev. 2 Card Proportions"
@@ -323,6 +295,7 @@ export const MixDesignModule: React.FC = () => {
             </div>
 
             <button
+              type="button"
               onClick={() => handleModeSwitch('GGBS')}
               className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
                 admixtureMode === 'GGBS'
@@ -334,6 +307,7 @@ export const MixDesignModule: React.FC = () => {
             </button>
 
             <button
+              type="button"
               onClick={() => handleModeSwitch('FLY_ASH')}
               className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
                 admixtureMode === 'FLY_ASH'
@@ -354,7 +328,7 @@ export const MixDesignModule: React.FC = () => {
         </div>
       )}
 
-      {/* Grade Selector Tabs: Includes M10 to M50 */}
+      {/* Grade Selector Tabs: M10 to M50 */}
       <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-2 font-mono">
         {Object.keys(BILGI_QA_REV2_GGBS).map((gradeKey) => {
           const m = mixes[gradeKey] || (admixtureMode === 'GGBS' ? BILGI_QA_REV2_GGBS[gradeKey] : BILGI_QA_REV2_FLY_ASH[gradeKey]);
@@ -362,9 +336,11 @@ export const MixDesignModule: React.FC = () => {
           return (
             <button
               key={gradeKey}
+              type="button"
               onClick={() => {
                 setActiveGrade(gradeKey);
                 setIsEditing(false);
+                setEditForm(m);
               }}
               className={`p-3 rounded-2xl border text-left transition cursor-pointer flex flex-col justify-between ${
                 isActive
@@ -393,7 +369,7 @@ export const MixDesignModule: React.FC = () => {
                 1 M³ BATCH PROPORTIONS FOR {activeGrade} GRADE (SSD CONDITION)
               </h3>
               <p className="text-xs text-slate-400 font-mono mt-0.5">
-                Target Slump: <strong className="text-white">100-125 mm (3 Hr Retention)</strong> | Total Binder: <strong className="text-white">{totalCementitious} kg/m³</strong> | w/b: <strong className="text-emerald-400 font-bold">{currentMix.wcr}</strong> | Total Density: <strong className="text-cyan-300 font-bold">2,400.0 kg/m³</strong>
+                Target Slump: <strong className="text-white">100-125 mm (3 Hr Retention)</strong> | Total Binder: <strong className="text-white">{totalCementitious} kg/m³</strong> | w/b: <strong className="text-emerald-400 font-bold">{currentMix.wcr}</strong> | Total Density: <strong className="text-cyan-300 font-bold">{currentMix.totalDensity || 2400} kg/m³</strong>
               </p>
             </div>
           </div>
@@ -402,6 +378,7 @@ export const MixDesignModule: React.FC = () => {
             {canModifyMixes ? (
               !isEditing ? (
                 <button
+                  type="button"
                   onClick={handleStartEdit}
                   className="px-4 py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer font-mono transition"
                 >
@@ -410,6 +387,7 @@ export const MixDesignModule: React.FC = () => {
                 </button>
               ) : (
                 <button
+                  type="button"
                   onClick={() => setIsEditing(false)}
                   className="px-4 py-2 bg-[#121c2d] hover:bg-[#1a263d] text-slate-300 font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer font-mono transition"
                 >
@@ -475,7 +453,7 @@ export const MixDesignModule: React.FC = () => {
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">PCE ADMIXTURE (0.80% BINDER)</span>
               <div className="text-2xl font-extrabold text-rose-400">{currentMix.admixtureKg} kg</div>
               <span className="text-[11px] text-emerald-400 font-bold block">
-                Approx. {(currentMix.admixtureKg / 1.08).toFixed(2)} Litres • Total Density: 2,400.0 kg/m³
+                Approx. {(currentMix.admixtureKg / 1.08).toFixed(2)} Litres • Total Density: {currentMix.totalDensity || 2400} kg/m³
               </span>
             </div>
           </div>
@@ -483,12 +461,12 @@ export const MixDesignModule: React.FC = () => {
           <form onSubmit={handleSaveEdit} className="space-y-4 font-mono text-xs">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="space-y-1">
-                <label className="text-slate-300 font-bold uppercase text-[10px]">Target Characteristic Strength (MPa)</label>
+                <label className="text-slate-300 font-bold uppercase text-[10px]">Target Strength (MPa)</label>
                 <input
                   type="number"
                   step="any"
                   value={editForm.targetMpa}
-                  onChange={(e) => setEditForm({ ...editForm, targetMpa: Number(e.target.value) || 0 })}
+                  onChange={(e) => handleFieldChange('targetMpa', Number(e.target.value) || 0)}
                   className="w-full px-4 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-white font-bold outline-none focus:border-blue-500"
                   required
                 />
@@ -500,30 +478,29 @@ export const MixDesignModule: React.FC = () => {
                   type="number"
                   step="any"
                   value={editForm.wcr}
-                  disabled
-                  className="w-full px-4 py-3 bg-[#0c1626] border border-[#1b273d] rounded-xl text-emerald-400 font-bold outline-none cursor-not-allowed"
+                  onChange={(e) => handleFieldChange('wcr', Number(e.target.value) || 0)}
+                  className="w-full px-4 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-emerald-400 font-bold outline-none focus:border-blue-500"
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="text-cyan-400 font-bold uppercase text-[10px]">Design Fresh Density (kg/m³)</label>
+                <label className="text-cyan-400 font-bold uppercase text-[10px]">Total Design Density (kg/m³)</label>
                 <input
                   type="number"
-                  value={2400}
-                  disabled
-                  className="w-full px-4 py-3 bg-[#0c1626] border border-cyan-500/30 rounded-xl text-cyan-300 font-black outline-none cursor-not-allowed"
+                  step="any"
+                  value={editForm.totalDensity}
+                  onChange={(e) => handleFieldChange('totalDensity', Number(e.target.value) || 0)}
+                  className="w-full px-4 py-3 bg-[#070d1a] border border-cyan-500/30 rounded-xl text-cyan-300 font-black outline-none focus:border-blue-500"
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="text-slate-300 font-bold uppercase text-[10px]">OPC 53 Cement - 80% Binder (kg/m³)</label>
+                <label className="text-slate-300 font-bold uppercase text-[10px]">OPC 53 Cement - Silo 1 (kg/m³)</label>
                 <input
                   type="number"
+                  step="any"
                   value={editForm.cementKg}
-                  onChange={(e) => {
-                    const c = Number(e.target.value) || 0;
-                    setEditForm(balanceAggregatesTo2400({ ...editForm, cementKg: c }));
-                  }}
+                  onChange={(e) => handleFieldChange('cementKg', Number(e.target.value) || 0)}
                   className="w-full px-4 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-blue-400 font-bold outline-none focus:border-blue-500"
                   required
                 />
@@ -531,15 +508,13 @@ export const MixDesignModule: React.FC = () => {
 
               <div className="space-y-1">
                 <label className={`font-bold uppercase text-[10px] ${admixtureMode === 'GGBS' ? 'text-indigo-400' : 'text-purple-400'}`}>
-                  {admixtureMode === 'GGBS' ? 'GGBS - 20% Replacement (kg/m³)' : 'Fly Ash (kg/m³)'}
+                  {admixtureMode === 'GGBS' ? 'GGBS - Silo 2 (kg/m³)' : 'Fly Ash - Silo 2 (kg/m³)'}
                 </label>
                 <input
                   type="number"
+                  step="any"
                   value={editForm.mineralAdmixtureKg}
-                  onChange={(e) => {
-                    const m = Number(e.target.value) || 0;
-                    setEditForm(balanceAggregatesTo2400({ ...editForm, mineralAdmixtureKg: m }));
-                  }}
+                  onChange={(e) => handleFieldChange('mineralAdmixtureKg', Number(e.target.value) || 0)}
                   className="w-full px-4 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-white font-bold outline-none focus:border-blue-500"
                   required
                 />
@@ -549,58 +524,59 @@ export const MixDesignModule: React.FC = () => {
                 <label className="text-cyan-400 font-bold uppercase text-[10px]">Design Free Water (L/m³)</label>
                 <input
                   type="number"
+                  step="any"
                   value={editForm.waterLitres}
-                  onChange={(e) => {
-                    const w = Number(e.target.value) || 0;
-                    setEditForm(balanceAggregatesTo2400({ ...editForm, waterLitres: w }));
-                  }}
+                  onChange={(e) => handleFieldChange('waterLitres', Number(e.target.value) || 0)}
                   className="w-full px-4 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-cyan-400 font-bold outline-none focus:border-blue-500"
                   required
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="text-amber-400 font-bold uppercase text-[10px]">M-Sand - Zone II 51.5% (kg/m³)</label>
+                <label className="text-amber-400 font-bold uppercase text-[10px]">M-Sand - Fine Aggregate (kg/m³)</label>
                 <input
                   type="number"
+                  step="any"
                   value={editForm.mSandKg}
-                  disabled
-                  className="w-full px-4 py-3 bg-[#0c1626] border border-[#1b273d] rounded-xl text-amber-300 font-bold outline-none cursor-not-allowed"
+                  onChange={(e) => handleFieldChange('mSandKg', Number(e.target.value) || 0)}
+                  className="w-full px-4 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-amber-300 font-bold outline-none focus:border-blue-500"
+                  required
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="text-emerald-400 font-bold uppercase text-[10px]">20 MM Coarse - 60% CA (kg/m³)</label>
+                <label className="text-emerald-400 font-bold uppercase text-[10px]">20 MM Coarse Aggregate (kg/m³)</label>
                 <input
                   type="number"
+                  step="any"
                   value={editForm.agg20mmKg}
-                  disabled
-                  className="w-full px-4 py-3 bg-[#0c1626] border border-[#1b273d] rounded-xl text-emerald-300 font-bold outline-none cursor-not-allowed"
+                  onChange={(e) => handleFieldChange('agg20mmKg', Number(e.target.value) || 0)}
+                  className="w-full px-4 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-emerald-300 font-bold outline-none focus:border-blue-500"
+                  required
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="text-emerald-400 font-bold uppercase text-[10px]">10 MM Coarse - 40% CA (kg/m³)</label>
+                <label className="text-emerald-400 font-bold uppercase text-[10px]">10 MM Coarse Aggregate (kg/m³)</label>
                 <input
                   type="number"
+                  step="any"
                   value={editForm.agg10mmKg}
-                  disabled
-                  className="w-full px-4 py-3 bg-[#0c1626] border border-[#1b273d] rounded-xl text-emerald-300 font-bold outline-none cursor-not-allowed"
+                  onChange={(e) => handleFieldChange('agg10mmKg', Number(e.target.value) || 0)}
+                  className="w-full px-4 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-emerald-300 font-bold outline-none focus:border-blue-500"
+                  required
                 />
               </div>
 
               <div className="sm:col-span-3 space-y-1 bg-[#070d1a] border border-[#1b273d] p-3 rounded-2xl">
                 <label className="text-rose-400 font-bold uppercase text-[10px] block mb-1">
-                  PCE Admixture Dosage (kg/m³) — 0.80% of Binder
+                  PCE Admixture Dosage (kg/m³)
                 </label>
                 <input
                   type="number"
                   step="any"
                   value={editForm.admixtureKg}
-                  onChange={(e) => {
-                    const adm = Number(e.target.value) || 0;
-                    setEditForm(balanceAggregatesTo2400({ ...editForm, admixtureKg: adm }));
-                  }}
+                  onChange={(e) => handleFieldChange('admixtureKg', Number(e.target.value) || 0)}
                   className="w-full px-4 py-3 bg-[#0b1322] border border-[#1b273d] rounded-xl text-rose-400 font-bold outline-none focus:border-blue-500"
                   required
                 />
@@ -620,7 +596,7 @@ export const MixDesignModule: React.FC = () => {
                 className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl shadow-lg shadow-blue-600/30 cursor-pointer flex items-center gap-2"
               >
                 <Save className="w-4 h-4" />
-                <span>Save Mix Proportions (2,400.0 kg/m³)</span>
+                <span>Save Mix Proportions</span>
               </button>
             </div>
           </form>
