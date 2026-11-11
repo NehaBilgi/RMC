@@ -716,7 +716,6 @@ export const BillingRMC: React.FC = () => {
               <div><strong>${inv.clientName}</strong></div>
               <div>${inv.clientAddress}</div>
               <div>GSTIN / Tax ID: ${inv.clientGstin}</div>
-              <div>Payment Terms: ${inv.paymentTerms}</div>
             </div>
             <div class="party-box">
               <div class="party-title">Delivery / Site Dispatch Destination:</div>
