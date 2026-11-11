@@ -9,7 +9,8 @@ import {
   X,
   Check,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Layers
 } from 'lucide-react';
 import { cloudStorage } from '../../services/cloudStorage';
 
@@ -22,6 +23,16 @@ interface SubBatchDrop {
   agg20mmKg: number;
   agg10mmKg: number;
   waterLtr: number;
+}
+
+interface UnitRecipePerM3 {
+  silo1Kg: number;
+  silo2Kg: number;
+  mSandKg: number;
+  agg20mmKg: number;
+  agg10mmKg: number;
+  waterLtr: number;
+  totalDensity: number;
 }
 
 interface BatchRecord {
@@ -37,6 +48,7 @@ interface BatchRecord {
   batchQtyM3: number;
   mixerCapacityM3: number;
   totalBatchesCount: number;
+  unitRecipe: UnitRecipePerM3;
   drops: SubBatchDrop[];
   silo1TargetKg: number;
   silo1ActualKg: number;
@@ -110,6 +122,57 @@ export const RMCBatchReportPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
 
+  // Read linked mix design dynamically from MixDesignModule / localStorage
+  const getLinkedMixDesign = (siteKey: string, gradeStr: string, mode: 'FLY_ASH' | 'GGBS') => {
+    const gradeKey = (gradeStr || 'M30').substring(0, 3).toUpperCase();
+    const fallback = DEFAULT_RECIPES[gradeKey] || DEFAULT_RECIPES['M30'];
+
+    try {
+      const directMixesRaw = localStorage.getItem(`concrete360_mixes_${siteKey}_${mode}`) || localStorage.getItem(`concrete360_mixes_${siteKey}`);
+      if (directMixesRaw) {
+        const parsed = JSON.parse(directMixesRaw);
+        if (parsed && parsed[gradeKey]) {
+          const m = parsed[gradeKey];
+          return {
+            cement: Number(m.cementKg ?? fallback.cement),
+            admix: Number(m.mineralAdmixtureKg ?? (mode === 'GGBS' ? fallback.ggbs : fallback.flyAsh)),
+            water: Number(m.waterLitres ?? fallback.water),
+            mSand: Number(m.mSandKg ?? fallback.mSand),
+            agg20: Number(m.agg20mmKg ?? fallback.agg20),
+            agg10: Number(m.agg10mmKg ?? fallback.agg10)
+          };
+        }
+      }
+
+      const globalListRaw = localStorage.getItem(`concrete360_mix_designs_${siteKey}`) || localStorage.getItem('concrete360_mix_designs');
+      if (globalListRaw) {
+        const list = JSON.parse(globalListRaw);
+        if (Array.isArray(list)) {
+          const match = list.find((it: any) => String(it.grade || it.code || '').toUpperCase().includes(gradeKey));
+          if (match) {
+            return {
+              cement: Number(match.cementKgPerM3 ?? fallback.cement),
+              admix: Number((mode === 'GGBS' ? match.ggbsKgPerM3 : match.flyAshKgPerM3) ?? fallback.ggbs),
+              water: Number(match.waterLitresPerM3 ?? fallback.water),
+              mSand: Number(match.mSandKgPerM3 ?? fallback.mSand),
+              agg20: Number(match.agg20mmKgPerM3 ?? fallback.agg20),
+              agg10: Number(match.agg10mmKgPerM3 ?? fallback.agg10)
+            };
+          }
+        }
+      }
+    } catch {}
+
+    return {
+      cement: fallback.cement,
+      admix: mode === 'GGBS' ? fallback.ggbs : fallback.flyAsh,
+      water: fallback.water,
+      mSand: fallback.mSand,
+      agg20: fallback.agg20,
+      agg10: fallback.agg10
+    };
+  };
+
   const loadBatchReports = (overrideCap?: number) => {
     const siteKey = getActiveSite();
     setCurrentSite(siteKey);
@@ -126,14 +189,19 @@ export const RMCBatchReportPage: React.FC = () => {
 
       const generatedBatches: BatchRecord[] = invoices.map((inv: any, idx: number) => {
         const gradeKey = (inv.mixGrade || 'M30').substring(0, 3).toUpperCase();
-        const recipe = DEFAULT_RECIPES[gradeKey] || DEFAULT_RECIPES['M30'];
+        const recipe = getLinkedMixDesign(siteKey, gradeKey, activeAdmixtureMode);
         const totalLoadVol = Number(inv.volumeM3) || 5.0;
 
-        const isGgbs = activeAdmixtureMode === 'GGBS';
-        const silo1Unit = recipe.cement;
-        const silo2Unit = isGgbs ? recipe.ggbs : recipe.flyAsh;
+        const unitRecipe: UnitRecipePerM3 = {
+          silo1Kg: recipe.cement,
+          silo2Kg: recipe.admix,
+          mSandKg: recipe.mSand,
+          agg20mmKg: recipe.agg20,
+          agg10mmKg: recipe.agg10,
+          waterLtr: recipe.water,
+          totalDensity: Math.round(recipe.cement + recipe.admix + recipe.mSand + recipe.agg20 + recipe.agg10 + recipe.water)
+        };
 
-        // Break total TM volume down into sub-batches based on plant mixer size
         const drops: SubBatchDrop[] = [];
         let remainingVol = totalLoadVol;
         let batchNo = 1;
@@ -143,8 +211,8 @@ export const RMCBatchReportPage: React.FC = () => {
           drops.push({
             batchIndex: batchNo,
             batchQtyM3: Number(dropQty.toFixed(3)),
-            silo1Kg: Math.round(silo1Unit * dropQty),
-            silo2Kg: Math.round(silo2Unit * dropQty),
+            silo1Kg: Math.round(recipe.cement * dropQty),
+            silo2Kg: Math.round(recipe.admix * dropQty),
             mSandKg: Math.round(recipe.mSand * dropQty),
             agg20mmKg: Math.round(recipe.agg20 * dropQty),
             agg10mmKg: Math.round(recipe.agg10 * dropQty),
@@ -154,8 +222,8 @@ export const RMCBatchReportPage: React.FC = () => {
           batchNo++;
         }
 
-        const s1Target = Math.round(silo1Unit * totalLoadVol);
-        const s2Target = Math.round(silo2Unit * totalLoadVol);
+        const s1Target = Math.round(recipe.cement * totalLoadVol);
+        const s2Target = Math.round(recipe.admix * totalLoadVol);
         const sandTarget = Math.round(recipe.mSand * totalLoadVol);
         const a20Target = Math.round(recipe.agg20 * totalLoadVol);
         const a10Target = Math.round(recipe.agg10 * totalLoadVol);
@@ -174,6 +242,7 @@ export const RMCBatchReportPage: React.FC = () => {
           batchQtyM3: totalLoadVol,
           mixerCapacityM3: activeCap,
           totalBatchesCount: drops.length,
+          unitRecipe,
           drops,
           silo1TargetKg: s1Target,
           silo1ActualKg: s1Target + Math.round((Math.random() * 8) - 4),
@@ -202,9 +271,11 @@ export const RMCBatchReportPage: React.FC = () => {
 
     const handleSync = () => loadBatchReports();
     window.addEventListener('concrete360_site_switched', handleSync);
+    window.addEventListener('concrete360_mix_designs_updated', handleSync);
     window.addEventListener('storage', handleSync);
     return () => {
       window.removeEventListener('concrete360_site_switched', handleSync);
+      window.removeEventListener('concrete360_mix_designs_updated', handleSync);
       window.removeEventListener('storage', handleSync);
     };
   }, [plantMixerCapacity]);
@@ -266,11 +337,11 @@ export const RMCBatchReportPage: React.FC = () => {
             .header h1 { margin: 0; font-size: 16px; font-weight: bold; }
             .header p { margin: 3px 0 0 0; font-size: 10px; }
             .meta-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 12px; border: 1px solid #000; padding: 8px; font-size: 10px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 10px; }
-            th, td { border: 1px solid #000; padding: 6px 5px; text-align: center; }
+            table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 10px; }
+            th, td { border: 1px solid #000; padding: 5px 4px; text-align: center; }
             th { background: #f0f0f0; font-weight: bold; }
-            td.row-title { text-align: left; font-weight: bold; background: #fafafa; width: 140px; }
-            .section-label { font-size: 11px; font-weight: bold; margin-top: 14px; text-transform: uppercase; border-bottom: 1px solid #000; padding-bottom: 2px; }
+            td.row-title { text-align: left; font-weight: bold; background: #fafafa; width: 160px; }
+            .section-label { font-size: 11px; font-weight: bold; margin-top: 12px; text-transform: uppercase; border-bottom: 1px solid #000; padding-bottom: 2px; }
             .footer { margin-top: 35px; display: flex; justify-content: space-between; font-size: 11px; }
           </style>
         </head>
@@ -291,7 +362,35 @@ export const RMCBatchReportPage: React.FC = () => {
             <div><strong>Plant Mixer Size:</strong> ${b.mixerCapacityM3} m³ (${b.totalBatchesCount} Drops)</div>
           </div>
 
-          <div class="section-label">1. Total TM Load Target vs. Actual Summary (${b.batchQtyM3} m³ Total)</div>
+          <!-- Section 1: Standard Proportions for 1 m3 directly from Mix Design -->
+          <div class="section-label">1. Standard Mix Proportion (Per 1 m³ SSD Condition - Linked Mix Design)</div>
+          <table>
+            <thead>
+              <tr>
+                <th style="text-align: left;">Mix Proportion / m³</th>
+                <th>Cement Silo 1</th>
+                <th>Cement Silo 2</th>
+                <th>M-Sand (Zone II)</th>
+                <th>20MM Aggregate</th>
+                <th>10MM Aggregate</th>
+                <th>Batching Water</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="row-title">Design Weight (1 m³)</td>
+                <td><strong>${b.unitRecipe.silo1Kg} kg/m³</strong></td>
+                <td><strong>${b.unitRecipe.silo2Kg} kg/m³</strong></td>
+                <td><strong>${b.unitRecipe.mSandKg} kg/m³</strong></td>
+                <td><strong>${b.unitRecipe.agg20mmKg} kg/m³</strong></td>
+                <td><strong>${b.unitRecipe.agg10mmKg} kg/m³</strong></td>
+                <td><strong>${b.unitRecipe.waterLtr} L/m³</strong></td>
+              </tr>
+            </tbody>
+          </table>
+
+          <!-- Section 2: Total TM Load Target vs. Actual Summary -->
+          <div class="section-label">2. Total TM Load Target vs. Actual Summary (${b.batchQtyM3} m³ Total)</div>
           <table>
             <thead>
               <tr>
@@ -335,7 +434,8 @@ export const RMCBatchReportPage: React.FC = () => {
             </tbody>
           </table>
 
-          <div class="section-label">2. Individual Plant Drop Cycles Into TM (${b.mixerCapacityM3} m³ per Batch Cycle)</div>
+          <!-- Section 3: Individual Plant Drop Cycles -->
+          <div class="section-label">3. Individual Plant Drop Cycles Into TM (${b.mixerCapacityM3} m³ per Batch Cycle)</div>
           <table>
             <thead>
               <tr>
@@ -506,22 +606,40 @@ export const RMCBatchReportPage: React.FC = () => {
                         </td>
                       </tr>
 
-                      {/* Drop Sub-batches detail row */}
+                      {/* Drop Sub-batches detail row with 1 m3 spec block */}
                       {isExpanded && (
                         <tr className="bg-[#070d1a]">
                           <td colSpan={10} className="p-4 border-t border-[#1b273d]">
-                            <div className="bg-[#0b1322] border border-[#1e2d44] rounded-2xl p-4 space-y-3">
+                            <div className="bg-[#0b1322] border border-[#1e2d44] rounded-2xl p-4 space-y-4">
+                              {/* 1 m3 Base Recipe Banner */}
+                              <div className="bg-[#070d1a] border border-[#1b273d] p-3 rounded-xl flex flex-wrap items-center justify-between text-xs font-mono gap-2">
+                                <div className="flex items-center gap-2">
+                                  <Layers className="w-4 h-4 text-cyan-400" />
+                                  <span className="font-bold text-white uppercase">
+                                    Linked Mix Design (1 m³ Standard Batching Target):
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-3 text-slate-300 text-[11px]">
+                                  <span>Silo 1: <strong className="text-blue-400">{b.unitRecipe.silo1Kg} kg/m³</strong></span>
+                                  <span>Silo 2: <strong className="text-purple-400">{b.unitRecipe.silo2Kg} kg/m³</strong></span>
+                                  <span>M-Sand: <strong className="text-amber-400">{b.unitRecipe.mSandKg} kg/m³</strong></span>
+                                  <span>20mm: <strong className="text-emerald-400">{b.unitRecipe.agg20mmKg} kg/m³</strong></span>
+                                  <span>10mm: <strong className="text-emerald-400">{b.unitRecipe.agg10mmKg} kg/m³</strong></span>
+                                  <span>Water: <strong className="text-cyan-400">{b.unitRecipe.waterLtr} L/m³</strong></span>
+                                </div>
+                              </div>
+
                               <div className="flex items-center justify-between">
                                 <span className="text-xs font-bold text-cyan-400 uppercase tracking-wider">
-                                  Plant Batch Dropping Sequence ({b.totalBatchesCount} batches into TM {b.vehicleNo} @ {plantMixerCapacity} m³/batch)
+                                  Plant Batch Dropping Sequence ({b.totalBatchesCount} drops into TM {b.vehicleNo} @ {plantMixerCapacity} m³/drop)
                                 </span>
-                                <span className="text-[11px] text-slate-400">Total Billed: {b.batchQtyM3} m³</span>
+                                <span className="text-[11px] text-slate-400">Total TM Volume: {b.batchQtyM3} m³</span>
                               </div>
 
                               <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2 text-center text-xs">
                                 {b.drops.map((d) => (
                                   <div key={d.batchIndex} className="bg-[#070d1a] border border-[#1b273d] p-3 rounded-xl space-y-1">
-                                    <div className="text-[10px] text-emerald-400 font-bold uppercase">Batch #{d.batchIndex}</div>
+                                    <div className="text-[10px] text-emerald-400 font-bold uppercase">Drop #{d.batchIndex}</div>
                                     <div className="text-sm font-extrabold text-white">{d.batchQtyM3} m³</div>
                                     <div className="text-[10px] text-slate-400 pt-1 border-t border-[#131d2d] space-y-0.5 text-left font-mono">
                                       <div>Silo 1: <strong className="text-blue-300">{d.silo1Kg} kg</strong></div>
@@ -584,7 +702,7 @@ export const RMCBatchReportPage: React.FC = () => {
                   placeholder="e.g. 0.75"
                 />
                 <p className="text-[10px] text-slate-400 mt-1 font-sans">
-                  A 5 m³ load will automatically break down into 6 drops of 0.75 m³ + 1 drop of 0.5 m³.
+                  Sub-batches into the transit mixer will automatically scale based on this capacity.
                 </p>
               </div>
 
