@@ -20,7 +20,8 @@ import {
   Sun,
   Cloud,
   CloudOff,
-  RefreshCw
+  RefreshCw,
+  ArrowLeftRight
 } from 'lucide-react';
 import { cloudStorage, SyncStatus } from '../../services/cloudStorage';
 import { SiteMeasurementSession } from '../../types/rmc';
@@ -45,6 +46,7 @@ interface Props {
   onUpdateMeasurementSession: (session: SiteMeasurementSession) => void;
   user: SessionUser;
   onLogout: () => void;
+  onSwitchSite?: () => void;
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
 }
@@ -64,6 +66,7 @@ export const Sidebar: React.FC<Props> = ({
   onUpdateMeasurementSession,
   user,
   onLogout,
+  onSwitchSite,
   theme,
   onToggleTheme
 }) => {
@@ -88,7 +91,17 @@ export const Sidebar: React.FC<Props> = ({
   };
 
   const [currentSite, setCurrentSite] = useState<string>(() => getActiveSiteKey());
-  const [activeTab, setActiveTab] = useState<string>('ongoing_site');
+  
+  // Always default directly to 'dashboard' upon selection/login
+  const [activeTab, setActiveTab] = useState<string>(() => {
+    try {
+      const savedTab = localStorage.getItem('concrete360_active_tab') || sessionStorage.getItem('concrete360_active_tab');
+      return savedTab || 'dashboard';
+    } catch {
+      return 'dashboard';
+    }
+  });
+
   const [isSidebarOpenMobile, setIsSidebarOpenMobile] = useState(false);
 
   // Authenticated user state supporting localStorage persistence
@@ -116,9 +129,17 @@ export const Sidebar: React.FC<Props> = ({
     const unsub = cloudStorage.onStatusChange((status) => {
       setSyncStatus(status);
     });
+
     const handleSiteSwitch = (e?: any) => {
       const siteName = e?.detail !== undefined ? normalizeSiteKey(e.detail) : getActiveSiteKey();
       setCurrentSite(siteName);
+      
+      // Automatically route to Dashboard whenever a site switch occurs
+      setActiveTab('dashboard');
+      try {
+        localStorage.setItem('concrete360_active_tab', 'dashboard');
+        sessionStorage.setItem('concrete360_active_tab', 'dashboard');
+      } catch {}
     };
 
     const handleUserSync = () => {
@@ -173,7 +194,7 @@ export const Sidebar: React.FC<Props> = ({
 
   const activePage = visibleNavItems.some(item => item.id === activeTab)
     ? activeTab
-    : (visibleNavItems[0]?.id || 'ongoing_site');
+    : (visibleNavItems[0]?.id || 'dashboard');
 
   const sidebarGroups = ['SITE OPERATIONS', 'ENGINEERING', 'CONFIGURATION']
     .map(section => ({
@@ -232,7 +253,12 @@ export const Sidebar: React.FC<Props> = ({
     }
     if (!canViewPage(currentUser, normalizedTarget)) return;
     if (normalizedTarget === 'user_management' && !isAdminUser(currentUser)) return;
+    
     setActiveTab(normalizedTarget);
+    try {
+      localStorage.setItem('concrete360_active_tab', normalizedTarget);
+      sessionStorage.setItem('concrete360_active_tab', normalizedTarget);
+    } catch {}
     setIsSidebarOpenMobile(false);
   };
 
@@ -259,14 +285,19 @@ export const Sidebar: React.FC<Props> = ({
               <div className="w-10 h-10 rounded-xl bg-gradient-to-b from-blue-500 to-blue-700 flex items-center justify-center shadow-lg shadow-blue-500/30 border border-blue-400/40">
                 <Truck className="w-6 h-6 text-white stroke-[2.2]" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <span className="text-xs font-black tracking-wider uppercase text-white block">
                   CONCRETE 360
                 </span>
-                <span className="text-[10px] font-mono text-emerald-400 font-semibold tracking-wide flex items-center gap-1">
-                  <span className={`w-1.5 h-1.5 rounded-full ${currentSite ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
-                  SITE: {currentSite || 'NONE SELECTED'}
-                </span>
+                <button
+                  type="button"
+                  onClick={onSwitchSite}
+                  title="Click to Switch Site"
+                  className="text-[10px] font-mono text-emerald-400 font-semibold tracking-wide flex items-center gap-1 hover:underline cursor-pointer truncate"
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${currentSite ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'} shrink-0`} />
+                  <span className="truncate">SITE: {currentSite || 'NONE SELECTED'}</span>
+                </button>
               </div>
             </div>
             <button
@@ -332,7 +363,7 @@ export const Sidebar: React.FC<Props> = ({
       {/* MAIN WORKSPACE CONTENT */}
       <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
         <header className="workspace-header px-4 sm:px-6 py-3 flex items-center justify-between gap-3 border-b border-[#131d2e] bg-[#090f1a] sticky top-0 z-30">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 min-w-0">
             <button
               onClick={() => setIsSidebarOpenMobile(true)}
               className="md:hidden p-2 text-slate-400 hover:text-white rounded-lg bg-[#121c2d]"
@@ -341,9 +372,10 @@ export const Sidebar: React.FC<Props> = ({
               <Menu className="w-5 h-5" />
             </button>
             <h1 className="text-xs sm:text-sm font-black text-white uppercase tracking-wide truncate">
-              {visibleNavItems.find(i => i.id === activePage)?.label || 'No pages assigned'}
+              {visibleNavItems.find(i => i.id === activePage)?.label || 'Dashboard'}
             </h1>
           </div>
+          
           <div className="flex items-center justify-end gap-1.5 sm:gap-2 shrink-0">
             {/* Supabase Cloud Sync Status Pill */}
             <button
@@ -384,15 +416,25 @@ export const Sidebar: React.FC<Props> = ({
               </span>
             </button>
 
-            <span className="hidden lg:inline-flex text-[10px] font-mono font-bold text-cyan-400 bg-[#0e1728] border border-[#1b273d] px-2.5 py-1 rounded-xl max-w-40 truncate">
-              Active: {currentSite || 'None'}
-            </span>
+            {/* Switch Site Button */}
+            {onSwitchSite && (
+              <button
+                type="button"
+                onClick={onSwitchSite}
+                className="app-header-action inline-flex items-center gap-1.5 px-2.5 h-8 rounded-lg border border-[#1b273d] bg-[#0e1728] text-slate-300 hover:text-cyan-400 hover:border-cyan-500/40 transition text-[10px] sm:text-xs font-mono font-bold cursor-pointer"
+                title="Switch Construction Project"
+              >
+                <ArrowLeftRight className="w-3.5 h-3.5 text-cyan-400" />
+                <span className="hidden md:inline">{currentSite || 'Switch Site'}</span>
+              </button>
+            )}
+
             <span className="hidden sm:inline text-[10px] sm:text-xs text-slate-400 font-mono">
               Role: <strong className="text-white uppercase">{currentUser.role}</strong>
             </span>
             <button
               onClick={onToggleTheme}
-              className="app-header-action inline-flex items-center justify-center w-8 h-8 rounded-lg border border-[#1b273d] bg-[#0e1728] text-slate-300 hover:text-white transition"
+              className="app-header-action inline-flex items-center justify-center w-8 h-8 rounded-lg border border-[#1b273d] bg-[#0e1728] text-slate-300 hover:text-white transition cursor-pointer"
               title={`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`}
               aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`}
             >
@@ -400,7 +442,7 @@ export const Sidebar: React.FC<Props> = ({
             </button>
             <button
               onClick={onLogout}
-              className="app-header-action inline-flex items-center gap-1.5 px-2.5 h-8 rounded-lg border border-[#1b273d] bg-[#0e1728] text-slate-300 hover:text-red-400 transition text-[10px] sm:text-xs font-semibold"
+              className="app-header-action inline-flex items-center gap-1.5 px-2.5 h-8 rounded-lg border border-[#1b273d] bg-[#0e1728] text-slate-300 hover:text-red-400 transition text-[10px] sm:text-xs font-semibold cursor-pointer"
             >
               <LogOut className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Log Out</span>
