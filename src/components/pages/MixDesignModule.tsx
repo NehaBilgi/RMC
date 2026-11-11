@@ -19,27 +19,29 @@ export interface MixRecipe {
   totalDensity: number;
 }
 
-// Exactly balanced to 2400 kg/m3 with water reduction
-const DEFAULT_RECIPES_FLY_ASH: Record<string, MixRecipe> = {
-  'M15': { grade: 'M15', targetMpa: 20.8, wcr: 0.46, cementKg: 250, mineralAdmixtureKg: 75, waterLitres: 150, mSandKg: 825, agg20mmKg: 658, agg10mmKg: 440, admixtureKg: 2, totalDensity: 2400 },
-  'M20': { grade: 'M20', targetMpa: 26.6, wcr: 0.38, cementKg: 300, mineralAdmixtureKg: 90, waterLitres: 148, mSandKg: 789, agg20mmKg: 642, agg10mmKg: 428, admixtureKg: 3, totalDensity: 2400 },
-  'M25': { grade: 'M25', targetMpa: 31.6, wcr: 0.32, cementKg: 350, mineralAdmixtureKg: 105, waterLitres: 145, mSandKg: 752, agg20mmKg: 627, agg10mmKg: 418, admixtureKg: 3, totalDensity: 2400 },
-  'M30': { grade: 'M30', targetMpa: 38.3, wcr: 0.29, cementKg: 380, mineralAdmixtureKg: 115, waterLitres: 142, mSandKg: 721, agg20mmKg: 623, agg10mmKg: 415, admixtureKg: 4, totalDensity: 2400 },
-  'M35': { grade: 'M35', targetMpa: 43.3, wcr: 0.27, cementKg: 400, mineralAdmixtureKg: 120, waterLitres: 138, mSandKg: 704, agg20mmKg: 620, agg10mmKg: 414, admixtureKg: 4, totalDensity: 2400 },
-  'M40': { grade: 'M40', targetMpa: 48.3, wcr: 0.25, cementKg: 420, mineralAdmixtureKg: 125, waterLitres: 135, mSandKg: 681, agg20mmKg: 620, agg10mmKg: 414, admixtureKg: 5, totalDensity: 2400 },
-  'M45': { grade: 'M45', targetMpa: 53.3, wcr: 0.23, cementKg: 440, mineralAdmixtureKg: 130, waterLitres: 132, mSandKg: 660, agg20mmKg: 619, agg10mmKg: 414, admixtureKg: 5, totalDensity: 2400 },
-  'M50': { grade: 'M50', targetMpa: 58.3, wcr: 0.22, cementKg: 460, mineralAdmixtureKg: 135, waterLitres: 130, mSandKg: 641, agg20mmKg: 617, agg10mmKg: 411, admixtureKg: 6, totalDensity: 2400 }
+// Bilgi Buildcon RMC 1 m³ Quality Assurance Cards (Rev. 2, Total Density: 2400.0 kg/m³)
+const DEFAULT_RECIPES_GGBS: Record<string, MixRecipe> = {
+  'M10': { grade: 'M10', targetMpa: 15.0, wcr: 0.65, cementKg: 168, mineralAdmixtureKg: 42, waterLitres: 136, mSandKg: 1057, agg20mmKg: 597, agg10mmKg: 398, admixtureKg: 1.68, totalDensity: 2400 },
+  'M15': { grade: 'M15', targetMpa: 20.8, wcr: 0.56, cementKg: 200, mineralAdmixtureKg: 50, waterLitres: 140, mSandKg: 1034, agg20mmKg: 584, agg10mmKg: 390, admixtureKg: 2.00, totalDensity: 2400 },
+  'M20': { grade: 'M20', targetMpa: 26.6, wcr: 0.49, cementKg: 240, mineralAdmixtureKg: 60, waterLitres: 147, mSandKg: 1005, agg20mmKg: 567, agg10mmKg: 379, admixtureKg: 2.40, totalDensity: 2400 },
+  'M25': { grade: 'M25', targetMpa: 31.6, wcr: 0.45, cementKg: 280, mineralAdmixtureKg: 70, waterLitres: 158, mSandKg: 973, agg20mmKg: 550, agg10mmKg: 366, admixtureKg: 2.80, totalDensity: 2400 },
+  'M30': { grade: 'M30', targetMpa: 38.3, wcr: 0.42, cementKg: 304, mineralAdmixtureKg: 76, waterLitres: 160, mSandKg: 956, agg20mmKg: 541, agg10mmKg: 360, admixtureKg: 3.04, totalDensity: 2400 },
+  'M35': { grade: 'M35', targetMpa: 43.3, wcr: 0.40, cementKg: 320, mineralAdmixtureKg: 80, waterLitres: 160, mSandKg: 946, agg20mmKg: 535, agg10mmKg: 356, admixtureKg: 3.20, totalDensity: 2400 },
+  'M40': { grade: 'M40', targetMpa: 48.3, wcr: 0.38, cementKg: 336, mineralAdmixtureKg: 84, waterLitres: 160, mSandKg: 936, agg20mmKg: 529, agg10mmKg: 352, admixtureKg: 3.36, totalDensity: 2400 },
+  'M45': { grade: 'M45', targetMpa: 53.3, wcr: 0.36, cementKg: 352, mineralAdmixtureKg: 88, waterLitres: 158, mSandKg: 928, agg20mmKg: 524, agg10mmKg: 349, admixtureKg: 3.52, totalDensity: 2400 },
+  'M50': { grade: 'M50', targetMpa: 58.3, wcr: 0.34, cementKg: 368, mineralAdmixtureKg: 92, waterLitres: 156, mSandKg: 921, agg20mmKg: 520, agg10mmKg: 346, admixtureKg: 3.68, totalDensity: 2400 }
 };
 
-const DEFAULT_RECIPES_GGBS: Record<string, MixRecipe> = {
-  'M15': { grade: 'M15', targetMpa: 20.8, wcr: 0.44, cementKg: 250, mineralAdmixtureKg: 100, waterLitres: 155, mSandKg: 805, agg20mmKg: 653, agg10mmKg: 435, admixtureKg: 2, totalDensity: 2400 },
-  'M20': { grade: 'M20', targetMpa: 26.6, wcr: 0.36, cementKg: 300, mineralAdmixtureKg: 120, waterLitres: 152, mSandKg: 765, agg20mmKg: 636, agg10mmKg: 424, admixtureKg: 3, totalDensity: 2400 },
-  'M25': { grade: 'M25', targetMpa: 31.6, wcr: 0.30, cementKg: 350, mineralAdmixtureKg: 140, waterLitres: 148, mSandKg: 721, agg20mmKg: 623, agg10mmKg: 415, admixtureKg: 3, totalDensity: 2400 },
-  'M30': { grade: 'M30', targetMpa: 38.3, wcr: 0.27, cementKg: 380, mineralAdmixtureKg: 150, waterLitres: 145, mSandKg: 693, agg20mmKg: 617, agg10mmKg: 411, admixtureKg: 4, totalDensity: 2400 },
-  'M35': { grade: 'M35', targetMpa: 43.3, wcr: 0.25, cementKg: 400, mineralAdmixtureKg: 160, waterLitres: 140, mSandKg: 672, agg20mmKg: 614, agg10mmKg: 410, admixtureKg: 4, totalDensity: 2400 },
-  'M40': { grade: 'M40', targetMpa: 48.3, wcr: 0.23, cementKg: 420, mineralAdmixtureKg: 170, waterLitres: 138, mSandKg: 645, agg20mmKg: 613, agg10mmKg: 409, admixtureKg: 5, totalDensity: 2400 },
-  'M45': { grade: 'M45', targetMpa: 53.3, wcr: 0.22, cementKg: 440, mineralAdmixtureKg: 180, waterLitres: 135, mSandKg: 624, agg20mmKg: 610, agg10mmKg: 406, admixtureKg: 5, totalDensity: 2400 },
-  'M50': { grade: 'M50', targetMpa: 58.3, wcr: 0.21, cementKg: 460, mineralAdmixtureKg: 190, waterLitres: 132, mSandKg: 602, agg20mmKg: 606, agg10mmKg: 404, admixtureKg: 6, totalDensity: 2400 }
+const DEFAULT_RECIPES_FLY_ASH: Record<string, MixRecipe> = {
+  'M10': { grade: 'M10', targetMpa: 15.0, wcr: 0.65, cementKg: 168, mineralAdmixtureKg: 42, waterLitres: 136, mSandKg: 1057, agg20mmKg: 597, agg10mmKg: 398, admixtureKg: 1.68, totalDensity: 2400 },
+  'M15': { grade: 'M15', targetMpa: 20.8, wcr: 0.56, cementKg: 200, mineralAdmixtureKg: 50, waterLitres: 140, mSandKg: 1034, agg20mmKg: 584, agg10mmKg: 390, admixtureKg: 2.00, totalDensity: 2400 },
+  'M20': { grade: 'M20', targetMpa: 26.6, wcr: 0.49, cementKg: 240, mineralAdmixtureKg: 60, waterLitres: 147, mSandKg: 1005, agg20mmKg: 567, agg10mmKg: 379, admixtureKg: 2.40, totalDensity: 2400 },
+  'M25': { grade: 'M25', targetMpa: 31.6, wcr: 0.45, cementKg: 280, mineralAdmixtureKg: 70, waterLitres: 158, mSandKg: 973, agg20mmKg: 550, agg10mmKg: 366, admixtureKg: 2.80, totalDensity: 2400 },
+  'M30': { grade: 'M30', targetMpa: 38.3, wcr: 0.42, cementKg: 304, mineralAdmixtureKg: 76, waterLitres: 160, mSandKg: 956, agg20mmKg: 541, agg10mmKg: 360, admixtureKg: 3.04, totalDensity: 2400 },
+  'M35': { grade: 'M35', targetMpa: 43.3, wcr: 0.40, cementKg: 320, mineralAdmixtureKg: 80, waterLitres: 160, mSandKg: 946, agg20mmKg: 535, agg10mmKg: 356, admixtureKg: 3.20, totalDensity: 2400 },
+  'M40': { grade: 'M40', targetMpa: 48.3, wcr: 0.38, cementKg: 336, mineralAdmixtureKg: 84, waterLitres: 160, mSandKg: 936, agg20mmKg: 529, agg10mmKg: 352, admixtureKg: 3.36, totalDensity: 2400 },
+  'M45': { grade: 'M45', targetMpa: 53.3, wcr: 0.36, cementKg: 352, mineralAdmixtureKg: 88, waterLitres: 158, mSandKg: 928, agg20mmKg: 524, agg10mmKg: 349, admixtureKg: 3.52, totalDensity: 2400 },
+  'M50': { grade: 'M50', targetMpa: 58.3, wcr: 0.34, cementKg: 368, mineralAdmixtureKg: 92, waterLitres: 156, mSandKg: 921, agg20mmKg: 520, agg10mmKg: 346, admixtureKg: 3.68, totalDensity: 2400 }
 };
 
 const extractCleanSiteName = (name: string): string => {
@@ -91,14 +93,14 @@ export const MixDesignModule: React.FC = () => {
   const getSiteModeKey = (site: string) => `concrete360_admixture_mode_${site}`;
   const getSiteMixKey = (site: string, mode: AdmixtureMode) => `concrete360_mixes_${site}_${mode}`;
 
-  // Read site-specific saved admixture choice
+  // Default to GGBS mode per plant QA cards
   const [admixtureMode, setAdmixtureMode] = useState<AdmixtureMode>(() => {
     try {
       const site = getActiveSiteKey();
       const saved = localStorage.getItem(`concrete360_admixture_mode_${site}`) || localStorage.getItem('concrete360_admixture_mode');
       if (saved === 'GGBS' || saved === 'FLY_ASH') return saved;
     } catch {}
-    return 'FLY_ASH';
+    return 'GGBS';
   });
 
   const getInitialMixes = (site: string, mode: AdmixtureMode): Record<string, MixRecipe> => {
@@ -106,21 +108,20 @@ export const MixDesignModule: React.FC = () => {
       const saved = localStorage.getItem(getSiteMixKey(site, mode));
       if (saved) return JSON.parse(saved);
     } catch {}
-    return mode === 'FLY_ASH' ? DEFAULT_RECIPES_FLY_ASH : DEFAULT_RECIPES_GGBS;
+    return mode === 'GGBS' ? DEFAULT_RECIPES_GGBS : DEFAULT_RECIPES_FLY_ASH;
   };
 
   const [mixes, setMixes] = useState<Record<string, MixRecipe>>(() => getInitialMixes(currentSiteKey, admixtureMode));
-  const [activeGrade, setActiveGrade] = useState<string>('M15');
+  const [activeGrade, setActiveGrade] = useState<string>('M25');
   const [isEditing, setIsEditing] = useState<boolean>(false);
-  const [editForm, setEditForm] = useState<MixRecipe>(mixes['M15'] || DEFAULT_RECIPES_FLY_ASH['M15']);
+  const [editForm, setEditForm] = useState<MixRecipe>(mixes['M25'] || DEFAULT_RECIPES_GGBS['M25']);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  // Sync site switches: load the specific site's Fly Ash/GGBS state
   const handleSiteSync = () => {
     const newSite = getActiveSiteKey();
     setCurrentSiteKey(newSite);
 
-    let siteMode: AdmixtureMode = 'FLY_ASH';
+    let siteMode: AdmixtureMode = 'GGBS';
     try {
       const savedMode = localStorage.getItem(getSiteModeKey(newSite)) || localStorage.getItem('concrete360_admixture_mode');
       if (savedMode === 'GGBS' || savedMode === 'FLY_ASH') {
@@ -132,7 +133,7 @@ export const MixDesignModule: React.FC = () => {
     const siteMixes = getInitialMixes(newSite, siteMode);
     setMixes(siteMixes);
     setIsEditing(false);
-    setEditForm(siteMixes[activeGrade] || (siteMode === 'FLY_ASH' ? DEFAULT_RECIPES_FLY_ASH[activeGrade] : DEFAULT_RECIPES_GGBS[activeGrade]));
+    setEditForm(siteMixes[activeGrade] || (siteMode === 'GGBS' ? DEFAULT_RECIPES_GGBS[activeGrade] : DEFAULT_RECIPES_FLY_ASH[activeGrade]));
   };
 
   useEffect(() => {
@@ -148,23 +149,21 @@ export const MixDesignModule: React.FC = () => {
     };
   }, [activeGrade]);
 
-  // Switch between Fly Ash and GGBS Mode and persist to current site
   const handleModeSwitch = (newMode: AdmixtureMode) => {
     setAdmixtureMode(newMode);
     try {
       localStorage.setItem(getSiteModeKey(currentSiteKey), newMode);
-      localStorage.setItem('concrete360_admixture_mode', newMode); // Global mirror
+      localStorage.setItem('concrete360_admixture_mode', newMode);
     } catch {}
 
     const newMixes = getInitialMixes(currentSiteKey, newMode);
     setMixes(newMixes);
     setIsEditing(false);
-    setEditForm(newMixes[activeGrade] || (newMode === 'FLY_ASH' ? DEFAULT_RECIPES_FLY_ASH[activeGrade] : DEFAULT_RECIPES_GGBS[activeGrade]));
-    setSuccessMessage(`Switched ${currentSiteKey} to ${newMode === 'FLY_ASH' ? 'FLY ASH' : 'GGBS'} mode (2400 kg/m³ Yield)!`);
+    setEditForm(newMixes[activeGrade] || (newMode === 'GGBS' ? DEFAULT_RECIPES_GGBS[activeGrade] : DEFAULT_RECIPES_FLY_ASH[activeGrade]));
+    setSuccessMessage(`Switched ${currentSiteKey} to ${newMode === 'GGBS' ? 'GGBS (20% Binder)' : 'FLY ASH'} proportions!`);
     setTimeout(() => setSuccessMessage(null), 3000);
   };
 
-  // Broadcast and persist recipes per site
   useEffect(() => {
     try {
       localStorage.setItem(getSiteMixKey(currentSiteKey, admixtureMode), JSON.stringify(mixes));
@@ -194,7 +193,7 @@ export const MixDesignModule: React.FC = () => {
     } catch {}
   }, [mixes, admixtureMode, currentSiteKey]);
 
-  const currentMix = mixes[activeGrade] || (admixtureMode === 'FLY_ASH' ? DEFAULT_RECIPES_FLY_ASH[activeGrade] : DEFAULT_RECIPES_GGBS[activeGrade]);
+  const currentMix = mixes[activeGrade] || (admixtureMode === 'GGBS' ? DEFAULT_RECIPES_GGBS[activeGrade] : DEFAULT_RECIPES_FLY_ASH[activeGrade]);
 
   const handleStartEdit = () => {
     if (!canModifyMixes) {
@@ -205,19 +204,19 @@ export const MixDesignModule: React.FC = () => {
     setIsEditing(true);
   };
 
-  // Recalculates aggregate quantities so total weight is strictly 2400 kg/m³
+  // Re-balances aggregate quantities matching IS 10262:2019 & Bilgi QA specifications
+  // 51.5% Fine Aggregate (M-Sand) and 48.5% Coarse Aggregate split 60:40 (20mm:10mm)
   const balanceAggregatesTo2400 = (baseForm: MixRecipe): MixRecipe => {
     const fixedWeight = baseForm.cementKg + baseForm.mineralAdmixtureKg + baseForm.waterLitres + baseForm.admixtureKg;
     const remainingAggregateWeight = Math.max(0, 2400 - fixedWeight);
-    
-    // Balanced split: M-Sand 40%, CA 20mm 36% (60% of CA), CA 10mm 24% (40% of CA)
-    const mSand = Math.round(remainingAggregateWeight * 0.403);
+
+    const mSand = Math.round(remainingAggregateWeight * 0.515);
     const coarseTotal = remainingAggregateWeight - mSand;
     const agg20mm = Math.round(coarseTotal * 0.60);
     const agg10mm = coarseTotal - agg20mm;
 
     const totalBinder = baseForm.cementKg + baseForm.mineralAdmixtureKg;
-    const calculatedWcr = totalBinder > 0 ? Number((baseForm.waterLitres / totalBinder).toFixed(2)) : 0.35;
+    const calculatedWcr = totalBinder > 0 ? Number((baseForm.waterLitres / totalBinder).toFixed(2)) : 0.45;
 
     return {
       ...baseForm,
@@ -227,20 +226,6 @@ export const MixDesignModule: React.FC = () => {
       wcr: calculatedWcr,
       totalDensity: 2400
     };
-  };
-
-  const applyPceWaterReduction = (currentPceKg: number) => {
-    const baselineWater = 185;
-    const reductionPercent = Math.min(28, Math.max(12, currentPceKg * 4.8));
-    const reducedWater = Math.round(baselineWater * (1 - reductionPercent / 100));
-
-    const updated = balanceAggregatesTo2400({
-      ...editForm,
-      waterLitres: reducedWater,
-      admixtureKg: currentPceKg
-    });
-
-    setEditForm(updated);
   };
 
   const handleSaveEdit = async (e: React.FormEvent) => {
@@ -283,14 +268,14 @@ export const MixDesignModule: React.FC = () => {
       alert('Permission Denied: Only ADMIN accounts can reset mix designs.');
       return;
     }
-    const defaultDict = admixtureMode === 'FLY_ASH' ? DEFAULT_RECIPES_FLY_ASH : DEFAULT_RECIPES_GGBS;
-    if (window.confirm(`Reset ${activeGrade} (${admixtureMode}) to default 2400 kg/m³ proportions for site ${currentSiteKey}?`)) {
+    const defaultDict = admixtureMode === 'GGBS' ? DEFAULT_RECIPES_GGBS : DEFAULT_RECIPES_FLY_ASH;
+    if (window.confirm(`Reset ${activeGrade} (${admixtureMode}) to Bilgi QA Card specifications (2400 kg/m³)?`)) {
       const defaultVal = defaultDict[activeGrade];
       setMixes(prev => ({
         ...prev,
         [activeGrade]: { ...defaultVal }
       }));
-      setSuccessMessage(`${activeGrade} successfully reset to ${admixtureMode} defaults!`);
+      setSuccessMessage(`${activeGrade} reset to Bilgi QA Card defaults!`);
       setTimeout(() => setSuccessMessage(null), 3000);
     }
   };
@@ -302,10 +287,10 @@ export const MixDesignModule: React.FC = () => {
       {/* Top Header & Admixture Commander */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-blue-400 bg-blue-500/10 border border-blue-500/30 px-2.5 py-0.5 rounded-full">
-            SITE BATCH SPECIFICATION: {currentSiteKey} • TARGET YIELD: 2400 KG/M³
+          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-0.5 rounded-full">
+            BILGI BUILDCON RMC QA • 1 M³ BATCH PROPORTION CARDS (REV. 2)
           </span>
-          <h2 className="text-xl font-black text-white mt-1">Ready-Mix Concrete Grades &amp; Batching Standards</h2>
+          <h2 className="text-xl font-black text-white mt-1">Ready-Mix Concrete Mix Proportioning & Quality Control</h2>
         </div>
 
         {/* Command Switch: Site-Saved Admixture Preference */}
@@ -314,6 +299,18 @@ export const MixDesignModule: React.FC = () => {
             <Zap className="w-3.5 h-3.5 text-amber-400" />
             <span>COMMAND:</span>
           </div>
+
+          <button
+            onClick={() => handleModeSwitch('GGBS')}
+            disabled={!canModifyMixes && userRole === 'READ_ONLY'}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+              admixtureMode === 'GGBS'
+                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30'
+                : 'text-slate-400 hover:text-white hover:bg-[#121c2d]'
+            }`}
+          >
+            <span>USE GGBS (20%)</span>
+          </button>
 
           <button
             onClick={() => handleModeSwitch('FLY_ASH')}
@@ -326,18 +323,6 @@ export const MixDesignModule: React.FC = () => {
           >
             <span>USE FLY ASH</span>
           </button>
-
-          <button
-            onClick={() => handleModeSwitch('GGBS')}
-            disabled={!canModifyMixes && userRole === 'READ_ONLY'}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-              admixtureMode === 'GGBS'
-                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30'
-                : 'text-slate-400 hover:text-white hover:bg-[#121c2d]'
-            }`}
-          >
-            <span>USE GGBS</span>
-          </button>
         </div>
       </div>
 
@@ -348,10 +333,10 @@ export const MixDesignModule: React.FC = () => {
         </div>
       )}
 
-      {/* Grade Selector Tabs */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5 font-mono">
-        {Object.keys(DEFAULT_RECIPES_FLY_ASH).map((gradeKey) => {
-          const m = mixes[gradeKey] || (admixtureMode === 'FLY_ASH' ? DEFAULT_RECIPES_FLY_ASH[gradeKey] : DEFAULT_RECIPES_GGBS[gradeKey]);
+      {/* Grade Selector Tabs: Includes M10 to M50 */}
+      <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-2 font-mono">
+        {Object.keys(DEFAULT_RECIPES_GGBS).map((gradeKey) => {
+          const m = mixes[gradeKey] || (admixtureMode === 'GGBS' ? DEFAULT_RECIPES_GGBS[gradeKey] : DEFAULT_RECIPES_FLY_ASH[gradeKey]);
           const isActive = activeGrade === gradeKey;
           return (
             <button
@@ -360,7 +345,7 @@ export const MixDesignModule: React.FC = () => {
                 setActiveGrade(gradeKey);
                 setIsEditing(false);
               }}
-              className={`p-3.5 rounded-2xl border text-left transition cursor-pointer flex flex-col justify-between ${
+              className={`p-3 rounded-2xl border text-left transition cursor-pointer flex flex-col justify-between ${
                 isActive
                   ? 'bg-blue-600 border-blue-500 shadow-lg shadow-blue-600/30 text-white font-bold'
                   : 'bg-[#0b1322] border-[#1b273d] text-slate-300 hover:border-slate-600'
@@ -384,10 +369,10 @@ export const MixDesignModule: React.FC = () => {
             </div>
             <div>
               <h3 className="text-base font-black text-white">
-                CONSTITUENT PROPORTIONS FOR {activeGrade} GRADE (1 M³) — {admixtureMode === 'FLY_ASH' ? 'FLY ASH BLEND' : 'GGBS BLEND'}
+                1 M³ BATCH PROPORTIONS FOR {activeGrade} GRADE (SSD CONDITION)
               </h3>
               <p className="text-xs text-slate-400 font-mono mt-0.5">
-                Site: <strong className="text-white">{currentSiteKey}</strong> | Total Binder: <strong className="text-white">{totalCementitious} kg</strong> | w/b: <strong className="text-emerald-400 font-bold">{currentMix.wcr}</strong> | Total Yield: <strong className="text-cyan-300 font-bold">2400 kg/m³</strong>
+                Target Slump: <strong className="text-white">100-125 mm (3 Hr Retention)</strong> | Total Binder: <strong className="text-white">{totalCementitious} kg/m³</strong> | w/b: <strong className="text-emerald-400 font-bold">{currentMix.wcr}</strong> | Total Density: <strong className="text-cyan-300 font-bold">2,400.0 kg/m³</strong>
               </p>
             </div>
           </div>
@@ -406,7 +391,7 @@ export const MixDesignModule: React.FC = () => {
                   <button
                     onClick={handleResetMix}
                     className="px-4 py-2 bg-[#121c2d] hover:bg-[#1a263d] text-cyan-400 border border-cyan-500/30 font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer font-mono transition"
-                    title={`Reset to Default ${admixtureMode} Proportions`}
+                    title={`Reset to Bilgi QA Card Proportions`}
                   >
                     <RotateCcw className="w-3.5 h-3.5" />
                     <span>Reset</span>
@@ -433,63 +418,61 @@ export const MixDesignModule: React.FC = () => {
         {!isEditing ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 font-mono text-xs">
             <div className="p-5 bg-[#070d1a] border border-[#1b273d] rounded-2xl space-y-1">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">OPC 53 CEMENT</span>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">OPC 53 CEMENT (SILO 1)</span>
               <div className="text-2xl font-extrabold text-blue-400">{currentMix.cementKg} kg</div>
-              <span className="text-[11px] text-slate-500 block">({Math.round(currentMix.cementKg / 50)} Bags @ 50kg) • Primary Binder</span>
+              <span className="text-[11px] text-slate-500 block">80% Total Binder (IS 269) • {(currentMix.cementKg / 50).toFixed(1)} Bags</span>
             </div>
 
-            {admixtureMode === 'FLY_ASH' ? (
-              <div className="p-5 bg-[#070d1a] border border-purple-500/30 bg-purple-950/10 rounded-2xl space-y-1">
-                <span className="text-[10px] font-bold text-purple-400 uppercase tracking-wider block">CLASS F FLY ASH</span>
-                <div className="text-2xl font-extrabold text-purple-300">{currentMix.mineralAdmixtureKg} kg</div>
-                <span className="text-[11px] text-slate-500 block">Spherical Micro-Pozzolan (IS 3812)</span>
-              </div>
-            ) : (
-              <div className="p-5 bg-[#070d1a] border border-indigo-500/30 bg-indigo-950/10 rounded-2xl space-y-1">
-                <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider block">GGBS (SLAG BINDER)</span>
-                <div className="text-2xl font-extrabold text-indigo-300">{currentMix.mineralAdmixtureKg} kg</div>
-                <span className="text-[11px] text-slate-500 block">Slag Micro-Binder (IS 12089)</span>
-              </div>
-            )}
+            <div className="p-5 bg-[#070d1a] border border-indigo-500/30 bg-indigo-950/10 rounded-2xl space-y-1">
+              <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider block">
+                {admixtureMode === 'GGBS' ? 'GGBS (SILO 2)' : 'CLASS F FLY ASH (SILO 2)'}
+              </span>
+              <div className="text-2xl font-extrabold text-indigo-300">{currentMix.mineralAdmixtureKg} kg</div>
+              <span className="text-[11px] text-slate-500 block">
+                {admixtureMode === 'GGBS' ? '20% Replacement (IS 16714)' : 'Pozzolanic Replacement (IS 3812)'}
+              </span>
+            </div>
 
             <div className="p-5 bg-[#070d1a] border border-cyan-500/30 bg-cyan-950/10 rounded-2xl space-y-1">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider block">BATCHING WATER</span>
-                <span className="text-[9px] bg-cyan-500/20 text-cyan-300 px-1.5 py-0.5 rounded font-sans">Reduced</span>
+                <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider block">DESIGN FREE WATER</span>
+                <span className="text-[9px] bg-cyan-500/20 text-cyan-300 px-1.5 py-0.5 rounded font-sans">w/b {currentMix.wcr}</span>
               </div>
               <div className="text-2xl font-extrabold text-cyan-300">{currentMix.waterLitres} Litres</div>
-              <span className="text-[11px] text-slate-400 block">Free Mixing Water (w/b: {currentMix.wcr})</span>
+              <span className="text-[11px] text-slate-400 block">Potable Water (IS 456 Table 2)</span>
             </div>
 
             <div className="p-5 bg-[#070d1a] border border-[#1b273d] rounded-2xl space-y-1">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">M-SAND (ZONE II)</span>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">M-SAND (FINE AGGREGATE)</span>
               <div className="text-2xl font-extrabold text-amber-400">{currentMix.mSandKg} kg</div>
-              <span className="text-[11px] text-slate-500 block">Manufactured Fine Sand</span>
+              <span className="text-[11px] text-slate-500 block">Zone II Crushed Sand (51.5% Share)</span>
             </div>
 
             <div className="p-5 bg-[#070d1a] border border-[#1b273d] rounded-2xl space-y-1">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">20 MM AGGREGATE (60%)</span>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">20 MM AGGREGATE (60% CA)</span>
               <div className="text-2xl font-extrabold text-emerald-400">{currentMix.agg20mmKg} kg</div>
-              <span className="text-[11px] text-slate-500 block">Coarse Granite Fraction</span>
+              <span className="text-[11px] text-slate-500 block">Crushed Granite Stone</span>
             </div>
 
             <div className="p-5 bg-[#070d1a] border border-[#1b273d] rounded-2xl space-y-1">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">10 MM AGGREGATE (40%)</span>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">10 MM AGGREGATE (40% CA)</span>
               <div className="text-2xl font-extrabold text-emerald-400">{currentMix.agg10mmKg} kg</div>
-              <span className="text-[11px] text-slate-500 block">Down-size Fraction</span>
+              <span className="text-[11px] text-slate-500 block">Crushed Granite Stone</span>
             </div>
 
             <div className="p-5 bg-[#070d1a] border border-[#1b273d] rounded-2xl space-y-1 sm:col-span-2">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">PCE ADMIXTURE (WATER REDUCER)</span>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">PCE ADMIXTURE (0.80% BINDER)</span>
               <div className="text-2xl font-extrabold text-rose-400">{currentMix.admixtureKg} kg</div>
-              <span className="text-[11px] text-emerald-400 font-bold block">Strict Yield Target: 2400 kg/m³</span>
+              <span className="text-[11px] text-emerald-400 font-bold block">
+                Approx. {(currentMix.admixtureKg / 1.08).toFixed(2)} Litres • Density: 2,400.0 kg/m³
+              </span>
             </div>
           </div>
         ) : (
           <form onSubmit={handleSaveEdit} className="space-y-4 font-mono text-xs">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="space-y-1">
-                <label className="text-slate-300 font-bold uppercase text-[10px]">Target Strength (MPa)</label>
+                <label className="text-slate-300 font-bold uppercase text-[10px]">Target Characteristic Strength (MPa)</label>
                 <input
                   type="number"
                   step="any"
@@ -512,7 +495,7 @@ export const MixDesignModule: React.FC = () => {
               </div>
 
               <div className="space-y-1">
-                <label className="text-cyan-400 font-bold uppercase text-[10px]">Total Design Yield (kg/m³)</label>
+                <label className="text-cyan-400 font-bold uppercase text-[10px]">Design Fresh Density (kg/m³)</label>
                 <input
                   type="number"
                   value={2400}
@@ -522,7 +505,7 @@ export const MixDesignModule: React.FC = () => {
               </div>
 
               <div className="space-y-1">
-                <label className="text-slate-300 font-bold uppercase text-[10px]">OPC 53 Cement (kg/m³)</label>
+                <label className="text-slate-300 font-bold uppercase text-[10px]">OPC 53 Cement - 80% Binder (kg/m³)</label>
                 <input
                   type="number"
                   value={editForm.cementKg}
@@ -536,8 +519,8 @@ export const MixDesignModule: React.FC = () => {
               </div>
 
               <div className="space-y-1">
-                <label className={`font-bold uppercase text-[10px] ${admixtureMode === 'FLY_ASH' ? 'text-purple-400' : 'text-indigo-400'}`}>
-                  {admixtureMode === 'FLY_ASH' ? 'Class F Fly Ash (kg/m³)' : 'GGBS (kg/m³)'}
+                <label className={`font-bold uppercase text-[10px] ${admixtureMode === 'GGBS' ? 'text-indigo-400' : 'text-purple-400'}`}>
+                  {admixtureMode === 'GGBS' ? 'GGBS - 20% Replacement (kg/m³)' : 'Fly Ash (kg/m³)'}
                 </label>
                 <input
                   type="number"
@@ -552,17 +535,7 @@ export const MixDesignModule: React.FC = () => {
               </div>
 
               <div className="space-y-1">
-                <div className="flex items-center justify-between">
-                  <label className="text-cyan-400 font-bold uppercase text-[10px]">Batching Water (L/m³)</label>
-                  <button
-                    type="button"
-                    onClick={() => applyPceWaterReduction(editForm.admixtureKg)}
-                    className="text-[9px] text-cyan-300 hover:text-white flex items-center gap-1 cursor-pointer underline"
-                  >
-                    <Droplets className="w-2.5 h-2.5" />
-                    <span>Auto-Reduce</span>
-                  </button>
-                </div>
+                <label className="text-cyan-400 font-bold uppercase text-[10px]">Design Free Water (L/m³)</label>
                 <input
                   type="number"
                   value={editForm.waterLitres}
@@ -576,7 +549,7 @@ export const MixDesignModule: React.FC = () => {
               </div>
 
               <div className="space-y-1">
-                <label className="text-amber-400 font-bold uppercase text-[10px]">M-Sand (Auto-Balanced to 2400)</label>
+                <label className="text-amber-400 font-bold uppercase text-[10px]">M-Sand - Zone II 51.5% (kg/m³)</label>
                 <input
                   type="number"
                   value={editForm.mSandKg}
@@ -586,7 +559,7 @@ export const MixDesignModule: React.FC = () => {
               </div>
 
               <div className="space-y-1">
-                <label className="text-emerald-400 font-bold uppercase text-[10px]">20 MM (Auto-Balanced 60%)</label>
+                <label className="text-emerald-400 font-bold uppercase text-[10px]">20 MM Coarse - 60% CA (kg/m³)</label>
                 <input
                   type="number"
                   value={editForm.agg20mmKg}
@@ -596,7 +569,7 @@ export const MixDesignModule: React.FC = () => {
               </div>
 
               <div className="space-y-1">
-                <label className="text-emerald-400 font-bold uppercase text-[10px]">10 MM (Auto-Balanced 40%)</label>
+                <label className="text-emerald-400 font-bold uppercase text-[10px]">10 MM Coarse - 40% CA (kg/m³)</label>
                 <input
                   type="number"
                   value={editForm.agg10mmKg}
@@ -606,19 +579,16 @@ export const MixDesignModule: React.FC = () => {
               </div>
 
               <div className="sm:col-span-3 space-y-1 bg-[#070d1a] border border-[#1b273d] p-3 rounded-2xl">
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-rose-400 font-bold uppercase text-[10px]">PCE Admixture / Water Reducer (kg/m³)</label>
-                  <span className="text-[10px] text-slate-400 font-sans">
-                    Water drops automatically and aggregates scale to preserve 2400 kg/m³
-                  </span>
-                </div>
+                <label className="text-rose-400 font-bold uppercase text-[10px] block mb-1">
+                  PCE Admixture Dosage (kg/m³) — 0.80% of Binder
+                </label>
                 <input
                   type="number"
                   step="any"
                   value={editForm.admixtureKg}
                   onChange={(e) => {
                     const adm = Number(e.target.value) || 0;
-                    applyPceWaterReduction(adm);
+                    setEditForm(balanceAggregatesTo2400({ ...editForm, admixtureKg: adm }));
                   }}
                   className="w-full px-4 py-3 bg-[#0b1322] border border-[#1b273d] rounded-xl text-rose-400 font-bold outline-none focus:border-blue-500"
                   required
@@ -639,7 +609,7 @@ export const MixDesignModule: React.FC = () => {
                 className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl shadow-lg shadow-blue-600/30 cursor-pointer flex items-center gap-2"
               >
                 <Save className="w-4 h-4" />
-                <span>Save Mix Proportions (2400 kg/m³)</span>
+                <span>Save Mix Proportions (2,400.0 kg/m³)</span>
               </button>
             </div>
           </form>
