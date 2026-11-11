@@ -8,7 +8,8 @@ import {
   X,
   Signpost,
   ArrowRight,
-  AlertTriangle
+  AlertTriangle,
+  Phone
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { cloudStorage } from '../../services/cloudStorage';
@@ -99,6 +100,7 @@ export const OngoingSiteTransfer: React.FC = () => {
   const [name, setName] = useState('');
   const [location, setLocation] = useState('');
   const [supervisor, setSupervisor] = useState('adminbilgi');
+  const [phone, setPhone] = useState('');
   const [clientName, setClientName] = useState('');
   const [gstin, setGstin] = useState('');
   const [floorScope, setFloorScope] = useState('G + 3 Floors');
@@ -114,6 +116,7 @@ export const OngoingSiteTransfer: React.FC = () => {
       displayName: site.siteName || cleanSiteKey,
       clientName: site.clientName || cleanSiteKey,
       location: site.location,
+      phone: site.phone || '',
       scope: site.detail || site.structureScope || 'G + 3 Floors',
       gstin: site.gstin
     };
@@ -149,6 +152,7 @@ export const OngoingSiteTransfer: React.FC = () => {
       siteName: siteTitle,
       location: location || (category === 'Road' ? 'Highway Corridor' : 'Sector 4 Commercial Zone'),
       supervisor: supervisor || 'adminbilgi',
+      phone: phone.trim(),
       clientName: clientName.trim() || cleanKey,
       gstin: gstin.trim().toUpperCase(),
       detail,
@@ -171,6 +175,7 @@ export const OngoingSiteTransfer: React.FC = () => {
           category: category,
           location: newSite.location,
           supervisor: supervisor,
+          phone: newSite.phone,
           client_name: newSite.clientName,
           gstin: newSite.gstin,
           scope: detail,
@@ -185,6 +190,7 @@ export const OngoingSiteTransfer: React.FC = () => {
     setIsAddModalOpen(false);
     setName('');
     setLocation('');
+    setPhone('');
     setClientName('');
     setGstin('');
 
@@ -280,6 +286,7 @@ export const OngoingSiteTransfer: React.FC = () => {
             onClick={() => {
               setCategory('Building');
               setFloorScope('G + 3 Floors');
+              setPhone('');
               setIsAddModalOpen(true);
             }}
             className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-lg shadow-blue-600/30 transition shrink-0 cursor-pointer active:scale-95"
@@ -360,6 +367,15 @@ export const OngoingSiteTransfer: React.FC = () => {
                       <span className="text-slate-400">Supervisor:</span>
                       <span className="font-bold text-white">{site.supervisor}</span>
                     </div>
+                    {site.phone && (
+                      <div className="flex justify-between items-center text-slate-300">
+                        <span className="text-slate-400">Phone:</span>
+                        <span className="font-bold text-emerald-400 flex items-center gap-1">
+                          <Phone className="w-3 h-3" />
+                          <span>{site.phone}</span>
+                        </span>
+                      </div>
+                    )}
                     {site.clientName && (
                       <div className="flex justify-between items-center text-slate-300">
                         <span className="text-slate-400">Client:</span>
@@ -564,17 +580,31 @@ export const OngoingSiteTransfer: React.FC = () => {
                 />
               </div>
 
-              {/* Site Supervisor */}
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
-                  SITE SUPERVISOR
-                </label>
-                <input
-                  type="text"
-                  value={supervisor}
-                  onChange={(e) => setSupervisor(e.target.value)}
-                  className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 text-xs font-sans"
-                />
+              {/* Site Supervisor & Phone No (Side-by-side) */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+                    SITE SUPERVISOR
+                  </label>
+                  <input
+                    type="text"
+                    value={supervisor}
+                    onChange={(e) => setSupervisor(e.target.value)}
+                    className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 text-xs font-sans"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+                    PHONE NO:
+                  </label>
+                  <input
+                    type="tel"
+                    placeholder="e.g. +91 94498 17122"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 text-xs font-mono"
+                  />
+                </div>
               </div>
 
               {/* Building Structure / Floor Scope */}
