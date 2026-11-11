@@ -4,13 +4,13 @@ import {
   MapPin, 
   Plus, 
   Trash2, 
-  Edit2,
+  Edit2, 
   Truck, 
-  X,
-  Signpost,
-  ArrowRight,
-  AlertTriangle,
-  Phone
+  X, 
+  Signpost, 
+  ArrowRight, 
+  AlertTriangle, 
+  Phone 
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { cloudStorage } from '../../services/cloudStorage';
@@ -23,6 +23,37 @@ const extractCleanSiteName = (name: string): string => {
   }
   return clean.toUpperCase();
 };
+
+const DEFAULT_SITES = [
+  {
+    id: 'BASVARAJ',
+    siteId: 'S-01',
+    category: 'Building',
+    name: 'BASVARAJ',
+    siteName: 'BASVARAJ (G + 3 Floors)',
+    location: 'Ainapur Site',
+    supervisor: 'adminbilgi',
+    phone: '',
+    clientName: 'BASVARAJ',
+    gstin: '29UNREGISTERED',
+    detail: 'G + 3 Floors',
+    assignedFleet: 4
+  },
+  {
+    id: 'CC',
+    siteId: 'S-02',
+    category: 'Road',
+    name: 'CC',
+    siteName: 'CC',
+    location: 'Highway Corridor',
+    supervisor: 'adminbilgi',
+    phone: '',
+    clientName: 'CC',
+    gstin: '',
+    detail: 'Km 0 to 12.5',
+    assignedFleet: 4
+  }
+];
 
 export const OngoingSiteTransfer: React.FC = () => {
   const getUserRole = (): 'ADMIN' | 'EMPLOYEE' | 'READ_ONLY' => {
@@ -43,47 +74,29 @@ export const OngoingSiteTransfer: React.FC = () => {
   const canModify = userRole === 'ADMIN' || userRole === 'EMPLOYEE';
   const canDelete = userRole === 'ADMIN';
 
+  // Read sites synchronously from unified storage key
   const getSitesFromStorage = (): any[] => {
     try {
-      const raw = localStorage.getItem('concrete360_ongoing_sites') || localStorage.getItem('concrete360_sites');
+      const raw = localStorage.getItem('concrete360_ongoing_sites');
       if (raw) {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
-    } catch {}
-    return [
-      {
-        id: 'BASVARAJ',
-        siteId: 'S-01',
-        category: 'Building',
-        name: 'BASVARAJ',
-        siteName: 'BASVARAJ (G + 3 Floors)',
-        location: 'Ainapur Site',
-        supervisor: 'adminbilgi',
-        phone: '',
-        clientName: 'BASVARAJ',
-        gstin: '29UNREGISTERED',
-        detail: 'G + 3 Floors',
-        assignedFleet: 4
-      },
-      {
-        id: 'CC',
-        siteId: 'S-02',
-        category: 'Road',
-        name: 'CC',
-        siteName: 'CC',
-        location: 'Highway Corridor',
-        supervisor: 'adminbilgi',
-        phone: '',
-        clientName: 'CC',
-        gstin: '',
-        detail: 'Km 0 to 12.5',
-        assignedFleet: 4
+      const legacyRaw = localStorage.getItem('concrete360_sites');
+      if (legacyRaw) {
+        const parsedLegacy = JSON.parse(legacyRaw);
+        if (Array.isArray(parsedLegacy) && parsedLegacy.length > 0) {
+          localStorage.setItem('concrete360_ongoing_sites', JSON.stringify(parsedLegacy));
+          return parsedLegacy;
+        }
       }
-    ];
+    } catch {}
+    localStorage.setItem('concrete360_ongoing_sites', JSON.stringify(DEFAULT_SITES));
+    return DEFAULT_SITES;
   };
 
   const [sites, setSites] = useState<any[]>(() => getSitesFromStorage());
+
   const [currentActiveKey, setCurrentActiveKey] = useState<string>(() => {
     try {
       const activeRaw = localStorage.getItem('concrete360_active_site');
@@ -99,6 +112,7 @@ export const OngoingSiteTransfer: React.FC = () => {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [siteToDelete, setSiteToDelete] = useState<any | null>(null);
 
+  // Form Fields
   const [category, setCategory] = useState<'Road' | 'Building'>('Building');
   const [name, setName] = useState('');
   const [location, setLocation] = useState('');
@@ -108,12 +122,12 @@ export const OngoingSiteTransfer: React.FC = () => {
   const [gstin, setGstin] = useState('');
   const [floorScope, setFloorScope] = useState('G + 3 Floors');
 
-  // Background sync from cloud & tab switches
+  // Sync background updates only when modal is CLOSED to prevent UI resets
   useEffect(() => {
     void cloudStorage.pullFromCloud();
 
-    const handleSync = () => {
-      if (isModalOpen) return; // Never overwrite while modal is open
+    const handleExternalSync = () => {
+      if (isModalOpen) return;
       const stored = getSitesFromStorage();
       setSites(stored);
 
@@ -126,11 +140,9 @@ export const OngoingSiteTransfer: React.FC = () => {
       }
     };
 
-    window.addEventListener('concrete360_site_switched', handleSync);
-    window.addEventListener('concrete360_cloud_synced', handleSync);
+    window.addEventListener('concrete360_cloud_synced', handleExternalSync);
     return () => {
-      window.removeEventListener('concrete360_site_switched', handleSync);
-      window.removeEventListener('concrete360_cloud_synced', handleSync);
+      window.removeEventListener('concrete360_cloud_synced', handleExternalSync);
     };
   }, [isModalOpen]);
 
@@ -208,37 +220,39 @@ export const OngoingSiteTransfer: React.FC = () => {
     let updatedList: any[] = [];
 
     if (editingIndex !== null && sites[editingIndex]) {
-      // EDIT MODE: Update existing entry in-place
-      const current = sites[editingIndex];
+      // EDIT MODE: Direct in-place array update
+      const existing = sites[editingIndex];
       const updatedSite = {
-        ...current,
+        ...existing,
         id: cleanKey,
-        category,
         name: cleanKey,
+        category,
         siteName: siteTitle,
-        location: location.trim() || (category === 'Road' ? 'Highway Corridor' : 'Ainapur Site'),
+        location: location.trim() || existing.location || 'Ainapur Site',
         supervisor: supervisor.trim() || 'adminbilgi',
         phone: phone.trim(),
         clientName: clientName.trim() || cleanKey,
         gstin: gstin.trim().toUpperCase(),
         detail,
-        assignedFleet: current.assignedFleet || 4
+        assignedFleet: existing.assignedFleet || 4
       };
 
       updatedList = [...sites];
       updatedList[editingIndex] = updatedSite;
 
+      // Commit to state & storage
       setSites(updatedList);
-      localStorage.setItem('concrete360_sites', JSON.stringify(updatedList));
       localStorage.setItem('concrete360_ongoing_sites', JSON.stringify(updatedList));
+      localStorage.setItem('concrete360_sites', JSON.stringify(updatedList));
 
-      if (currentActiveKey === extractCleanSiteName(current.name || current.siteName) || currentActiveKey === cleanKey) {
+      // Update active selection if this site is currently active
+      if (currentActiveKey === extractCleanSiteName(existing.name || existing.siteName) || currentActiveKey === cleanKey) {
         handleSelectActiveSite(updatedSite);
       }
 
       setIsModalOpen(false);
 
-      // Background cloud sync
+      // Async cloud sync
       if (supabase) {
         (supabase as any)
           .from('sites')
@@ -262,7 +276,7 @@ export const OngoingSiteTransfer: React.FC = () => {
           .catch(() => {});
       }
     } else {
-      // ADD MODE: Insert new entry
+      // ADD MODE: Prepend new site
       const newSite = {
         id: cleanKey,
         siteId: `S-0${sites.length + 1}`,
@@ -281,8 +295,8 @@ export const OngoingSiteTransfer: React.FC = () => {
       updatedList = [newSite, ...sites.filter(s => extractCleanSiteName(s.name || s.siteName) !== cleanKey)];
 
       setSites(updatedList);
-      localStorage.setItem('concrete360_sites', JSON.stringify(updatedList));
       localStorage.setItem('concrete360_ongoing_sites', JSON.stringify(updatedList));
+      localStorage.setItem('concrete360_sites', JSON.stringify(updatedList));
 
       setIsModalOpen(false);
       handleSelectActiveSite(newSite);
@@ -315,13 +329,12 @@ export const OngoingSiteTransfer: React.FC = () => {
   const confirmDeleteExecution = async () => {
     if (!siteToDelete) return;
 
-    const targetSite = siteToDelete;
-    const targetName = extractCleanSiteName(targetSite.name || targetSite.siteName || targetSite.id);
-
+    const targetName = extractCleanSiteName(siteToDelete.name || siteToDelete.siteName || siteToDelete.id);
     const updated = sites.filter(s => extractCleanSiteName(s.name || s.siteName || s.id) !== targetName);
 
-    localStorage.setItem('concrete360_sites', JSON.stringify(updated));
+    setSites(updated);
     localStorage.setItem('concrete360_ongoing_sites', JSON.stringify(updated));
+    localStorage.setItem('concrete360_sites', JSON.stringify(updated));
 
     if (supabase) {
       try {
@@ -329,7 +342,6 @@ export const OngoingSiteTransfer: React.FC = () => {
       } catch {}
     }
 
-    setSites(updated);
     setSiteToDelete(null);
 
     if (updated.length > 0) {
@@ -365,6 +377,7 @@ export const OngoingSiteTransfer: React.FC = () => {
 
         {canModify && (
           <button
+            type="button"
             onClick={handleOpenAddModal}
             className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-lg shadow-blue-600/30 transition shrink-0 cursor-pointer active:scale-95"
           >
@@ -380,6 +393,7 @@ export const OngoingSiteTransfer: React.FC = () => {
           <p className="text-slate-400 text-sm font-mono">No active site sections found.</p>
           {canModify && (
             <button
+              type="button"
               onClick={handleOpenAddModal}
               className="mt-4 px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-blue-600/30 cursor-pointer"
             >
@@ -519,7 +533,7 @@ export const OngoingSiteTransfer: React.FC = () => {
               </div>
               <div>
                 <h4 className="text-sm font-bold text-white uppercase font-sans">Confirm Delete</h4>
-                <p className="text-xs text-slate-400">Operational data for this site will be removed.</p>
+                <p className="text-xs text-slate-400">Section and references will be removed.</p>
               </div>
             </div>
             
