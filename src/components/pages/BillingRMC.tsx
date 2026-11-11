@@ -10,7 +10,8 @@ import {
   Calendar, 
   RotateCcw, 
   Eye, 
-  AlertTriangle 
+  AlertTriangle,
+  Phone
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { cloudStorage } from '../../services/cloudStorage';
@@ -21,6 +22,7 @@ interface RMCInvoice {
   clientName: string;
   clientAddress: string;
   clientGstin: string;
+  clientPhone?: string;
   paymentTerms: string;
   projectSite: string;
   siteAddress: string;
@@ -57,19 +59,21 @@ interface MaterialCategoryItem {
   price?: number;
 }
 
+// Bilgi Buildcon RMC Standard Mix Cards (Rev. 2)
 const DEFAULT_RECIPES: Record<string, any> = {
-  'M15': { rate: 3900, cementKgPerM3: 250, flyAshKgPerM3: 75, ggbsKgPerM3: 100, waterLitresPerM3: 150, mSandKgPerM3: 825, agg20mmKgPerM3: 658, agg10mmKgPerM3: 440 },
-  'M20': { rate: 4200, cementKgPerM3: 300, flyAshKgPerM3: 90, ggbsKgPerM3: 120, waterLitresPerM3: 148, mSandKgPerM3: 789, agg20mmKgPerM3: 642, agg10mmKgPerM3: 428 },
-  'M25': { rate: 4500, cementKgPerM3: 350, flyAshKgPerM3: 105, ggbsKgPerM3: 140, waterLitresPerM3: 145, mSandKgPerM3: 752, agg20mmKgPerM3: 627, agg10mmKgPerM3: 418 },
-  'M30': { rate: 4800, cementKgPerM3: 380, flyAshKgPerM3: 115, ggbsKgPerM3: 150, waterLitresPerM3: 142, mSandKgPerM3: 721, agg20mmKgPerM3: 623, agg10mmKgPerM3: 415 },
-  'M35': { rate: 5200, cementKgPerM3: 400, flyAshKgPerM3: 120, ggbsKgPerM3: 160, waterLitresPerM3: 138, mSandKgPerM3: 704, agg20mmKgPerM3: 620, agg10mmKgPerM3: 414 },
-  'M40': { rate: 5600, cementKgPerM3: 420, flyAshKgPerM3: 125, ggbsKgPerM3: 170, waterLitresPerM3: 135, mSandKgPerM3: 681, agg20mmKgPerM3: 620, agg10mmKgPerM3: 414 },
-  'M45': { rate: 6000, cementKgPerM3: 440, flyAshKgPerM3: 130, ggbsKgPerM3: 180, waterLitresPerM3: 132, mSandKgPerM3: 660, agg20mmKgPerM3: 619, agg10mmKgPerM3: 414 },
-  'M50': { rate: 6500, cementKgPerM3: 460, flyAshKgPerM3: 135, ggbsKgPerM3: 190, waterLitresPerM3: 130, mSandKgPerM3: 641, agg20mmKgPerM3: 617, agg10mmKgPerM3: 411 }
+  'M10': { rate: 3600, cementKgPerM3: 168, ggbsKgPerM3: 42, waterLitresPerM3: 136, mSandKgPerM3: 1057, agg20mmKgPerM3: 597, agg10mmKgPerM3: 398 },
+  'M15': { rate: 3900, cementKgPerM3: 200, ggbsKgPerM3: 50, waterLitresPerM3: 140, mSandKgPerM3: 1034, agg20mmKgPerM3: 584, agg10mmKgPerM3: 390 },
+  'M20': { rate: 4200, cementKgPerM3: 240, ggbsKgPerM3: 60, waterLitresPerM3: 147, mSandKgPerM3: 1005, agg20mmKgPerM3: 567, agg10mmKgPerM3: 379 },
+  'M25': { rate: 4500, cementKgPerM3: 280, ggbsKgPerM3: 70, waterLitresPerM3: 158, mSandKgPerM3: 973, agg20mmKgPerM3: 550, agg10mmKgPerM3: 366 },
+  'M30': { rate: 4800, cementKgPerM3: 304, ggbsKgPerM3: 76, waterLitresPerM3: 160, mSandKgPerM3: 956, agg20mmKgPerM3: 541, agg10mmKgPerM3: 360 },
+  'M35': { rate: 5200, cementKgPerM3: 320, ggbsKgPerM3: 80, waterLitresPerM3: 160, mSandKgPerM3: 946, agg20mmKgPerM3: 535, agg10mmKgPerM3: 356 },
+  'M40': { rate: 5600, cementKgPerM3: 336, ggbsKgPerM3: 84, waterLitresPerM3: 160, mSandKgPerM3: 936, agg20mmKgPerM3: 529, agg10mmKgPerM3: 352 },
+  'M45': { rate: 6000, cementKgPerM3: 352, ggbsKgPerM3: 88, waterLitresPerM3: 158, mSandKgPerM3: 928, agg20mmKg: 524, agg10mmKg: 349 },
+  'M50': { rate: 6500, cementKgPerM3: 368, ggbsKgPerM3: 92, waterLitresPerM3: 156, mSandKgPerM3: 921, agg20mmKg: 520, agg10mmKg: 346 }
 };
 
 const extractCleanSiteName = (name: string): string => {
-  if (!name) return 'MBBILGI';
+  if (!name) return '';
   let clean = String(name).trim();
   if (clean.includes('(')) {
     clean = clean.split('(')[0].trim();
@@ -137,7 +141,7 @@ export const BillingRMC: React.FC = () => {
       const selected = sessionStorage.getItem('concrete360_selected_site');
       if (selected) return extractCleanSiteName(selected);
     } catch {}
-    return 'MBBILGI';
+    return '';
   };
 
   const getPersistedWastage = (siteKey: string): number => {
@@ -169,12 +173,13 @@ export const BillingRMC: React.FC = () => {
   const [toDate, setToDate] = useState<string>(monthBounds.end);
 
   const [siteDetails, setSiteDetails] = useState({
-    clientName: 'MMBILGI',
-    clientAddress: 'AL-AMNI ROAD TIKOTA',
-    clientGstin: '27AABCG1234F1Z8',
+    clientName: '',
+    clientAddress: '',
+    clientGstin: '',
+    clientPhone: '',
     paymentTerms: 'Advance',
-    projectSite: 'RETAINING WALL',
-    siteAddress: 'AL-AMNI ROAD TIKOTA',
+    projectSite: '',
+    siteAddress: '',
     hsnCode: '38245010 (Ready-Mix Concrete)'
   });
 
@@ -183,7 +188,7 @@ export const BillingRMC: React.FC = () => {
 
   const [invoices, setInvoices] = useState<RMCInvoice[]>([]);
   const [materialGrades, setMaterialGrades] = useState<MaterialCategoryItem[]>([]);
-  const [mixGrade, setMixGrade] = useState('M20');
+  const [mixGrade, setMixGrade] = useState('M25');
 
   const [transitTrucks, setTransitTrucks] = useState<TransitMixerTruck[]>([]);
   const [selectedVehicleNo, setSelectedVehicleNo] = useState<string>('');
@@ -191,7 +196,7 @@ export const BillingRMC: React.FC = () => {
   const [totalReportVolume, setTotalReportVolume] = useState<number>(0);
   const [remainingVolume, setRemainingVolume] = useState<number>(0);
   const [volumeM3, setVolumeM3] = useState<any>(9);
-  const [unitRate, setUnitRate] = useState<any>(4200);
+  const [unitRate, setUnitRate] = useState<any>(4500);
   const [applyGst, setApplyGst] = useState(true);
   const [invoiceDate, setInvoiceDate] = useState<string>(new Date().toISOString().split('T')[0]);
 
@@ -211,6 +216,7 @@ export const BillingRMC: React.FC = () => {
     } catch {}
 
     setMaterialGrades([
+      { grade: 'M10', rate: 3600 },
       { grade: 'M15', rate: 3900 },
       { grade: 'M20', rate: 4200 },
       { grade: 'M25', rate: 4500 },
@@ -223,12 +229,12 @@ export const BillingRMC: React.FC = () => {
   };
 
   const fetchRateForGrade = (gradeStr: string) => {
-    const code = (gradeStr || 'M20').substring(0, 3).toUpperCase();
+    const code = (gradeStr || 'M25').substring(0, 3).toUpperCase();
     const found = materialGrades.find(m => String(m.grade || m.name || m.code || '').toUpperCase().includes(code));
     if (found && (found.rate || found.unitRate || found.price)) {
       return Number(found.rate || found.unitRate || found.price);
     }
-    return DEFAULT_RECIPES[code]?.rate || 4200;
+    return DEFAULT_RECIPES[code]?.rate || 4500;
   };
 
   const handleMixGradeChange = (newGrade: string) => {
@@ -250,7 +256,7 @@ export const BillingRMC: React.FC = () => {
       }
     }
 
-    return 'M20';
+    return 'M25';
   };
 
   const loadTransitMixers = (siteKey: string) => {
@@ -319,7 +325,7 @@ export const BillingRMC: React.FC = () => {
 
     const finalTrucks = parsedTrucks.length > 0
       ? parsedTrucks
-      : [{ vehicleNo: '7196', equipmentType: 'Transit Mixer', capacityM3: 9, isActive: true }];
+      : [{ vehicleNo: 'KA28AC3087', equipmentType: 'Transit Mixer', capacityM3: 9, isActive: true }];
 
     setTransitTrucks(finalTrucks);
     return finalTrucks;
@@ -332,28 +338,44 @@ export const BillingRMC: React.FC = () => {
 
     try {
       let foundSite: any = null;
-      const activeRaw = localStorage.getItem('concrete360_active_site');
-      if (activeRaw) {
-        try { foundSite = JSON.parse(activeRaw); } catch {}
-      }
 
+      // 1. Strictly look up details from Ongoing Sites list first
       const ongoingRaw = localStorage.getItem('concrete360_ongoing_sites') || localStorage.getItem('concrete360_sites');
       if (ongoingRaw) {
-        const parsedList = JSON.parse(ongoingRaw);
-        if (Array.isArray(parsedList) && parsedList.length > 0) {
-          const match = parsedList.find((s: any) => extractCleanSiteName(s.name || s.id) === siteKey);
-          if (match) foundSite = match;
+        try {
+          const parsedList = JSON.parse(ongoingRaw);
+          if (Array.isArray(parsedList) && parsedList.length > 0) {
+            foundSite = parsedList.find((s: any) => extractCleanSiteName(s.name || s.siteName || s.id) === siteKey);
+          }
+        } catch {}
+      }
+
+      // 2. Fallback to active site payload if not found in list
+      if (!foundSite) {
+        const activeRaw = localStorage.getItem('concrete360_active_site');
+        if (activeRaw) {
+          try {
+            foundSite = JSON.parse(activeRaw);
+          } catch {}
         }
       }
 
+      // 3. Populate site details directly from ongoing site record
       if (foundSite) {
+        const resolvedClient = foundSite.clientName || foundSite.client || siteKey;
+        const resolvedLocation = foundSite.location || foundSite.address || '';
+        const resolvedGstin = foundSite.gstin || '';
+        const resolvedPhone = foundSite.phone || '';
+        const resolvedProject = foundSite.siteName || foundSite.name || siteKey;
+
         setSiteDetails({
-          clientName: foundSite.client || foundSite.clientName || siteKey,
-          clientAddress: foundSite.location || foundSite.address || 'Ainapur Site',
-          clientGstin: foundSite.gstin || '29AKMKMJNJN1',
+          clientName: resolvedClient,
+          clientAddress: resolvedLocation,
+          clientGstin: resolvedGstin,
+          clientPhone: resolvedPhone,
           paymentTerms: foundSite.paymentTerms || 'Advance',
-          projectSite: foundSite.name || foundSite.projectName || siteKey,
-          siteAddress: foundSite.location || foundSite.address || 'Ainapur Site',
+          projectSite: resolvedProject,
+          siteAddress: resolvedLocation,
           hsnCode: foundSite.hsnCode || '38245010 (Ready-Mix Concrete)'
         });
       }
@@ -418,7 +440,7 @@ export const BillingRMC: React.FC = () => {
 
       let activeVNo = selectedVehicleNo;
       if (!activeVNo || !loadedTrucks.some(t => t.vehicleNo === activeVNo)) {
-        activeVNo = loadedTrucks[0]?.vehicleNo || '7196';
+        activeVNo = loadedTrucks[0]?.vehicleNo || 'KA28AC3087';
         setSelectedVehicleNo(activeVNo);
       }
 
@@ -556,7 +578,7 @@ export const BillingRMC: React.FC = () => {
     }
     setEditingInvoiceId(inv.id);
     setMixGrade(inv.mixGrade);
-    setSelectedVehicleNo(inv.vehicleNo || (transitTrucks[0]?.vehicleNo ?? '7196'));
+    setSelectedVehicleNo(inv.vehicleNo || (transitTrucks[0]?.vehicleNo ?? 'KA28AC3087'));
     setVolumeM3(inv.volumeM3);
     setUnitRate(inv.unitRate);
     setApplyGst(inv.applyGst ?? true);
@@ -587,7 +609,8 @@ export const BillingRMC: React.FC = () => {
     if (!printWindow) return;
 
     let compProfile = {
-      name: 'BILGI RMC',
+      name: 'BILGI BUILDCON RMC',
+      plantMake: 'CONMAT BATCHING PLANT (0.75 m³)',
       gstin: '29AKMKMJNJN1',
       address: 'AINAPUR',
       division: 'Commercial Ready-Mix Concrete Batching & Supply Division',
@@ -655,7 +678,7 @@ export const BillingRMC: React.FC = () => {
           <div class="top-header">
             <div class="brand">
               <h1>${compProfile.name}</h1>
-              <p>${compProfile.division}<br/>
+              <p>${compProfile.division} • ${compProfile.plantMake}<br/>
               Corporate Office: ${compProfile.address}<br/>
               Company GSTIN: <strong>${compProfile.gstin}</strong></p>
             </div>
@@ -674,6 +697,7 @@ export const BillingRMC: React.FC = () => {
               <div><strong>${inv.clientName}</strong></div>
               <div>${inv.clientAddress}</div>
               <div>GSTIN / Tax ID: ${inv.clientGstin}</div>
+              ${inv.clientPhone ? `<div>Contact No: <strong>${inv.clientPhone}</strong></div>` : ''}
             </div>
             <div class="party-box">
               <div class="party-title">Delivery / Site Dispatch Destination:</div>
@@ -701,7 +725,7 @@ export const BillingRMC: React.FC = () => {
                 <td>
                   <strong>Ready-Mix Concrete: ${inv.mixGrade} Grade</strong><br/>
                   <span style="font-size:10px; font-weight:bold; color:#0f172a;">Vehicle No (Transit Mixer): ${inv.vehicleNo || 'N/A'}</span><br/>
-                  <span style="font-size:9px; color:#555;">Batch delivery as per IS 4926 / IS 456 quality dockets</span>
+                  <span style="font-size:9px; color:#555;">Automated CONMAT plant batch delivery</span>
                 </td>
                 <td>38245010</td>
                 <td>${inv.volumeM3.toFixed(2)} m³</td>
@@ -768,6 +792,7 @@ export const BillingRMC: React.FC = () => {
         clientName: siteDetails.clientName,
         clientAddress: siteDetails.clientAddress,
         clientGstin: siteDetails.clientGstin,
+        clientPhone: siteDetails.clientPhone,
         paymentTerms: siteDetails.paymentTerms,
         projectSite: siteDetails.projectSite,
         siteAddress: siteDetails.siteAddress,
@@ -826,6 +851,7 @@ export const BillingRMC: React.FC = () => {
         clientName: siteDetails.clientName,
         clientAddress: siteDetails.clientAddress,
         clientGstin: siteDetails.clientGstin,
+        clientPhone: siteDetails.clientPhone,
         paymentTerms: siteDetails.paymentTerms,
         projectSite: siteDetails.projectSite,
         siteAddress: siteDetails.siteAddress,
@@ -910,6 +936,12 @@ export const BillingRMC: React.FC = () => {
             BILLING & INVOICING ({currentSiteKey}) [Client: {siteDetails.clientName}]
           </span>
           <h2 className="text-xl font-black text-white mt-1">Customer RMC Tax Invoices</h2>
+          {siteDetails.clientPhone && (
+            <p className="text-xs text-slate-400 font-mono mt-1 flex items-center gap-1.5">
+              <Phone className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Contact: <strong className="text-emerald-300">{siteDetails.clientPhone}</strong></span>
+            </p>
+          )}
         </div>
 
         {canCreate && (
@@ -1112,7 +1144,7 @@ export const BillingRMC: React.FC = () => {
                     {editingInvoiceId ? 'EDIT CUSTOMER RMC INVOICE' : 'GENERATE CUSTOMER RMC INVOICE'}
                   </h3>
                   <p className="text-[11px] text-cyan-400 font-mono">
-                    Active Client: <strong className="text-white">{siteDetails.clientName}</strong> | Site: {currentSiteKey}
+                    Active Client: <strong className="text-white">{siteDetails.clientName || currentSiteKey}</strong> | Site: {currentSiteKey}
                   </p>
                 </div>
               </div>
@@ -1171,7 +1203,7 @@ export const BillingRMC: React.FC = () => {
                   className="w-full px-3 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-cyan-400 font-bold outline-none cursor-pointer text-xs"
                 >
                   {materialGrades.map((mat, idx) => {
-                    const gradeLabel = `${mat.grade || mat.name || 'M20'}`;
+                    const gradeLabel = `${mat.grade || mat.name || 'M25'}`;
                     return (
                       <option key={idx} value={gradeLabel}>
                         {gradeLabel}
