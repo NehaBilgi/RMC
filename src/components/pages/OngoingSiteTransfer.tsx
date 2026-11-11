@@ -74,24 +74,20 @@ export const OngoingSiteTransfer: React.FC = () => {
   const canModify = userRole === 'ADMIN' || userRole === 'EMPLOYEE';
   const canDelete = userRole === 'ADMIN';
 
-  // Read sites synchronously from unified storage key
+  // Read sites synchronously and normalize phone properties
   const getSitesFromStorage = (): any[] => {
     try {
-      const raw = localStorage.getItem('concrete360_ongoing_sites');
+      const raw = localStorage.getItem('concrete360_ongoing_sites') || localStorage.getItem('concrete360_sites');
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-      const legacyRaw = localStorage.getItem('concrete360_sites');
-      if (legacyRaw) {
-        const parsedLegacy = JSON.parse(legacyRaw);
-        if (Array.isArray(parsedLegacy) && parsedLegacy.length > 0) {
-          localStorage.setItem('concrete360_ongoing_sites', JSON.stringify(parsedLegacy));
-          return parsedLegacy;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((s: any) => ({
+            ...s,
+            phone: s.phone || s.phoneNumber || s.contactNo || ''
+          }));
         }
       }
     } catch {}
-    localStorage.setItem('concrete360_ongoing_sites', JSON.stringify(DEFAULT_SITES));
     return DEFAULT_SITES;
   };
 
@@ -122,10 +118,7 @@ export const OngoingSiteTransfer: React.FC = () => {
   const [gstin, setGstin] = useState('');
   const [floorScope, setFloorScope] = useState('G + 3 Floors');
 
-  // Sync background updates only when modal is CLOSED to prevent UI resets
   useEffect(() => {
-    void cloudStorage.pullFromCloud();
-
     const handleExternalSync = () => {
       if (isModalOpen) return;
       const stored = getSitesFromStorage();
@@ -140,15 +133,16 @@ export const OngoingSiteTransfer: React.FC = () => {
       }
     };
 
-    window.addEventListener('concrete360_cloud_synced', handleExternalSync);
+    window.addEventListener('concrete360_site_switched', handleExternalSync);
     return () => {
-      window.removeEventListener('concrete360_cloud_synced', handleExternalSync);
+      window.removeEventListener('concrete360_site_switched', handleExternalSync);
     };
   }, [isModalOpen]);
 
   const handleSelectActiveSite = (site: any) => {
     if (!site) return;
     const cleanSiteKey = extractCleanSiteName(site.name || site.siteName);
+    const resolvedPhone = site.phone || site.phoneNumber || site.contactNo || '';
 
     const sitePayload = {
       id: site.id || cleanSiteKey,
@@ -157,7 +151,8 @@ export const OngoingSiteTransfer: React.FC = () => {
       displayName: site.siteName || cleanSiteKey,
       clientName: site.clientName || cleanSiteKey,
       location: site.location,
-      phone: site.phone || '',
+      phone: resolvedPhone,
+      phoneNumber: resolvedPhone,
       scope: site.detail || site.structureScope || 'G + 3 Floors',
       gstin: site.gstin || ''
     };
@@ -193,13 +188,14 @@ export const OngoingSiteTransfer: React.FC = () => {
 
     const cleanKey = extractCleanSiteName(site.name || site.siteName);
     const cat = site.category === 'Road' ? 'Road' : 'Building';
+    const sitePhone = site.phone || site.phoneNumber || site.contactNo || '';
 
     setEditingIndex(index);
     setCategory(cat);
     setName(cleanKey);
     setLocation(site.location || '');
     setSupervisor(site.supervisor || 'adminbilgi');
-    setPhone(site.phone || '');
+    setPhone(sitePhone);
     setClientName(site.clientName || '');
     setGstin(site.gstin || '');
     setFloorScope(site.detail || site.structureScope || (cat === 'Road' ? 'Km 0 to 12.5' : 'G + 3 Floors'));
@@ -216,11 +212,12 @@ export const OngoingSiteTransfer: React.FC = () => {
       : (floorScope || 'G + 3 Floors');
 
     const siteTitle = category === 'Building' ? `${cleanKey} (${detail})` : cleanKey;
+    const cleanPhone = phone.trim();
 
     let updatedList: any[] = [];
 
     if (editingIndex !== null && sites[editingIndex]) {
-      // EDIT MODE: Direct in-place array update
+      // EDIT MODE
       const existing = sites[editingIndex];
       const updatedSite = {
         ...existing,
@@ -230,7 +227,8 @@ export const OngoingSiteTransfer: React.FC = () => {
         siteName: siteTitle,
         location: location.trim() || existing.location || 'Ainapur Site',
         supervisor: supervisor.trim() || 'adminbilgi',
-        phone: phone.trim(),
+        phone: cleanPhone,
+        phoneNumber: cleanPhone,
         clientName: clientName.trim() || cleanKey,
         gstin: gstin.trim().toUpperCase(),
         detail,
@@ -240,19 +238,17 @@ export const OngoingSiteTransfer: React.FC = () => {
       updatedList = [...sites];
       updatedList[editingIndex] = updatedSite;
 
-      // Commit to state & storage
       setSites(updatedList);
       localStorage.setItem('concrete360_ongoing_sites', JSON.stringify(updatedList));
       localStorage.setItem('concrete360_sites', JSON.stringify(updatedList));
 
-      // Update active selection if this site is currently active
       if (currentActiveKey === extractCleanSiteName(existing.name || existing.siteName) || currentActiveKey === cleanKey) {
         handleSelectActiveSite(updatedSite);
       }
 
       setIsModalOpen(false);
 
-      // Async cloud sync
+      // Safe cloud write
       if (supabase) {
         (supabase as any)
           .from('sites')
@@ -264,7 +260,7 @@ export const OngoingSiteTransfer: React.FC = () => {
             category: category,
             location: updatedSite.location,
             supervisor: updatedSite.supervisor,
-            phone: updatedSite.phone,
+            phone: cleanPhone,
             client_name: updatedSite.clientName,
             gstin: updatedSite.gstin,
             scope: detail,
@@ -272,11 +268,10 @@ export const OngoingSiteTransfer: React.FC = () => {
             status: 'active',
             updated_at: new Date().toISOString()
           }, { onConflict: 'id' })
-          .then(() => void cloudStorage.pullFromCloud())
           .catch(() => {});
       }
     } else {
-      // ADD MODE: Prepend new site
+      // ADD MODE
       const newSite = {
         id: cleanKey,
         siteId: `S-0${sites.length + 1}`,
@@ -285,7 +280,8 @@ export const OngoingSiteTransfer: React.FC = () => {
         siteName: siteTitle,
         location: location.trim() || (category === 'Road' ? 'Highway Corridor' : 'Ainapur Site'),
         supervisor: supervisor.trim() || 'adminbilgi',
-        phone: phone.trim(),
+        phone: cleanPhone,
+        phoneNumber: cleanPhone,
         clientName: clientName.trim() || cleanKey,
         gstin: gstin.trim().toUpperCase(),
         detail,
@@ -312,7 +308,7 @@ export const OngoingSiteTransfer: React.FC = () => {
             category: category,
             location: newSite.location,
             supervisor: newSite.supervisor,
-            phone: newSite.phone,
+            phone: cleanPhone,
             client_name: newSite.clientName,
             gstin: newSite.gstin,
             scope: detail,
@@ -320,7 +316,6 @@ export const OngoingSiteTransfer: React.FC = () => {
             status: 'active',
             updated_at: new Date().toISOString()
           }, { onConflict: 'id' })
-          .then(() => void cloudStorage.pullFromCloud())
           .catch(() => {});
       }
     }
@@ -406,6 +401,7 @@ export const OngoingSiteTransfer: React.FC = () => {
           {sites.map((site, index) => {
             const cleanKey = extractCleanSiteName(site.name || site.siteName);
             const isCurrentlyActive = cleanKey === currentActiveKey;
+            const displayPhone = site.phone || site.phoneNumber || site.contactNo || '';
 
             return (
               <div
@@ -470,12 +466,12 @@ export const OngoingSiteTransfer: React.FC = () => {
                       <span className="text-slate-400">Supervisor:</span>
                       <span className="font-bold text-white">{site.supervisor}</span>
                     </div>
-                    {site.phone && (
+                    {displayPhone && (
                       <div className="flex justify-between items-center text-slate-300">
                         <span className="text-slate-400">Phone:</span>
                         <span className="font-bold text-emerald-400 flex items-center gap-1">
                           <Phone className="w-3 h-3" />
-                          <span>{site.phone}</span>
+                          <span>{displayPhone}</span>
                         </span>
                       </div>
                     )}
