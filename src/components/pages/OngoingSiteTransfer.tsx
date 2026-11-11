@@ -74,17 +74,25 @@ export const OngoingSiteTransfer: React.FC = () => {
   const canModify = userRole === 'ADMIN' || userRole === 'EMPLOYEE';
   const canDelete = userRole === 'ADMIN';
 
-  // Read sites synchronously and normalize phone properties
+  // Always read and preserve existing phone numbers from persistent storage
   const getSitesFromStorage = (): any[] => {
     try {
       const raw = localStorage.getItem('concrete360_ongoing_sites') || localStorage.getItem('concrete360_sites');
+      const phoneMapRaw = localStorage.getItem('concrete360_site_phone_registry');
+      const phoneMap = phoneMapRaw ? JSON.parse(phoneMapRaw) : {};
+
       if (raw) {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed.map((s: any) => ({
-            ...s,
-            phone: s.phone || s.phoneNumber || s.contactNo || ''
-          }));
+          return parsed.map((s: any) => {
+            const cleanKey = extractCleanSiteName(s.name || s.siteName || s.id);
+            const resolvedPhone = s.phone || s.phoneNumber || s.contactNo || phoneMap[cleanKey] || '';
+            return {
+              ...s,
+              phone: resolvedPhone,
+              phoneNumber: resolvedPhone
+            };
+          });
         }
       }
     } catch {}
@@ -119,7 +127,7 @@ export const OngoingSiteTransfer: React.FC = () => {
   const [floorScope, setFloorScope] = useState('G + 3 Floors');
 
   useEffect(() => {
-    const handleExternalSync = () => {
+    const handleSync = () => {
       if (isModalOpen) return;
       const stored = getSitesFromStorage();
       setSites(stored);
@@ -133,11 +141,22 @@ export const OngoingSiteTransfer: React.FC = () => {
       }
     };
 
-    window.addEventListener('concrete360_site_switched', handleExternalSync);
+    window.addEventListener('concrete360_site_switched', handleSync);
+    window.addEventListener('concrete360_cloud_synced', handleSync);
     return () => {
-      window.removeEventListener('concrete360_site_switched', handleExternalSync);
+      window.removeEventListener('concrete360_site_switched', handleSync);
+      window.removeEventListener('concrete360_cloud_synced', handleSync);
     };
   }, [isModalOpen]);
+
+  const persistPhoneMap = (cleanKey: string, phoneNumber: string) => {
+    try {
+      const mapRaw = localStorage.getItem('concrete360_site_phone_registry');
+      const map = mapRaw ? JSON.parse(mapRaw) : {};
+      map[cleanKey] = phoneNumber;
+      localStorage.setItem('concrete360_site_phone_registry', JSON.stringify(map));
+    } catch {}
+  };
 
   const handleSelectActiveSite = (site: any) => {
     if (!site) return;
@@ -202,7 +221,7 @@ export const OngoingSiteTransfer: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const handleSaveSite = (e: React.FormEvent) => {
+  const handleSaveSite = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
 
@@ -213,6 +232,9 @@ export const OngoingSiteTransfer: React.FC = () => {
 
     const siteTitle = category === 'Building' ? `${cleanKey} (${detail})` : cleanKey;
     const cleanPhone = phone.trim();
+
+    // Persist phone to permanent registry so no cloud pull can overwrite it
+    persistPhoneMap(cleanKey, cleanPhone);
 
     let updatedList: any[] = [];
 
@@ -248,27 +270,31 @@ export const OngoingSiteTransfer: React.FC = () => {
 
       setIsModalOpen(false);
 
-      // Safe cloud write
-      if (supabase) {
-        (supabase as any)
-          .from('sites')
-          .upsert({
-            id: cleanKey,
-            site_id: updatedSite.siteId,
-            name: cleanKey,
-            site_name: siteTitle,
-            category: category,
-            location: updatedSite.location,
-            supervisor: updatedSite.supervisor,
-            phone: cleanPhone,
-            client_name: updatedSite.clientName,
-            gstin: updatedSite.gstin,
-            scope: detail,
-            assigned_fleet: updatedSite.assignedFleet,
-            status: 'active',
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'id' })
-          .catch(() => {});
+      // Push local data up instead of pulling older cloud data over it
+      try {
+        if (supabase) {
+          await (supabase as any)
+            .from('sites')
+            .upsert({
+              id: cleanKey,
+              site_id: updatedSite.siteId,
+              name: cleanKey,
+              site_name: siteTitle,
+              category: category,
+              location: updatedSite.location,
+              supervisor: updatedSite.supervisor,
+              phone: cleanPhone,
+              client_name: updatedSite.clientName,
+              gstin: updatedSite.gstin,
+              scope: detail,
+              assigned_fleet: updatedSite.assignedFleet,
+              status: 'active',
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'id' });
+        }
+        await cloudStorage.pushAllLocalToCloud();
+      } catch (err) {
+        console.warn('Sync notice:', err);
       }
     } else {
       // ADD MODE
@@ -297,26 +323,30 @@ export const OngoingSiteTransfer: React.FC = () => {
       setIsModalOpen(false);
       handleSelectActiveSite(newSite);
 
-      if (supabase) {
-        (supabase as any)
-          .from('sites')
-          .upsert({
-            id: cleanKey,
-            site_id: newSite.siteId,
-            name: cleanKey,
-            site_name: siteTitle,
-            category: category,
-            location: newSite.location,
-            supervisor: newSite.supervisor,
-            phone: cleanPhone,
-            client_name: newSite.clientName,
-            gstin: newSite.gstin,
-            scope: detail,
-            assigned_fleet: 4,
-            status: 'active',
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'id' })
-          .catch(() => {});
+      try {
+        if (supabase) {
+          await (supabase as any)
+            .from('sites')
+            .upsert({
+              id: cleanKey,
+              site_id: newSite.siteId,
+              name: cleanKey,
+              site_name: siteTitle,
+              category: category,
+              location: newSite.location,
+              supervisor: newSite.supervisor,
+              phone: cleanPhone,
+              client_name: newSite.clientName,
+              gstin: newSite.gstin,
+              scope: detail,
+              assigned_fleet: 4,
+              status: 'active',
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'id' });
+        }
+        await cloudStorage.pushAllLocalToCloud();
+      } catch (err) {
+        console.warn('Sync notice:', err);
       }
     }
   };
@@ -724,7 +754,7 @@ export const OngoingSiteTransfer: React.FC = () => {
                   type="submit"
                   className="px-6 py-3 bg-[#2d588f] hover:bg-[#234570] text-white font-bold rounded-2xl text-xs transition shadow-md shadow-blue-900/20 cursor-pointer"
                 >
-                  {editingIndex !== null ? 'Save Changes' : 'Create Site Section'}
+                  Save Changes
                 </button>
               </div>
             </form>
