@@ -68,8 +68,8 @@ const DEFAULT_RECIPES: Record<string, any> = {
   'M30': { rate: 4800, cementKgPerM3: 304, ggbsKgPerM3: 76, waterLitresPerM3: 160, mSandKgPerM3: 956, agg20mmKgPerM3: 541, agg10mmKgPerM3: 360 },
   'M35': { rate: 5200, cementKgPerM3: 320, ggbsKgPerM3: 80, waterLitresPerM3: 160, mSandKgPerM3: 946, agg20mmKgPerM3: 535, agg10mmKgPerM3: 356 },
   'M40': { rate: 5600, cementKgPerM3: 336, ggbsKgPerM3: 84, waterLitresPerM3: 160, mSandKgPerM3: 936, agg20mmKgPerM3: 529, agg10mmKgPerM3: 352 },
-  'M45': { rate: 6000, cementKgPerM3: 352, ggbsKgPerM3: 88, waterLitresPerM3: 158, mSandKgPerM3: 928, agg20mmKg: 524, agg10mmKg: 349 },
-  'M50': { rate: 6500, cementKgPerM3: 368, ggbsKgPerM3: 92, waterLitresPerM3: 156, mSandKgPerM3: 921, agg20mmKg: 520, agg10mmKg: 346 }
+  'M45': { rate: 6000, cementKgPerM3: 352, ggbsKgPerM3: 88, waterLitresPerM3: 158, mSandKgPerM3: 928, agg20mmKgPerM3: 524, agg10mmKgPerM3: 349 },
+  'M50': { rate: 6500, cementKgPerM3: 368, ggbsKgPerM3: 92, waterLitresPerM3: 156, mSandKgPerM3: 921, agg20mmKgPerM3: 520, agg10mmKgPerM3: 346 }
 };
 
 const extractCleanSiteName = (name: string): string => {
@@ -339,7 +339,6 @@ export const BillingRMC: React.FC = () => {
     try {
       let foundSite: any = null;
 
-      // 1. Strictly look up details from Ongoing Sites list first
       const ongoingRaw = localStorage.getItem('concrete360_ongoing_sites') || localStorage.getItem('concrete360_sites');
       if (ongoingRaw) {
         try {
@@ -350,7 +349,6 @@ export const BillingRMC: React.FC = () => {
         } catch {}
       }
 
-      // 2. Fallback to active site payload if not found in list
       if (!foundSite) {
         const activeRaw = localStorage.getItem('concrete360_active_site');
         if (activeRaw) {
@@ -360,12 +358,21 @@ export const BillingRMC: React.FC = () => {
         }
       }
 
-      // 3. Populate site details directly from ongoing site record
+      // Check phone registry backup
+      let registeredPhone = '';
+      try {
+        const regRaw = localStorage.getItem('concrete360_site_phone_registry');
+        if (regRaw) {
+          const regMap = JSON.parse(regRaw);
+          if (regMap && regMap[siteKey]) registeredPhone = regMap[siteKey];
+        }
+      } catch {}
+
       if (foundSite) {
         const resolvedClient = foundSite.clientName || foundSite.client || siteKey;
-        const resolvedLocation = foundSite.location || foundSite.address || '';
+        const resolvedLocation = foundSite.location || foundSite.address || 'Ainapur Site';
         const resolvedGstin = foundSite.gstin || '';
-        const resolvedPhone = foundSite.phone || '';
+        const resolvedPhone = foundSite.phone || foundSite.phoneNumber || foundSite.contactNo || registeredPhone || '';
         const resolvedProject = foundSite.siteName || foundSite.name || siteKey;
 
         setSiteDetails({
@@ -611,14 +618,14 @@ export const BillingRMC: React.FC = () => {
     let compProfile = {
       name: 'BILGI BUILDCON RMC',
       plantMake: 'CONMAT BATCHING PLANT (0.75 m³)',
-      gstin: '29AKMKMJNJN1',
-      address: 'AINAPUR',
+      gstin: '29ABWFM2721J1ZA',
+      address: 'SY NO 118/13 AINAPUR GRAM BURNAPUR ROAD, VIJAYAPURA-586104',
       division: 'Commercial Ready-Mix Concrete Batching & Supply Division',
       bankName: 'KOTAK MAHINDRA BANK',
       accountName: 'M/s MOHAMMED JAFAR BASHEER AHMED BILGI',
       accountNo: '9449817122',
       ifscSwift: 'KKBK0008324',
-      branch: 'JALANAGAR , HUDCO'
+      branch: 'KOTAK MAHINDRA BANK LTD GROUND FLOOR, JALNAGAR, VIJAYAPURA-586101'
     };
 
     try {
@@ -641,6 +648,18 @@ export const BillingRMC: React.FC = () => {
     }
 
     const formattedPrintDate = formatDateDDMMYYYY(inv.date);
+
+    // Dynamic resolution of phone number: fallback to siteDetails or phone registry if missing on older invoice
+    let dynamicPhone = inv.clientPhone || siteDetails.clientPhone || '';
+    if (!dynamicPhone) {
+      try {
+        const phoneReg = localStorage.getItem('concrete360_site_phone_registry');
+        if (phoneReg) {
+          const map = JSON.parse(phoneReg);
+          dynamicPhone = map[currentSiteKey] || '';
+        }
+      } catch {}
+    }
 
     printWindow.document.write(`
       <html>
@@ -697,7 +716,7 @@ export const BillingRMC: React.FC = () => {
               <div><strong>${inv.clientName}</strong></div>
               <div>${inv.clientAddress}</div>
               <div>GSTIN / Tax ID: ${inv.clientGstin}</div>
-              ${inv.clientPhone ? `<div>Contact No: <strong>${inv.clientPhone}</strong></div>` : ''}
+              ${dynamicPhone ? `<div>Phone No: <strong>${dynamicPhone}</strong></div>` : ''}
             </div>
             <div class="party-box">
               <div class="party-title">Delivery / Site Dispatch Destination:</div>
@@ -773,6 +792,9 @@ export const BillingRMC: React.FC = () => {
     }
     loadSiteData();
 
+    // Ensure phone number from site is attached to the invoice record
+    const resolvedPhone = siteDetails.clientPhone;
+
     if (editingInvoiceId) {
       if (!canEditOrDelete) {
         alert('Permission Denied: Only ADMIN accounts can modify records.');
@@ -792,7 +814,7 @@ export const BillingRMC: React.FC = () => {
         clientName: siteDetails.clientName,
         clientAddress: siteDetails.clientAddress,
         clientGstin: siteDetails.clientGstin,
-        clientPhone: siteDetails.clientPhone,
+        clientPhone: resolvedPhone || i.clientPhone || '',
         paymentTerms: siteDetails.paymentTerms,
         projectSite: siteDetails.projectSite,
         siteAddress: siteDetails.siteAddress,
@@ -851,7 +873,7 @@ export const BillingRMC: React.FC = () => {
         clientName: siteDetails.clientName,
         clientAddress: siteDetails.clientAddress,
         clientGstin: siteDetails.clientGstin,
-        clientPhone: siteDetails.clientPhone,
+        clientPhone: resolvedPhone,
         paymentTerms: siteDetails.paymentTerms,
         projectSite: siteDetails.projectSite,
         siteAddress: siteDetails.siteAddress,
