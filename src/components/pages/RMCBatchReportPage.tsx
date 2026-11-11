@@ -4,9 +4,25 @@ import {
   Printer, 
   Calendar, 
   RotateCcw, 
-  Search
+  Search,
+  Settings,
+  X,
+  Check,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { cloudStorage } from '../../services/cloudStorage';
+
+interface SubBatchDrop {
+  batchIndex: number;
+  batchQtyM3: number;
+  silo1Kg: number;
+  silo2Kg: number;
+  mSandKg: number;
+  agg20mmKg: number;
+  agg10mmKg: number;
+  waterLtr: number;
+}
 
 interface BatchRecord {
   id: string;
@@ -19,6 +35,9 @@ interface BatchRecord {
   mixGrade: string;
   vehicleNo: string;
   batchQtyM3: number;
+  mixerCapacityM3: number;
+  totalBatchesCount: number;
+  drops: SubBatchDrop[];
   silo1TargetKg: number;
   silo1ActualKg: number;
   silo2TargetKg: number;
@@ -70,13 +89,32 @@ export const RMCBatchReportPage: React.FC = () => {
   };
 
   const [currentSite, setCurrentSite] = useState<string>(getActiveSite());
+  
+  // Plant batch mixer capacity state (default 0.75 m3)
+  const [plantMixerCapacity, setPlantMixerCapacity] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem(`concrete360_plant_mixer_cap_${getActiveSite()}`);
+      if (saved) {
+        const val = parseFloat(saved);
+        if (!isNaN(val) && val > 0) return val;
+      }
+    } catch {}
+    return 0.75;
+  });
+
+  const [isMixerCapModalOpen, setIsMixerCapModalOpen] = useState(false);
+  const [tempMixerCap, setTempMixerCap] = useState<string>(String(plantMixerCapacity));
+  const [expandedBatchId, setExpandedBatchId] = useState<string | null>(null);
+
   const [batches, setBatches] = useState<BatchRecord[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
 
-  const loadBatchReports = () => {
+  const loadBatchReports = (overrideCap?: number) => {
     const siteKey = getActiveSite();
     setCurrentSite(siteKey);
+
+    const activeCap = overrideCap !== undefined ? overrideCap : plantMixerCapacity;
 
     try {
       const savedInvoicesRaw = localStorage.getItem(`concrete360_site_invoices_${siteKey}`);
@@ -89,18 +127,39 @@ export const RMCBatchReportPage: React.FC = () => {
       const generatedBatches: BatchRecord[] = invoices.map((inv: any, idx: number) => {
         const gradeKey = (inv.mixGrade || 'M30').substring(0, 3).toUpperCase();
         const recipe = DEFAULT_RECIPES[gradeKey] || DEFAULT_RECIPES['M30'];
-        const vol = Number(inv.volumeM3) || 5;
+        const totalLoadVol = Number(inv.volumeM3) || 5.0;
 
         const isGgbs = activeAdmixtureMode === 'GGBS';
-        const silo1Prop = recipe.cement;
-        const silo2Prop = isGgbs ? recipe.ggbs : recipe.flyAsh;
+        const silo1Unit = recipe.cement;
+        const silo2Unit = isGgbs ? recipe.ggbs : recipe.flyAsh;
 
-        const s1Target = Math.round(silo1Prop * vol);
-        const s2Target = Math.round(silo2Prop * vol);
-        const sandTarget = Math.round(recipe.mSand * vol);
-        const a20Target = Math.round(recipe.agg20 * vol);
-        const a10Target = Math.round(recipe.agg10 * vol);
-        const waterTarget = Math.round(recipe.water * vol);
+        // Break total TM volume down into sub-batches based on plant mixer size
+        const drops: SubBatchDrop[] = [];
+        let remainingVol = totalLoadVol;
+        let batchNo = 1;
+
+        while (remainingVol > 0.001) {
+          const dropQty = Math.min(activeCap, remainingVol);
+          drops.push({
+            batchIndex: batchNo,
+            batchQtyM3: Number(dropQty.toFixed(3)),
+            silo1Kg: Math.round(silo1Unit * dropQty),
+            silo2Kg: Math.round(silo2Unit * dropQty),
+            mSandKg: Math.round(recipe.mSand * dropQty),
+            agg20mmKg: Math.round(recipe.agg20 * dropQty),
+            agg10mmKg: Math.round(recipe.agg10 * dropQty),
+            waterLtr: Math.round(recipe.water * dropQty)
+          });
+          remainingVol = Math.max(0, Number((remainingVol - dropQty).toFixed(3)));
+          batchNo++;
+        }
+
+        const s1Target = Math.round(silo1Unit * totalLoadVol);
+        const s2Target = Math.round(silo2Unit * totalLoadVol);
+        const sandTarget = Math.round(recipe.mSand * totalLoadVol);
+        const a20Target = Math.round(recipe.agg20 * totalLoadVol);
+        const a10Target = Math.round(recipe.agg10 * totalLoadVol);
+        const waterTarget = Math.round(recipe.water * totalLoadVol);
 
         return {
           id: inv.id || `BATCH-${idx + 1}`,
@@ -112,7 +171,10 @@ export const RMCBatchReportPage: React.FC = () => {
           clientName: inv.clientName || siteKey,
           mixGrade: inv.mixGrade || 'M30',
           vehicleNo: inv.vehicleNo || 'KA28AC3087',
-          batchQtyM3: vol,
+          batchQtyM3: totalLoadVol,
+          mixerCapacityM3: activeCap,
+          totalBatchesCount: drops.length,
+          drops,
           silo1TargetKg: s1Target,
           silo1ActualKg: s1Target + Math.round((Math.random() * 8) - 4),
           silo2TargetKg: s2Target,
@@ -145,7 +207,18 @@ export const RMCBatchReportPage: React.FC = () => {
       window.removeEventListener('concrete360_site_switched', handleSync);
       window.removeEventListener('storage', handleSync);
     };
-  }, []);
+  }, [plantMixerCapacity]);
+
+  const handleSaveMixerCap = (e: React.FormEvent) => {
+    e.preventDefault();
+    const parsed = parseFloat(tempMixerCap);
+    if (!isNaN(parsed) && parsed > 0) {
+      setPlantMixerCapacity(parsed);
+      localStorage.setItem(`concrete360_plant_mixer_cap_${currentSite}`, String(parsed));
+      setIsMixerCapModalOpen(false);
+      loadBatchReports(parsed);
+    }
+  };
 
   const filteredBatches = useMemo(() => {
     return batches.filter(b => {
@@ -169,28 +242,42 @@ export const RMCBatchReportPage: React.FC = () => {
     const a10Var = (((b.agg10mmActualKg - b.agg10mmTargetKg) / b.agg10mmTargetKg) * 100).toFixed(1);
     const waterVar = (((b.waterActualLtr - b.waterTargetLtr) / b.waterTargetLtr) * 100).toFixed(1);
 
+    const subBatchRows = b.drops.map(d => `
+      <tr>
+        <td style="font-weight:bold;">Batch #${d.batchIndex}</td>
+        <td>${d.batchQtyM3.toFixed(2)} m³</td>
+        <td>${d.silo1Kg} kg</td>
+        <td>${d.silo2Kg} kg</td>
+        <td>${d.mSandKg} kg</td>
+        <td>${d.agg20mmKg} kg</td>
+        <td>${d.agg10mmKg} kg</td>
+        <td>${d.waterLtr} L</td>
+      </tr>
+    `).join('');
+
     printWindow.document.write(`
       <html>
         <head>
           <title>Plant Batching Report - ${b.docketNo}</title>
           <style>
-            @page { size: A4 landscape; margin: 12mm; }
-            body { font-family: monospace; color: #000; font-size: 11px; margin: 0; }
-            .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 12px; }
-            .header h1 { margin: 0; font-size: 17px; font-weight: bold; }
-            .header p { margin: 4px 0 0 0; font-size: 10px; }
-            .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 15px; border: 1px solid #000; padding: 10px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 10px; }
-            th, td { border: 1px solid #000; padding: 7px 6px; text-align: center; }
+            @page { size: A4 landscape; margin: 10mm; }
+            body { font-family: monospace; color: #000; font-size: 11px; margin: 0; line-height: 1.35; }
+            .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 6px; margin-bottom: 10px; }
+            .header h1 { margin: 0; font-size: 16px; font-weight: bold; }
+            .header p { margin: 3px 0 0 0; font-size: 10px; }
+            .meta-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 12px; border: 1px solid #000; padding: 8px; font-size: 10px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 10px; }
+            th, td { border: 1px solid #000; padding: 6px 5px; text-align: center; }
             th { background: #f0f0f0; font-weight: bold; }
             td.row-title { text-align: left; font-weight: bold; background: #fafafa; width: 140px; }
-            .footer { margin-top: 40px; display: flex; justify-content: space-between; font-size: 11px; }
+            .section-label { font-size: 11px; font-weight: bold; margin-top: 14px; text-transform: uppercase; border-bottom: 1px solid #000; padding-bottom: 2px; }
+            .footer { margin-top: 35px; display: flex; justify-content: space-between; font-size: 11px; }
           </style>
         </head>
         <body>
           <div class="header">
             <h1>BILGI BUILDCON RMC AUTOMATED BATCHING PLANT</h1>
-            <p>PLANT BATCH REPORT / DISPATCH DOCKET • COMPLIANT WITH IS 4926</p>
+            <p>PLANT BATCH REPORT / TM DISPATCH TELEMETRY DOCKET • IS 4926 / IS 456 COMPLIANT</p>
           </div>
 
           <div class="meta-grid">
@@ -199,11 +286,12 @@ export const RMCBatchReportPage: React.FC = () => {
             <div><strong>Project Site:</strong> ${b.siteName}</div>
             <div><strong>Client Name:</strong> ${b.clientName}</div>
             <div><strong>Mix Grade:</strong> ${b.mixGrade}</div>
-            <div><strong>Transit Mixer No:</strong> ${b.vehicleNo}</div>
-            <div><strong>Batch Volume:</strong> ${b.batchQtyM3} m³</div>
-            <div><strong>Batch Operator:</strong> ${b.operator}</div>
+            <div><strong>Transit Mixer:</strong> ${b.vehicleNo}</div>
+            <div><strong>Total TM Load:</strong> ${b.batchQtyM3} m³</div>
+            <div><strong>Plant Mixer Size:</strong> ${b.mixerCapacityM3} m³ (${b.totalBatchesCount} Drops)</div>
           </div>
 
+          <div class="section-label">1. Total TM Load Target vs. Actual Summary (${b.batchQtyM3} m³ Total)</div>
           <table>
             <thead>
               <tr>
@@ -218,7 +306,7 @@ export const RMCBatchReportPage: React.FC = () => {
             </thead>
             <tbody>
               <tr>
-                <td class="row-title">Target Weight</td>
+                <td class="row-title">Total Target Weight</td>
                 <td>${b.silo1TargetKg} kg</td>
                 <td>${b.silo2TargetKg} kg</td>
                 <td>${b.mSandTargetKg} kg</td>
@@ -227,7 +315,7 @@ export const RMCBatchReportPage: React.FC = () => {
                 <td>${b.waterTargetLtr} Litres</td>
               </tr>
               <tr>
-                <td class="row-title">Actual Batched</td>
+                <td class="row-title">Total Actual Batched</td>
                 <td><strong>${b.silo1ActualKg} kg</strong></td>
                 <td><strong>${b.silo2ActualKg} kg</strong></td>
                 <td><strong>${b.mSandActualKg} kg</strong></td>
@@ -247,8 +335,28 @@ export const RMCBatchReportPage: React.FC = () => {
             </tbody>
           </table>
 
+          <div class="section-label">2. Individual Plant Drop Cycles Into TM (${b.mixerCapacityM3} m³ per Batch Cycle)</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Drop #</th>
+                <th>Cycle Qty</th>
+                <th>Cement Silo 1</th>
+                <th>Cement Silo 2</th>
+                <th>M-Sand (Zone II)</th>
+                <th>20MM Aggregate</th>
+                <th>10MM Aggregate</th>
+                <th>Batching Water</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${subBatchRows}
+            </tbody>
+          </table>
+
           <div class="footer">
-            <div>Plant Quality In-Charge: ______________________</div>
+            <div>Plant Operator: <strong>${b.operator}</strong></div>
+            <div>Quality Engineer: ______________________</div>
             <div>Transit Mixer Driver: ______________________</div>
           </div>
 
@@ -261,7 +369,7 @@ export const RMCBatchReportPage: React.FC = () => {
 
   return (
     <div className="space-y-6 font-sans text-slate-100 w-full max-w-full">
-      {/* Top Banner */}
+      {/* Top Banner Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-0.5 rounded-full">
@@ -271,6 +379,22 @@ export const RMCBatchReportPage: React.FC = () => {
             <Factory className="w-6 h-6 text-emerald-400" />
             <span>RMC Batch Report (Plant Level)</span>
           </h2>
+        </div>
+
+        {/* Mixer Capacity Pill Button */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setTempMixerCap(String(plantMixerCapacity));
+              setIsMixerCapModalOpen(true);
+            }}
+            className="px-3.5 py-2 rounded-xl text-xs font-mono font-bold text-cyan-400 hover:text-white bg-cyan-500/10 hover:bg-cyan-600/30 border border-cyan-500/30 transition flex items-center gap-2 cursor-pointer shadow-lg shadow-cyan-500/10"
+            title="Configure Plant Batching Pan Capacity"
+          >
+            <Settings className="w-3.5 h-3.5" />
+            <span>Mixer Size: <strong>{plantMixerCapacity} m³ / batch</strong></span>
+          </button>
         </div>
       </div>
 
@@ -310,68 +434,198 @@ export const RMCBatchReportPage: React.FC = () => {
         </div>
 
         <div className="text-slate-400 text-right">
-          Total Batches Logged: <strong className="text-white">{filteredBatches.length}</strong>
+          Total TM Dispatches: <strong className="text-white">{filteredBatches.length}</strong>
         </div>
       </div>
 
-      {/* Batches Table */}
+      {/* Batches Table with Collapsible Drop Breakdown */}
       <div className="bg-[#0b1322] border border-[#1b273d] rounded-3xl overflow-hidden shadow-2xl w-full font-mono">
         <div className="overflow-x-auto w-full">
           <table className="w-full text-left text-xs border-collapse">
             <thead>
               <tr className="border-b border-[#1b273d] text-[10px] font-bold uppercase tracking-wider text-slate-400 bg-[#070d1a]">
-                <th className="py-4 px-5">Docket No</th>
-                <th className="py-4 px-5">Mixer No</th>
-                <th className="py-4 px-5">Grade</th>
-                <th className="py-4 px-5">Qty (m³)</th>
-                <th className="py-4 px-5">Cement Silo 1 (kg)</th>
-                <th className="py-4 px-5">Cement Silo 2 (kg)</th>
-                <th className="py-4 px-5">M-Sand (kg)</th>
-                <th className="py-4 px-5">20mm / 10mm (kg)</th>
-                <th className="py-4 px-5 text-right">Plant Docket</th>
+                <th className="py-4 px-4">Docket No</th>
+                <th className="py-4 px-4">Mixer No</th>
+                <th className="py-4 px-4">Grade</th>
+                <th className="py-4 px-4">TM Load Qty</th>
+                <th className="py-4 px-4">Drops (@ {plantMixerCapacity} m³)</th>
+                <th className="py-4 px-4">Cement Silo 1</th>
+                <th className="py-4 px-4">Cement Silo 2</th>
+                <th className="py-4 px-4">M-Sand</th>
+                <th className="py-4 px-4">20mm / 10mm</th>
+                <th className="py-4 px-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#121c2d] text-slate-200">
               {filteredBatches.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-16 text-center text-slate-500 font-sans">
-                    No plant batch records found for this date.
+                  <td colSpan={10} className="py-16 text-center text-slate-500 font-sans">
+                    No plant batch records found matching the criteria.
                   </td>
                 </tr>
               ) : (
-                filteredBatches.map((b) => (
-                  <tr key={b.id} className="hover:bg-[#0e1728] transition-colors">
-                    <td className="py-4 px-5 text-emerald-400 font-bold">{b.docketNo}</td>
-                    <td className="py-4 px-5 text-amber-400 font-black">{b.vehicleNo}</td>
-                    <td className="py-4 px-5 text-cyan-300 font-bold">{b.mixGrade}</td>
-                    <td className="py-4 px-5 font-bold text-white">{b.batchQtyM3} m³</td>
-                    <td className="py-4 px-5 text-slate-300">
-                      {b.silo1ActualKg} <span className="text-[10px] text-slate-500">({b.silo1TargetKg})</span>
-                    </td>
-                    <td className="py-4 px-5 text-slate-300">
-                      {b.silo2ActualKg} <span className="text-[10px] text-slate-500">({b.silo2TargetKg})</span>
-                    </td>
-                    <td className="py-4 px-5 text-slate-300">{b.mSandActualKg} kg</td>
-                    <td className="py-4 px-5 text-slate-300">
-                      {b.agg20mmActualKg} / {b.agg10mmActualKg}
-                    </td>
-                    <td className="py-4 px-5 text-right">
-                      <button
-                        onClick={() => handlePrintBatchDocket(b)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#121c2d] hover:bg-emerald-600 text-slate-300 hover:text-white transition font-bold text-xs cursor-pointer"
-                        title="Print Plant Batch Docket"
-                      >
-                        <Printer className="w-3.5 h-3.5" />
-                        <span>Print Docket</span>
-                      </button>
-                    </td>
-                  </tr>
-                ))
+                filteredBatches.map((b) => {
+                  const isExpanded = expandedBatchId === b.id;
+                  return (
+                    <React.Fragment key={b.id}>
+                      <tr className="hover:bg-[#0e1728] transition-colors">
+                        <td className="py-4 px-4 text-emerald-400 font-bold">{b.docketNo}</td>
+                        <td className="py-4 px-4 text-amber-400 font-black">{b.vehicleNo}</td>
+                        <td className="py-4 px-4 text-cyan-300 font-bold">{b.mixGrade}</td>
+                        <td className="py-4 px-4 font-bold text-white text-sm">{b.batchQtyM3} m³</td>
+                        <td className="py-4 px-4">
+                          <button
+                            type="button"
+                            onClick={() => setExpandedBatchId(isExpanded ? null : b.id)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#070d1a] border border-[#1b273d] text-cyan-300 hover:text-white transition font-bold text-[11px] cursor-pointer"
+                          >
+                            <span>{b.totalBatchesCount} Drops</span>
+                            {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                          </button>
+                        </td>
+                        <td className="py-4 px-4 text-slate-300">
+                          {b.silo1ActualKg} kg <span className="text-[10px] text-slate-500">({b.silo1TargetKg})</span>
+                        </td>
+                        <td className="py-4 px-4 text-slate-300">
+                          {b.silo2ActualKg} kg <span className="text-[10px] text-slate-500">({b.silo2TargetKg})</span>
+                        </td>
+                        <td className="py-4 px-4 text-slate-300">{b.mSandActualKg} kg</td>
+                        <td className="py-4 px-4 text-slate-300">
+                          {b.agg20mmActualKg} / {b.agg10mmActualKg}
+                        </td>
+                        <td className="py-4 px-4 text-right">
+                          <button
+                            type="button"
+                            onClick={() => handlePrintBatchDocket(b)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#121c2d] hover:bg-emerald-600 text-slate-300 hover:text-white transition font-bold text-xs cursor-pointer"
+                            title="Print Plant Batch Docket"
+                          >
+                            <Printer className="w-3.5 h-3.5" />
+                            <span>Print Docket</span>
+                          </button>
+                        </td>
+                      </tr>
+
+                      {/* Drop Sub-batches detail row */}
+                      {isExpanded && (
+                        <tr className="bg-[#070d1a]">
+                          <td colSpan={10} className="p-4 border-t border-[#1b273d]">
+                            <div className="bg-[#0b1322] border border-[#1e2d44] rounded-2xl p-4 space-y-3">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-bold text-cyan-400 uppercase tracking-wider">
+                                  Plant Batch Dropping Sequence ({b.totalBatchesCount} batches into TM {b.vehicleNo} @ {plantMixerCapacity} m³/batch)
+                                </span>
+                                <span className="text-[11px] text-slate-400">Total Billed: {b.batchQtyM3} m³</span>
+                              </div>
+
+                              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2 text-center text-xs">
+                                {b.drops.map((d) => (
+                                  <div key={d.batchIndex} className="bg-[#070d1a] border border-[#1b273d] p-3 rounded-xl space-y-1">
+                                    <div className="text-[10px] text-emerald-400 font-bold uppercase">Batch #{d.batchIndex}</div>
+                                    <div className="text-sm font-extrabold text-white">{d.batchQtyM3} m³</div>
+                                    <div className="text-[10px] text-slate-400 pt-1 border-t border-[#131d2d] space-y-0.5 text-left font-mono">
+                                      <div>Silo 1: <strong className="text-blue-300">{d.silo1Kg} kg</strong></div>
+                                      <div>Silo 2: <strong className="text-purple-300">{d.silo2Kg} kg</strong></div>
+                                      <div>M-Sand: <strong className="text-amber-300">{d.mSandKg} kg</strong></div>
+                                      <div>20mm: <strong className="text-emerald-300">{d.agg20mmKg} kg</strong></div>
+                                      <div>10mm: <strong className="text-emerald-300">{d.agg10mmKg} kg</strong></div>
+                                      <div>Water: <strong className="text-cyan-300">{d.waterLtr} L</strong></div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })
               )}
             </tbody>
           </table>
         </div>
       </div>
+
+      {/* MODAL: EDIT PLANT MIXER CAPACITY */}
+      {isMixerCapModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#0b1322] border border-[#1e2d46] rounded-3xl w-full max-w-sm p-6 shadow-2xl relative font-mono space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-[#1b273d]">
+              <div className="flex items-center gap-2">
+                <Settings className="w-5 h-5 text-cyan-400" />
+                <h4 className="text-sm font-bold text-white uppercase font-sans">
+                  Plant Mixer Capacity
+                </h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsMixerCapModalOpen(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg bg-[#121c2d] cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveMixerCap} className="space-y-4 text-xs">
+              <div>
+                <label className="text-slate-300 block mb-1.5 font-bold uppercase">
+                  Batching Pan / Twin-Shaft Size (m³)
+                </label>
+                <input
+                  type="number"
+                  step="0.05"
+                  min="0.25"
+                  max="4.0"
+                  required
+                  value={tempMixerCap}
+                  onChange={(e) => setTempMixerCap(e.target.value)}
+                  className="w-full bg-[#070d1a] border border-[#1b273d] rounded-2xl px-4 py-3 text-cyan-300 font-black text-sm focus:outline-none focus:border-cyan-500 font-mono"
+                  placeholder="e.g. 0.75"
+                />
+                <p className="text-[10px] text-slate-400 mt-1 font-sans">
+                  A 5 m³ load will automatically break down into 6 drops of 0.75 m³ + 1 drop of 0.5 m³.
+                </p>
+              </div>
+
+              {/* Quick Select Buttons */}
+              <div className="flex gap-2">
+                {[0.5, 0.75, 1.0, 1.25].map(cap => (
+                  <button
+                    key={cap}
+                    type="button"
+                    onClick={() => setTempMixerCap(String(cap))}
+                    className={`flex-1 py-1.5 rounded-xl border text-[11px] font-bold cursor-pointer transition ${
+                      parseFloat(tempMixerCap) === cap
+                        ? 'bg-cyan-600 text-white border-cyan-500'
+                        : 'bg-[#070d1a] text-slate-300 border-[#1b273d] hover:border-slate-500'
+                    }`}
+                  >
+                    {cap} m³
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-[#1b273d]">
+                <button
+                  type="button"
+                  onClick={() => setIsMixerCapModalOpen(false)}
+                  className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-400 hover:text-white bg-[#121c2d] cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-cyan-600 hover:bg-cyan-500 shadow-lg shadow-cyan-600/20 cursor-pointer flex items-center gap-1.5"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>Update Mixer Size</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
