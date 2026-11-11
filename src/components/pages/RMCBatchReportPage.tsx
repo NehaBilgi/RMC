@@ -4,13 +4,13 @@ import {
   Printer, 
   Calendar, 
   RotateCcw, 
-  Search,
-  Settings,
-  X,
-  Check,
-  ChevronDown,
-  ChevronUp,
-  Layers
+  Search, 
+  Settings, 
+  X, 
+  Check, 
+  ChevronDown, 
+  ChevronUp, 
+  Layers 
 } from 'lucide-react';
 import { cloudStorage } from '../../services/cloudStorage';
 
@@ -359,7 +359,7 @@ export const RMCBatchReportPage: React.FC = () => {
             <div><strong>Mix Grade:</strong> ${b.mixGrade}</div>
             <div><strong>Transit Mixer:</strong> ${b.vehicleNo}</div>
             <div><strong>Total TM Load:</strong> ${b.batchQtyM3} m³</div>
-            <div><strong>Plant Mixer Size:</strong> ${b.mixerCapacityM3} m³ (${b.totalBatchesCount} Drops)</div>
+            <div><strong>Plant Mixer Size:</strong> ${b.mixerCapacityM3} m³</div>
           </div>
 
           <!-- Section 1: Standard Proportions for 1 m3 directly from Mix Design -->
@@ -370,7 +370,7 @@ export const RMCBatchReportPage: React.FC = () => {
                 <th style="text-align: left;">Mix Proportion / m³</th>
                 <th>Cement Silo 1</th>
                 <th>Cement Silo 2</th>
-                <th>M-Sand (Zone II)</th>
+                <th>M-Sand</th>
                 <th>20MM Aggregate</th>
                 <th>10MM Aggregate</th>
                 <th>Batching Water</th>
@@ -397,7 +397,7 @@ export const RMCBatchReportPage: React.FC = () => {
                 <th style="text-align: left;">Parameters / Material</th>
                 <th>Cement Silo 1</th>
                 <th>Cement Silo 2</th>
-                <th>M-Sand (Zone II)</th>
+                <th>M-Sand</th>
                 <th>20MM Aggregate</th>
                 <th>10MM Aggregate</th>
                 <th>Batching Water</th>
@@ -443,7 +443,7 @@ export const RMCBatchReportPage: React.FC = () => {
                 <th>Cycle Qty</th>
                 <th>Cement Silo 1</th>
                 <th>Cement Silo 2</th>
-                <th>M-Sand (Zone II)</th>
+                <th>M-Sand</th>
                 <th>20MM Aggregate</th>
                 <th>10MM Aggregate</th>
                 <th>Batching Water</th>
