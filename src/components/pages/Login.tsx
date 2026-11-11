@@ -9,10 +9,7 @@ import {
   EyeOff, 
   Moon, 
   Sun, 
-  Database, 
-  CheckCircle2, 
-  UserPlus, 
-  LogIn 
+  CheckCircle2 
 } from 'lucide-react';
 import { SessionUser } from '../../utils/accessControl';
 import { supabase, isSupabaseConfigured } from '../../lib/supabase';
@@ -25,11 +22,8 @@ interface Props {
 }
 
 export const Login: React.FC<Props> = ({ onLoginSuccess, theme, onToggleTheme }) => {
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
-  const [signupUsername, setSignupUsername] = useState('');
-  const [signupCompany, setSignupCompany] = useState('BILGI RMC INFRASTRUCTURE');
   const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
@@ -46,7 +40,7 @@ export const Login: React.FC<Props> = ({ onLoginSuccess, theme, onToggleTheme })
     const cleanPass = password.trim();
 
     if (!cleanInput) {
-      setErrorMessage('Please enter your email or username.');
+      setErrorMessage('Please enter your username or email.');
       setIsLoading(false);
       return;
     }
@@ -254,93 +248,6 @@ export const Login: React.FC<Props> = ({ onLoginSuccess, theme, onToggleTheme })
     }
   };
 
-  // Direct Supabase Sign Up / New Admin Creation
-  const handleSignUp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMessage('');
-    setSuccessMessage('');
-    setIsLoading(true);
-
-    if (!supabase || !isSupabaseConfigured) {
-      setErrorMessage('Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to your Vercel / .env environment.');
-      setIsLoading(false);
-      return;
-    }
-
-    const cleanEmail = identifier.trim().toLowerCase();
-    const cleanUsername = signupUsername.trim() || cleanEmail.split('@')[0];
-    const cleanPass = password.trim();
-
-    if (!cleanEmail.includes('@')) {
-      setErrorMessage('Please enter a valid email address.');
-      setIsLoading(false);
-      return;
-    }
-
-    if (cleanPass.length < 6) {
-      setErrorMessage('Password must be at least 6 characters long.');
-      setIsLoading(false);
-      return;
-    }
-
-    try {
-      const { data, error } = await supabase.auth.signUp({
-        email: cleanEmail,
-        password: cleanPass,
-        options: {
-          data: {
-            username: cleanUsername,
-            role: 'SUPER_ADMIN',
-            company_name: signupCompany
-          }
-        }
-      });
-
-      if (error) {
-        setErrorMessage(error.message);
-        setIsLoading(false);
-        return;
-      }
-
-      if (data.session && data.user) {
-        setSuccessMessage('Account created and signed in successfully!');
-        try {
-          await (supabase as any).from('app_users').upsert({
-            id: data.user.id,
-            username: cleanUsername,
-            name: cleanUsername,
-            password: cleanPass,
-            role: 'ADMIN',
-            page_access: [
-              'dashboard', 'ongoing_site', 'billing', 'total_bill', 'site_tests', 'trips',
-              'material_category', 'transit_mixer', 'concrete_pumps', 'mix_design',
-              'site_report', 'measurements', 'company_details', 'user_management'
-            ],
-            active: true,
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'username' });
-        } catch {}
-
-        await cloudStorage.init();
-        setTimeout(() => {
-          onLoginSuccess({
-            username: cleanUsername,
-            role: 'ADMIN',
-            name: cleanUsername,
-            pageAccess: null
-          });
-        }, 1000);
-      } else {
-        setSuccessMessage('Account created! If email confirmation is enabled in Supabase, check your inbox to confirm, then sign in.');
-        setMode('signin');
-        setIsLoading(false);
-      }
-    } catch (err: any) {
-      setErrorMessage(err?.message || 'Error creating account.');
-      setIsLoading(false);
-    }
-  };
-
   return (
     <div className="min-h-screen bg-[#080C14] text-slate-100 flex items-center justify-center p-4 font-sans selection:bg-blue-600 selection:text-white relative">
       <button
@@ -362,7 +269,7 @@ export const Login: React.FC<Props> = ({ onLoginSuccess, theme, onToggleTheme })
             CONCRETE 360
           </h1>
           <p className="text-xs text-blue-400 font-mono">
-            Commercial RMC &amp; Site Management Suite
+            Commercial RMC & Site Management Suite
           </p>
 
           {/* Cloud Database Status Pill */}
@@ -372,38 +279,6 @@ export const Login: React.FC<Props> = ({ onLoginSuccess, theme, onToggleTheme })
               {isSupabaseConfigured ? 'Supabase Database Connected' : 'Local Standalone Mode'}
             </span>
           </div>
-        </div>
-
-        {/* Tab Switcher: Sign In vs Register Admin */}
-        <div className="flex p-1 bg-[#0b101c] rounded-xl border border-[#1c2940] text-xs font-mono">
-          <button
-            type="button"
-            onClick={() => {
-              setMode('signin');
-              setErrorMessage('');
-              setSuccessMessage('');
-            }}
-            className={`flex-1 py-2 rounded-lg flex items-center justify-center gap-2 transition cursor-pointer font-bold ${
-              mode === 'signin' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <LogIn className="w-3.5 h-3.5" />
-            <span>Sign In</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setMode('signup');
-              setErrorMessage('');
-              setSuccessMessage('');
-            }}
-            className={`flex-1 py-2 rounded-lg flex items-center justify-center gap-2 transition cursor-pointer font-bold ${
-              mode === 'signup' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <UserPlus className="w-3.5 h-3.5" />
-            <span>Create Admin</span>
-          </button>
         </div>
 
         {/* Status Alerts */}
@@ -422,155 +297,56 @@ export const Login: React.FC<Props> = ({ onLoginSuccess, theme, onToggleTheme })
         )}
 
         {/* SIGN IN FORM */}
-        {mode === 'signin' && (
-          <form onSubmit={handleSignIn} className="space-y-4 text-xs font-mono">
-            <div>
-              <label className="block text-slate-300 font-bold mb-1.5 uppercase tracking-wider">
-                Email or Username
-              </label>
-              <div className="relative">
-                <User className="w-4 h-4 text-slate-500 absolute left-3.5 top-3 pointer-events-none" />
-                <input
-                  type="text"
-                  required
-                  placeholder="admin@company.com or adminbilgi"
-                  value={identifier}
-                  onChange={(e) => setIdentifier(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 bg-[#162032] border border-[#1E293B] rounded-xl text-white outline-none focus:border-blue-500 font-medium placeholder-slate-500 font-mono text-sm"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-slate-300 font-bold mb-1.5 uppercase tracking-wider">
-                Password
-              </label>
-              <div className="relative flex items-center">
-                <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-3 pointer-events-none" />
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  placeholder="Enter password (optional for demo)"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-10 pr-10 py-2.5 bg-[#162032] border border-[#1E293B] rounded-xl text-white outline-none focus:border-blue-500 font-mono placeholder-slate-500 text-sm"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 text-slate-500 hover:text-slate-300 cursor-pointer"
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-black rounded-xl transition-all shadow-lg shadow-blue-600/30 flex items-center justify-center gap-2 cursor-pointer text-xs uppercase tracking-wider disabled:opacity-50 mt-2"
-            >
-              <span>{isLoading ? 'Authenticating...' : 'Sign In'}</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
-          </form>
-        )}
-
-        {/* SIGN UP / REGISTER ADMIN FORM */}
-        {mode === 'signup' && (
-          <form onSubmit={handleSignUp} className="space-y-4 text-xs font-mono">
-            <div>
-              <label className="block text-slate-300 font-bold mb-1.5 uppercase tracking-wider">
-                Admin Email *
-              </label>
-              <div className="relative">
-                <User className="w-4 h-4 text-slate-500 absolute left-3.5 top-3 pointer-events-none" />
-                <input
-                  type="email"
-                  required
-                  placeholder="admin@yourcompany.com"
-                  value={identifier}
-                  onChange={(e) => setIdentifier(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 bg-[#162032] border border-[#1E293B] rounded-xl text-white outline-none focus:border-blue-500 font-mono text-sm"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-slate-300 font-bold mb-1.5 uppercase tracking-wider">
-                Full Name or Username *
-              </label>
+        <form onSubmit={handleSignIn} className="space-y-4 text-xs font-mono">
+          <div>
+            <label className="block text-slate-300 font-bold mb-1.5 uppercase tracking-wider">
+              Email or Username
+            </label>
+            <div className="relative">
+              <User className="w-4 h-4 text-slate-500 absolute left-3.5 top-3 pointer-events-none" />
               <input
                 type="text"
                 required
-                placeholder="e.g. Habibulla Bilgi"
-                value={signupUsername}
-                onChange={(e) => setSignupUsername(e.target.value)}
-                className="w-full px-4 py-2.5 bg-[#162032] border border-[#1E293B] rounded-xl text-white outline-none focus:border-blue-500 font-mono text-sm"
+                placeholder="Username"
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 bg-[#162032] border border-[#1E293B] rounded-xl text-white outline-none focus:border-blue-500 font-medium placeholder-slate-500 font-mono text-sm"
               />
             </div>
+          </div>
 
-            <div>
-              <label className="block text-slate-300 font-bold mb-1.5 uppercase tracking-wider">
-                Password * (min 6 characters)
-              </label>
-              <div className="relative flex items-center">
-                <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-3 pointer-events-none" />
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  required
-                  placeholder="Set secure password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-10 pr-10 py-2.5 bg-[#162032] border border-[#1E293B] rounded-xl text-white outline-none focus:border-blue-500 font-mono text-sm"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 text-slate-500 hover:text-slate-300 cursor-pointer"
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-slate-300 font-bold mb-1.5 uppercase tracking-wider">
-                Company Name
-              </label>
+          <div>
+            <label className="block text-slate-300 font-bold mb-1.5 uppercase tracking-wider">
+              Password
+            </label>
+            <div className="relative flex items-center">
+              <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-3 pointer-events-none" />
               <input
-                type="text"
-                value={signupCompany}
-                onChange={(e) => setSignupCompany(e.target.value)}
-                className="w-full px-4 py-2.5 bg-[#162032] border border-[#1E293B] rounded-xl text-white outline-none focus:border-blue-500 font-mono text-sm"
+                type={showPassword ? 'text' : 'password'}
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full pl-10 pr-10 py-2.5 bg-[#162032] border border-[#1E293B] rounded-xl text-white outline-none focus:border-blue-500 font-mono placeholder-slate-500 text-sm"
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 text-slate-500 hover:text-slate-300 cursor-pointer"
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
             </div>
+          </div>
 
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl transition-all shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 cursor-pointer text-xs uppercase tracking-wider disabled:opacity-50 mt-2"
-            >
-              <span>{isLoading ? 'Creating Account in Supabase...' : 'Register Official Account'}</span>
-              <CheckCircle2 className="w-4 h-4" />
-            </button>
-          </form>
-        )}
-
-        {/* Demo Mode Quick Access */}
-        <div className="pt-4 border-t border-[#1E293B] flex items-center justify-between text-[11px] font-mono text-slate-400">
-          <span>Demo User: <strong className="text-slate-200">adminbilgi</strong></span>
           <button
-            type="button"
-            onClick={() => {
-              setMode('signin');
-              setIdentifier('adminbilgi');
-              setPassword('');
-            }}
-            className="text-blue-400 hover:underline cursor-pointer"
+            type="submit"
+            disabled={isLoading}
+            className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-black rounded-xl transition-all shadow-lg shadow-blue-600/30 flex items-center justify-center gap-2 cursor-pointer text-xs uppercase tracking-wider disabled:opacity-50 mt-2"
           >
-            Auto-fill Demo
+            <span>{isLoading ? 'Authenticating...' : 'Sign In'}</span>
+            <ArrowRight className="w-4 h-4" />
           </button>
-        </div>
+        </form>
       </div>
     </div>
   );
