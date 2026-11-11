@@ -37,7 +37,7 @@ interface UnitRecipePerM3 {
 
 interface BatchRecord {
   id: string;
-  docketNo: string;
+  indentNo: string;
   invoiceNo: string;
   date: string;
   time: string;
@@ -233,7 +233,7 @@ export const RMCBatchReportPage: React.FC = () => {
 
         return {
           id: inv.id || `BATCH-${idx + 1}`,
-          docketNo: `DKT-${siteKey.slice(0, 3)}-${1001 + idx}`,
+          indentNo: `IND-${siteKey.slice(0, 3)}-${1001 + idx}`,
           invoiceNo: inv.invoiceNo || `INV-2026-${100 + idx}`,
           date: inv.date || new Date().toISOString().split('T')[0],
           time: '11:45 AM',
@@ -299,7 +299,7 @@ export const RMCBatchReportPage: React.FC = () => {
     return batches.filter(b => {
       const matchSearch = 
         b.vehicleNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        b.docketNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        b.indentNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
         b.mixGrade.toLowerCase().includes(searchTerm.toLowerCase());
       const matchDate = selectedDate ? b.date === selectedDate : true;
       return matchSearch && matchDate;
@@ -333,7 +333,7 @@ export const RMCBatchReportPage: React.FC = () => {
     printWindow.document.write(`
       <html>
         <head>
-          <title>CONMAT Plant Batching Report - ${b.docketNo}</title>
+          <title>CONMAT Plant Batching Report - ${b.indentNo}</title>
           <style>
             @page { size: A4 landscape; margin: 10mm; }
             body { font-family: monospace; color: #000; font-size: 11px; margin: 0; line-height: 1.35; }
@@ -352,11 +352,11 @@ export const RMCBatchReportPage: React.FC = () => {
         <body>
           <div class="header">
             <h1>CONMAT AUTOMATED BATCHING PLANT</h1>
-            <p>PLANT BATCH REPORT / TM DISPATCH TELEMETRY DOCKET • IS 4926 / IS 456 COMPLIANT</p>
+            <p>PLANT BATCH REPORT / TM DISPATCH TELEMETRY DOCKET</p>
           </div>
 
           <div class="meta-grid">
-            <div><strong>Docket No:</strong> ${b.docketNo}</div>
+            <div><strong>Indent No:</strong> ${b.indentNo}</div>
             <div><strong>Date & Time:</strong> ${b.date} | ${b.time}</div>
             <div><strong>Project Site:</strong> ${b.siteName}</div>
             <div><strong>Client Name:</strong> ${b.clientName}</div>
@@ -514,7 +514,7 @@ export const RMCBatchReportPage: React.FC = () => {
             <Search className="w-3.5 h-3.5 text-slate-400" />
             <input
               type="text"
-              placeholder="Search Mixer No, Docket..."
+              placeholder="Search Mixer No, Indent No..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="bg-transparent text-white outline-none placeholder-slate-500 text-xs w-48"
@@ -553,7 +553,7 @@ export const RMCBatchReportPage: React.FC = () => {
           <table className="w-full text-left text-xs border-collapse">
             <thead>
               <tr className="border-b border-[#1b273d] text-[10px] font-bold uppercase tracking-wider text-slate-400 bg-[#070d1a]">
-                <th className="py-4 px-4">Docket No</th>
+                <th className="py-4 px-4">Indent No</th>
                 <th className="py-4 px-4">Mixer No</th>
                 <th className="py-4 px-4">Grade</th>
                 <th className="py-4 px-4">TM Load Qty</th>
@@ -578,7 +578,7 @@ export const RMCBatchReportPage: React.FC = () => {
                   return (
                     <React.Fragment key={b.id}>
                       <tr className="hover:bg-[#0e1728] transition-colors">
-                        <td className="py-4 px-4 text-emerald-400 font-bold">{b.docketNo}</td>
+                        <td className="py-4 px-4 text-emerald-400 font-bold">{b.indentNo}</td>
                         <td className="py-4 px-4 text-amber-400 font-black">{b.vehicleNo}</td>
                         <td className="py-4 px-4 text-cyan-300 font-bold">{b.mixGrade}</td>
                         <td className="py-4 px-4 font-bold text-white text-sm">{b.batchQtyM3} m³</td>
