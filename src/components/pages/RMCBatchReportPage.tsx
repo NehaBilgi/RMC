@@ -199,7 +199,7 @@ export const RMCBatchReportPage: React.FC = () => {
         const unitRecipe: UnitRecipePerM3 = {
           silo1Kg: recipe.cement,
           silo2Kg: recipe.admix,
-          silo2Name: activeAdmixtureMode === 'GGBS' ? 'Cement Silo 2 (GGBS)' : 'Cement Silo 2 (Fly Ash)',
+          silo2Name: 'Cement Silo 2',
           mSandKg: recipe.mSand,
           agg20mmKg: recipe.agg20,
           agg10mmKg: recipe.agg10,
@@ -321,8 +321,6 @@ export const RMCBatchReportPage: React.FC = () => {
     const a10Var = (((b.agg10mmActualKg - b.agg10mmTargetKg) / b.agg10mmTargetKg) * 100).toFixed(1);
     const waterVar = (((b.waterActualLtr - b.waterTargetLtr) / b.waterTargetLtr) * 100).toFixed(1);
 
-    const silo2HeaderLabel = b.admixtureMode === 'GGBS' ? 'Cement Silo 2 (GGBS)' : 'Cement Silo 2 (Fly Ash)';
-
     const subBatchRows = b.drops.map(d => `
       <tr>
         <td style="font-weight:bold;">Batch #${d.batchIndex}</td>
@@ -383,7 +381,7 @@ export const RMCBatchReportPage: React.FC = () => {
               <tr>
                 <th style="text-align: left;">Mix Proportion / m³</th>
                 <th>Cement Silo 1</th>
-                <th>${silo2HeaderLabel}</th>
+                <th>Cement Silo 2</th>
                 <th>M-Sand</th>
                 <th>20MM Aggregate</th>
                 <th>10MM Aggregate</th>
@@ -410,7 +408,7 @@ export const RMCBatchReportPage: React.FC = () => {
               <tr>
                 <th style="text-align: left;">Parameters / Material</th>
                 <th>Cement Silo 1</th>
-                <th>${silo2HeaderLabel}</th>
+                <th>Cement Silo 2</th>
                 <th>M-Sand</th>
                 <th>20MM Aggregate</th>
                 <th>10MM Aggregate</th>
@@ -456,7 +454,7 @@ export const RMCBatchReportPage: React.FC = () => {
                 <th>Drop #</th>
                 <th>Cycle Qty</th>
                 <th>Cement Silo 1</th>
-                <th>${silo2HeaderLabel}</th>
+                <th>Cement Silo 2</th>
                 <th>M-Sand</th>
                 <th>20MM Aggregate</th>
                 <th>10MM Aggregate</th>
@@ -581,7 +579,6 @@ export const RMCBatchReportPage: React.FC = () => {
               ) : (
                 filteredBatches.map((b) => {
                   const isExpanded = expandedBatchId === b.id;
-                  const silo2ColumnName = b.admixtureMode === 'GGBS' ? 'GGBS' : 'Fly Ash';
                   return (
                     <React.Fragment key={b.id}>
                       <tr className="hover:bg-[#0e1728] transition-colors">
@@ -603,7 +600,7 @@ export const RMCBatchReportPage: React.FC = () => {
                           {b.silo1ActualKg} kg <span className="text-[10px] text-slate-500">({b.silo1TargetKg})</span>
                         </td>
                         <td className="py-4 px-4 text-slate-300">
-                          {b.silo2ActualKg} kg <span className="text-[10px] text-purple-400">({silo2ColumnName})</span>
+                          {b.silo2ActualKg} kg <span className="text-[10px] text-slate-500">({b.silo2TargetKg})</span>
                         </td>
                         <td className="py-4 px-4 text-slate-300">{b.mSandActualKg} kg</td>
                         <td className="py-4 px-4 text-slate-300">
@@ -637,7 +634,7 @@ export const RMCBatchReportPage: React.FC = () => {
                                 </div>
                                 <div className="flex items-center gap-3 text-slate-300 text-[11px]">
                                   <span>Silo 1: <strong className="text-blue-400">{b.unitRecipe.silo1Kg} kg/m³</strong></span>
-                                  <span>{b.admixtureMode === 'GGBS' ? 'Silo 2 (GGBS):' : 'Silo 2 (Fly Ash):'} <strong className="text-purple-400">{b.unitRecipe.silo2Kg} kg/m³</strong></span>
+                                  <span>Silo 2: <strong className="text-purple-400">{b.unitRecipe.silo2Kg} kg/m³</strong></span>
                                   <span>M-Sand: <strong className="text-amber-400">{b.unitRecipe.mSandKg} kg/m³</strong></span>
                                   <span>20mm: <strong className="text-emerald-400">{b.unitRecipe.agg20mmKg} kg/m³</strong></span>
                                   <span>10mm: <strong className="text-emerald-400">{b.unitRecipe.agg10mmKg} kg/m³</strong></span>
@@ -659,7 +656,7 @@ export const RMCBatchReportPage: React.FC = () => {
                                     <div className="text-sm font-extrabold text-white">{d.batchQtyM3} m³</div>
                                     <div className="text-[10px] text-slate-400 pt-1 border-t border-[#131d2d] space-y-0.5 text-left font-mono">
                                       <div>Silo 1: <strong className="text-blue-300">{d.silo1Kg} kg</strong></div>
-                                      <div>{b.admixtureMode === 'GGBS' ? 'GGBS:' : 'Fly Ash:'} <strong className="text-purple-300">{d.silo2Kg} kg</strong></div>
+                                      <div>Silo 2: <strong className="text-purple-300">{d.silo2Kg} kg</strong></div>
                                       <div>M-Sand: <strong className="text-amber-300">{d.mSandKg} kg</strong></div>
                                       <div>20mm: <strong className="text-emerald-300">{d.agg20mmKg} kg</strong></div>
                                       <div>10mm: <strong className="text-emerald-300">{d.agg10mmKg} kg</strong></div>
