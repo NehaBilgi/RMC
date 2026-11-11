@@ -140,6 +140,25 @@ export const BillingRMC: React.FC = () => {
     return 'MBBILGI';
   };
 
+  const getPersistedWastage = (siteKey: string): number => {
+    try {
+      const saved = localStorage.getItem(`concrete360_wastage_percent_${siteKey}`);
+      if (saved !== null && saved !== '') {
+        const parsed = parseFloat(saved);
+        if (!isNaN(parsed)) return Math.max(0, parsed);
+      }
+      const measurementSession = localStorage.getItem('concrete360_measurement');
+      if (measurementSession) {
+        const parsedS = JSON.parse(measurementSession);
+        if (parsedS.safetyWastagePercent !== undefined && parsedS.safetyWastagePercent !== null && parsedS.safetyWastagePercent !== '') {
+          const parsed = parseFloat(parsedS.safetyWastagePercent);
+          if (!isNaN(parsed)) return Math.max(0, parsed);
+        }
+      }
+    } catch {}
+    return 5;
+  };
+
   const [currentSiteKey, setCurrentSiteKey] = useState<string>(getActiveSiteKey());
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null);
@@ -176,7 +195,6 @@ export const BillingRMC: React.FC = () => {
   const [applyGst, setApplyGst] = useState(true);
   const [invoiceDate, setInvoiceDate] = useState<string>(new Date().toISOString().split('T')[0]);
 
-  // Load Material Categories & Pricing
   const loadMaterialCategories = () => {
     try {
       const keys = ['concrete360_material_categories', 'pave_material_categories', 'concrete360_mix_designs', 'concrete360_mixes'];
@@ -342,7 +360,6 @@ export const BillingRMC: React.FC = () => {
 
       const loadedTrucks = loadTransitMixers(siteKey);
 
-      // Load Invoices for active site
       const savedInvoices = localStorage.getItem(`concrete360_site_invoices_${siteKey}`);
       let existingInvoices: RMCInvoice[] = [];
       if (savedInvoices) {
@@ -357,7 +374,6 @@ export const BillingRMC: React.FC = () => {
         setInvoices([]);
       }
 
-      // Load Measurements & Extract Grade from Reports
       const measurementsRaw = localStorage.getItem(`concrete360_advanced_measurements_${siteKey}`);
       let parsedM: any[] = [];
       if (measurementsRaw) {
@@ -374,17 +390,7 @@ export const BillingRMC: React.FC = () => {
       setUnitRate(fetchRateForGrade(reportGrade));
 
       const netTotalVol = parsedM.reduce((sum: number, it: any) => sum + (Number(it.volumeM3) || 0), 0);
-      
-      let wastage = 5;
-      const measurementSession = localStorage.getItem('concrete360_measurement');
-      if (measurementSession) {
-        try {
-          const parsedS = JSON.parse(measurementSession);
-          if (parsedS.safetyWastagePercent !== undefined) {
-            wastage = Number(parsedS.safetyWastagePercent);
-          }
-        } catch {}
-      }
+      const wastage = getPersistedWastage(siteKey);
       const grossTotalVol = netTotalVol * (1 + wastage / 100);
       setTotalReportVolume(Number(grossTotalVol.toFixed(2)));
 
@@ -448,7 +454,7 @@ export const BillingRMC: React.FC = () => {
       window.removeEventListener('storage', handleSync);
       window.removeEventListener('focus', handleSync);
     };
-  }, []);
+  }, [selectedWorkId]);
 
   useEffect(() => {
     try {
@@ -478,6 +484,8 @@ export const BillingRMC: React.FC = () => {
   const handleWorkElementChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const wId = e.target.value;
     setSelectedWorkId(wId);
+    const wastage = getPersistedWastage(currentSiteKey);
+
     if (wId === 'ALL') {
       const reportGrade = resolveGradeFromReports(currentSiteKey, measurementItems);
       setMixGrade(reportGrade);
@@ -486,15 +494,6 @@ export const BillingRMC: React.FC = () => {
     } else {
       const item = measurementItems.find(it => it.id === wId);
       if (item) {
-        let wastage = 5;
-        try {
-          const measurementSession = localStorage.getItem('concrete360_measurement');
-          if (measurementSession) {
-            const parsedS = JSON.parse(measurementSession);
-            if (parsedS.safetyWastagePercent !== undefined) wastage = Number(parsedS.safetyWastagePercent);
-          }
-        } catch {}
-
         const grossVol = (Number(item.volumeM3) || 0) * (1 + wastage / 100);
         const alreadyInvoiced = invoices
           .filter(inv => inv.workElementId === wId)
@@ -566,15 +565,7 @@ export const BillingRMC: React.FC = () => {
       setSelectedWorkId(inv.workElementId);
       const item = measurementItems.find(it => it.id === inv.workElementId);
       if (item) {
-        let wastage = 5;
-        try {
-          const measurementSession = localStorage.getItem('concrete360_measurement');
-          if (measurementSession) {
-            const parsedS = JSON.parse(measurementSession);
-            if (parsedS.safetyWastagePercent !== undefined) wastage = Number(parsedS.safetyWastagePercent);
-          }
-        } catch {}
-
+        const wastage = getPersistedWastage(currentSiteKey);
         const grossVol = (Number(item.volumeM3) || 0) * (1 + wastage / 100);
         const otherInvoices = invoices.filter(i => i.workElementId === inv.workElementId && i.id !== inv.id);
         const alreadyInvoiced = otherInvoices.reduce((sum, i) => sum + (Number(i.volumeM3) || 0), 0);
@@ -978,7 +969,6 @@ export const BillingRMC: React.FC = () => {
     setIsModalOpen(false);
   };
 
-  // Safe delete execution without native window.confirm hanging
   const confirmDeleteExecution = async () => {
     if (!invoiceToDelete) return;
 
@@ -1006,7 +996,7 @@ export const BillingRMC: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-blue-400 bg-blue-500/10 border border-blue-500/30 px-2.5 py-0.5 rounded-full">
-            BILLING &amp; INVOICING ({currentSiteKey}) [Client: {siteDetails.clientName}]
+            BILLING & INVOICING ({currentSiteKey}) [Client: {siteDetails.clientName}]
           </span>
           <h2 className="text-xl font-black text-white mt-1">Customer RMC Tax Invoices</h2>
         </div>
