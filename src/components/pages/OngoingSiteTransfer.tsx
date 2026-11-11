@@ -4,6 +4,7 @@ import {
   MapPin, 
   Plus, 
   Trash2, 
+  Edit2,
   Truck, 
   X,
   Signpost,
@@ -40,6 +41,7 @@ export const OngoingSiteTransfer: React.FC = () => {
 
   const userRole = getUserRole();
   const canCreate = userRole === 'ADMIN' || userRole === 'EMPLOYEE';
+  const canEdit = userRole === 'ADMIN' || userRole === 'EMPLOYEE';
   const canDelete = userRole === 'ADMIN';
 
   const getSitesFromStorage = (): any[] => {
@@ -93,7 +95,8 @@ export const OngoingSiteTransfer: React.FC = () => {
     };
   }, []);
 
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingSiteId, setEditingSiteId] = useState<string | null>(null);
   const [siteToDelete, setSiteToDelete] = useState<any | null>(null);
 
   const [category, setCategory] = useState<'Road' | 'Building'>('Building');
@@ -128,9 +131,46 @@ export const OngoingSiteTransfer: React.FC = () => {
     window.dispatchEvent(new CustomEvent('concrete360_site_switched', { detail: cleanSiteKey }));
   };
 
-  const handleAddSite = async (e: React.FormEvent) => {
+  const handleOpenAddModal = () => {
+    setEditingSiteId(null);
+    setCategory('Building');
+    setName('');
+    setLocation('');
+    setSupervisor('adminbilgi');
+    setPhone('');
+    setClientName('');
+    setGstin('');
+    setFloorScope('G + 3 Floors');
+    setIsModalOpen(true);
+  };
+
+  const handleOpenEditModal = (site: any, e: React.MouseEvent) => {
+    e.stopPropagation();
     e.preventDefault();
-    if (!canCreate) {
+
+    if (!canEdit) {
+      alert('Permission Denied: Read-only accounts cannot modify sites.');
+      return;
+    }
+
+    const cleanKey = extractCleanSiteName(site.name || site.siteName);
+    const cat = site.category === 'Road' ? 'Road' : 'Building';
+
+    setEditingSiteId(site.id || site.siteId || cleanKey);
+    setCategory(cat);
+    setName(cleanKey);
+    setLocation(site.location || '');
+    setSupervisor(site.supervisor || 'adminbilgi');
+    setPhone(site.phone || '');
+    setClientName(site.clientName || '');
+    setGstin(site.gstin || '');
+    setFloorScope(site.detail || site.structureScope || (cat === 'Road' ? 'Km 0 to 12.5' : 'G + 3 Floors'));
+    setIsModalOpen(true);
+  };
+
+  const handleSaveSite = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!canCreate && !editingSiteId) {
       alert('Permission Denied: Read-Only accounts cannot create ongoing sites.');
       return;
     }
@@ -144,57 +184,109 @@ export const OngoingSiteTransfer: React.FC = () => {
 
     const siteTitle = category === 'Building' ? `${cleanKey} (${detail})` : cleanKey;
 
-    const newSite = {
-      id: cleanKey,
-      siteId: `S-0${currentList.length + 1}`,
-      category,
-      name: cleanKey,
-      siteName: siteTitle,
-      location: location || (category === 'Road' ? 'Highway Corridor' : 'Sector 4 Commercial Zone'),
-      supervisor: supervisor || 'adminbilgi',
-      phone: phone.trim(),
-      clientName: clientName.trim() || cleanKey,
-      gstin: gstin.trim().toUpperCase(),
-      detail,
-      assignedFleet: 4
-    };
+    if (editingSiteId) {
+      // EDIT MODE
+      const existingSite = currentList.find(s => (s.id || s.siteId || extractCleanSiteName(s.name || s.siteName)) === editingSiteId) || {};
+      const updatedSite = {
+        ...existingSite,
+        id: cleanKey,
+        siteId: existingSite.siteId || `S-01`,
+        category,
+        name: cleanKey,
+        siteName: siteTitle,
+        location: location || (category === 'Road' ? 'Highway Corridor' : 'Sector 4 Commercial Zone'),
+        supervisor: supervisor || 'adminbilgi',
+        phone: phone.trim(),
+        clientName: clientName.trim() || cleanKey,
+        gstin: gstin.trim().toUpperCase(),
+        detail,
+        assignedFleet: existingSite.assignedFleet || 4
+      };
 
-    const updated = [newSite, ...currentList.filter(s => extractCleanSiteName(s.name || s.siteName) !== cleanKey)];
+      const updated = currentList.map(s => {
+        const sMatch = (s.id || s.siteId || extractCleanSiteName(s.name || s.siteName)) === editingSiteId;
+        return sMatch ? updatedSite : s;
+      });
 
-    localStorage.setItem('concrete360_sites', JSON.stringify(updated));
-    localStorage.setItem('concrete360_ongoing_sites', JSON.stringify(updated));
+      localStorage.setItem('concrete360_sites', JSON.stringify(updated));
+      localStorage.setItem('concrete360_ongoing_sites', JSON.stringify(updated));
 
-    if (supabase) {
-      await (supabase as any)
-        .from('sites')
-        .upsert({
-          id: cleanKey,
-          site_id: newSite.siteId,
-          name: cleanKey,
-          site_name: siteTitle,
-          category: category,
-          location: newSite.location,
-          supervisor: supervisor,
-          phone: newSite.phone,
-          client_name: newSite.clientName,
-          gstin: newSite.gstin,
-          scope: detail,
-          assigned_fleet: 4,
-          status: 'active',
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'id' });
-      await cloudStorage.pullFromCloud();
+      if (supabase) {
+        await (supabase as any)
+          .from('sites')
+          .upsert({
+            id: cleanKey,
+            site_id: updatedSite.siteId,
+            name: cleanKey,
+            site_name: siteTitle,
+            category: category,
+            location: updatedSite.location,
+            supervisor: supervisor,
+            phone: updatedSite.phone,
+            client_name: updatedSite.clientName,
+            gstin: updatedSite.gstin,
+            scope: detail,
+            assigned_fleet: updatedSite.assignedFleet,
+            status: 'active',
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'id' });
+        await cloudStorage.pullFromCloud();
+      }
+
+      setSites(updated);
+      setIsModalOpen(false);
+
+      if (currentActiveKey === extractCleanSiteName(editingSiteId) || currentActiveKey === cleanKey) {
+        handleSelectActiveSite(updatedSite);
+      }
+    } else {
+      // CREATE MODE
+      const newSite = {
+        id: cleanKey,
+        siteId: `S-0${currentList.length + 1}`,
+        category,
+        name: cleanKey,
+        siteName: siteTitle,
+        location: location || (category === 'Road' ? 'Highway Corridor' : 'Sector 4 Commercial Zone'),
+        supervisor: supervisor || 'adminbilgi',
+        phone: phone.trim(),
+        clientName: clientName.trim() || cleanKey,
+        gstin: gstin.trim().toUpperCase(),
+        detail,
+        assignedFleet: 4
+      };
+
+      const updated = [newSite, ...currentList.filter(s => extractCleanSiteName(s.name || s.siteName) !== cleanKey)];
+
+      localStorage.setItem('concrete360_sites', JSON.stringify(updated));
+      localStorage.setItem('concrete360_ongoing_sites', JSON.stringify(updated));
+
+      if (supabase) {
+        await (supabase as any)
+          .from('sites')
+          .upsert({
+            id: cleanKey,
+            site_id: newSite.siteId,
+            name: cleanKey,
+            site_name: siteTitle,
+            category: category,
+            location: newSite.location,
+            supervisor: supervisor,
+            phone: newSite.phone,
+            client_name: newSite.clientName,
+            gstin: newSite.gstin,
+            scope: detail,
+            assigned_fleet: 4,
+            status: 'active',
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'id' });
+        await cloudStorage.pullFromCloud();
+      }
+
+      setSites(updated);
+      setIsModalOpen(false);
+      handleSelectActiveSite(newSite);
     }
-
-    setSites(updated);
-    setIsAddModalOpen(false);
-    setName('');
-    setLocation('');
-    setPhone('');
-    setClientName('');
-    setGstin('');
-
-    handleSelectActiveSite(newSite);
   };
 
   const confirmDeleteExecution = async () => {
@@ -283,12 +375,7 @@ export const OngoingSiteTransfer: React.FC = () => {
 
         {canCreate && (
           <button
-            onClick={() => {
-              setCategory('Building');
-              setFloorScope('G + 3 Floors');
-              setPhone('');
-              setIsAddModalOpen(true);
-            }}
+            onClick={handleOpenAddModal}
             className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-lg shadow-blue-600/30 transition shrink-0 cursor-pointer active:scale-95"
           >
             <Plus className="w-4 h-4 stroke-[3]" />
@@ -303,7 +390,7 @@ export const OngoingSiteTransfer: React.FC = () => {
           <p className="text-slate-400 text-sm font-mono">No active site sections found.</p>
           {canCreate && (
             <button
-              onClick={() => setIsAddModalOpen(true)}
+              onClick={handleOpenAddModal}
               className="mt-4 px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-blue-600/30 cursor-pointer"
             >
               + Add First Site
@@ -335,8 +422,22 @@ export const OngoingSiteTransfer: React.FC = () => {
                     }`}>
                       {(site.category || 'Building').toUpperCase()} SITE
                     </span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-mono text-slate-500">{site.siteId || site.id}</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] font-mono text-slate-500 mr-1">{site.siteId || site.id}</span>
+                      
+                      {/* EDIT ACTION BUTTON */}
+                      {canEdit && (
+                        <button
+                          type="button"
+                          onClick={(e) => handleOpenEditModal(site, e)}
+                          className="p-1.5 text-slate-500 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition cursor-pointer"
+                          title="Edit Site Details"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+
+                      {/* DELETE ACTION BUTTON */}
                       {canDelete && (
                         <button
                           type="button"
@@ -458,8 +559,8 @@ export const OngoingSiteTransfer: React.FC = () => {
         </div>
       )}
 
-      {/* POPUP MODAL: ADD ONGOING BUILDING SECTION */}
-      {isAddModalOpen && (
+      {/* POPUP MODAL: ADD / EDIT ONGOING SECTION */}
+      {isModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white text-slate-800 rounded-3xl w-full max-w-md p-6 shadow-2xl relative max-h-[94vh] overflow-y-auto">
             {/* Header */}
@@ -469,12 +570,12 @@ export const OngoingSiteTransfer: React.FC = () => {
                   <Building2 className="w-5 h-5" />
                 </div>
                 <h3 className="text-base font-black text-slate-900 tracking-tight uppercase">
-                  ADD ONGOING {category.toUpperCase()} SECTION
+                  {editingSiteId ? `EDIT ONGOING ${category.toUpperCase()} SECTION` : `ADD ONGOING ${category.toUpperCase()} SECTION`}
                 </h3>
               </div>
               <button
                 type="button"
-                onClick={() => setIsAddModalOpen(false)}
+                onClick={() => setIsModalOpen(false)}
                 className="text-slate-400 hover:text-slate-700 p-1 rounded-lg cursor-pointer transition-colors"
               >
                 <X className="w-5 h-5" />
@@ -482,7 +583,7 @@ export const OngoingSiteTransfer: React.FC = () => {
             </div>
 
             {/* Form */}
-            <form onSubmit={handleAddSite} className="space-y-4 pt-1 font-mono text-xs">
+            <form onSubmit={handleSaveSite} className="space-y-4 pt-1 font-mono text-xs">
               {/* Construction Category */}
               <div>
                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
@@ -493,7 +594,7 @@ export const OngoingSiteTransfer: React.FC = () => {
                     type="button"
                     onClick={() => {
                       setCategory('Road');
-                      setFloorScope('Km 0 to 12.5');
+                      if (floorScope === 'G + 3 Floors') setFloorScope('Km 0 to 12.5');
                     }}
                     className={`py-3 rounded-2xl font-bold flex items-center justify-center gap-2 transition cursor-pointer text-xs border ${
                       category === 'Road'
@@ -509,7 +610,7 @@ export const OngoingSiteTransfer: React.FC = () => {
                     type="button"
                     onClick={() => {
                       setCategory('Building');
-                      setFloorScope('G + 3 Floors');
+                      if (floorScope === 'Km 0 to 12.5') setFloorScope('G + 3 Floors');
                     }}
                     className={`py-3 rounded-2xl font-bold flex items-center justify-center gap-2 transition cursor-pointer text-xs border ${
                       category === 'Building'
@@ -625,7 +726,7 @@ export const OngoingSiteTransfer: React.FC = () => {
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
                 <button
                   type="button"
-                  onClick={() => setIsAddModalOpen(false)}
+                  onClick={() => setIsModalOpen(false)}
                   className="px-4 py-2.5 text-slate-600 hover:text-slate-900 font-semibold text-xs cursor-pointer transition-colors"
                 >
                   Cancel
@@ -634,7 +735,7 @@ export const OngoingSiteTransfer: React.FC = () => {
                   type="submit"
                   className="px-6 py-3 bg-[#2d588f] hover:bg-[#234570] text-white font-bold rounded-2xl text-xs transition shadow-md shadow-blue-900/20 cursor-pointer"
                 >
-                  Create Site Section
+                  {editingSiteId ? 'Save Changes' : 'Create Site Section'}
                 </button>
               </div>
             </form>
