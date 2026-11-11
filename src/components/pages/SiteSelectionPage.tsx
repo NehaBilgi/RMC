@@ -10,7 +10,8 @@ import {
   Moon,
   Sun,
   RefreshCw,
-  Signpost
+  Signpost,
+  Phone
 } from 'lucide-react';
 import { canViewPage } from '../../utils/accessControl';
 import { cloudStorage } from '../../services/cloudStorage';
@@ -84,6 +85,7 @@ export const SiteSelectionPage: React.FC<Props> = ({
             buildingFloors: s.detail || s.structureScope || s.scope || s.buildingFloors || (isRoad ? 'Km 0 to 12.5' : 'G + 3 Floors'),
             chainageRange: s.chainageRange || 'Km 0 to 12.5',
             supervisor: s.supervisor || currentUser.username,
+            phone: s.phone || '',
             clientName: s.clientName || '',
             gstin: s.gstin || ''
           };
@@ -108,6 +110,7 @@ export const SiteSelectionPage: React.FC<Props> = ({
   const [gstin, setGstin] = useState('');
   const [siteLocation, setSiteLocation] = useState('');
   const [supervisor, setSupervisor] = useState(currentUser.username || 'adminbilgi');
+  const [phone, setPhone] = useState('');
   const [floorScope, setFloorScope] = useState('G + 3 Floors');
 
   useEffect(() => {
@@ -147,6 +150,7 @@ export const SiteSelectionPage: React.FC<Props> = ({
           displayName: rawName,
           scope: siteScope,
           location: location,
+          phone: site.phone || '',
           clientName: site.clientName || cleanKey,
           gstin: site.gstin || ''
         })
@@ -184,6 +188,7 @@ export const SiteSelectionPage: React.FC<Props> = ({
       projectType: isRoad ? 'ROAD' : 'BUILDING',
       buildingFloors: detail,
       supervisor: supervisor || currentUser.username,
+      phone: phone.trim(),
       clientName: clientName.trim(),
       gstin: gstin.trim().toUpperCase()
     };
@@ -202,6 +207,7 @@ export const SiteSelectionPage: React.FC<Props> = ({
         siteName: cleanKey,
         location: loc,
         supervisor: supervisor || currentUser.username || 'adminbilgi',
+        phone: phone.trim(),
         clientName: clientName.trim() || cleanKey,
         gstin: gstin.trim().toUpperCase(),
         detail: detail,
@@ -223,6 +229,7 @@ export const SiteSelectionPage: React.FC<Props> = ({
             category: category,
             location: loc,
             supervisor: supervisor || currentUser.username,
+            phone: newOngoingEntry.phone,
             client_name: clientName.trim() || cleanKey,
             gstin: gstin.trim().toUpperCase(),
             scope: detail,
@@ -239,6 +246,7 @@ export const SiteSelectionPage: React.FC<Props> = ({
     setSiteLocation('');
     setClientName('');
     setGstin('');
+    setPhone('');
 
     handleLaunchSite(newSite);
   };
@@ -363,6 +371,7 @@ export const SiteSelectionPage: React.FC<Props> = ({
                 onClick={() => {
                   setCategory('Building');
                   setFloorScope('G + 3 Floors');
+                  setPhone('');
                   setIsAddModalOpen(true);
                 }}
                 className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-lg shadow-blue-600/30 cursor-pointer transition active:scale-95"
@@ -404,6 +413,12 @@ export const SiteSelectionPage: React.FC<Props> = ({
                     <p className="text-[11px] text-slate-400 font-mono">
                       Scope: <strong className={isRoad ? 'text-sky-400' : 'text-emerald-400'}>{site.buildingFloors}</strong>
                     </p>
+                    {site.phone && (
+                      <p className="text-[11px] text-slate-400 font-mono flex items-center gap-1">
+                        <Phone className="w-3 h-3 text-emerald-400 shrink-0" />
+                        <span className="text-emerald-400 font-bold">{site.phone}</span>
+                      </p>
+                    )}
                   </div>
 
                   <div className="pt-3 border-t border-[#182643] flex items-center justify-between text-xs text-slate-400">
@@ -426,6 +441,7 @@ export const SiteSelectionPage: React.FC<Props> = ({
                 onClick={() => {
                   setCategory('Building');
                   setFloorScope('G + 3 Floors');
+                  setPhone('');
                   setIsAddModalOpen(true);
                 }}
                 className="p-5 rounded-3xl border-2 border-dashed border-[#1E293B] hover:border-blue-500/50 bg-[#0c1427]/30 hover:bg-[#0c1427] transition-all cursor-pointer flex flex-col items-center justify-center text-center space-y-2 min-h-[140px] group"
@@ -569,17 +585,31 @@ export const SiteSelectionPage: React.FC<Props> = ({
                 />
               </div>
 
-              {/* Site Supervisor */}
-              <div>
-                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
-                  SITE SUPERVISOR
-                </label>
-                <input
-                  type="text"
-                  value={supervisor}
-                  onChange={(e) => setSupervisor(e.target.value)}
-                  className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 text-xs font-sans"
-                />
+              {/* Site Supervisor & Phone No (Side-by-side) */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+                    SITE SUPERVISOR
+                  </label>
+                  <input
+                    type="text"
+                    value={supervisor}
+                    onChange={(e) => setSupervisor(e.target.value)}
+                    className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 text-xs font-sans"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+                    PHONE NO:
+                  </label>
+                  <input
+                    type="tel"
+                    placeholder="e.g. +91 94498 17122"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 text-xs font-mono"
+                  />
+                </div>
               </div>
 
               {/* Building Structure / Floor Scope */}
