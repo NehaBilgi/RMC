@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Layers, Edit2, Save, X, Check, RotateCcw, Lock, Zap, Droplets } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Layers, Edit2, Save, X, Check, RotateCcw, Lock, Zap } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { cloudStorage } from '../../services/cloudStorage';
 
@@ -19,8 +19,8 @@ export interface MixRecipe {
   totalDensity: number;
 }
 
-// Bilgi Buildcon RMC 1 m³ Quality Assurance Cards (Rev. 2, Total Density: 2400.0 kg/m³)
-const DEFAULT_RECIPES_GGBS: Record<string, MixRecipe> = {
+// Bilgi Buildcon RMC 1 m³ Quality Assurance Cards (Rev. 2, Target Yield: 2,400.0 kg/m³)
+export const BILGI_QA_REV2_GGBS: Record<string, MixRecipe> = {
   'M10': { grade: 'M10', targetMpa: 15.0, wcr: 0.65, cementKg: 168, mineralAdmixtureKg: 42, waterLitres: 136, mSandKg: 1057, agg20mmKg: 597, agg10mmKg: 398, admixtureKg: 1.68, totalDensity: 2400 },
   'M15': { grade: 'M15', targetMpa: 20.8, wcr: 0.56, cementKg: 200, mineralAdmixtureKg: 50, waterLitres: 140, mSandKg: 1034, agg20mmKg: 584, agg10mmKg: 390, admixtureKg: 2.00, totalDensity: 2400 },
   'M20': { grade: 'M20', targetMpa: 26.6, wcr: 0.49, cementKg: 240, mineralAdmixtureKg: 60, waterLitres: 147, mSandKg: 1005, agg20mmKg: 567, agg10mmKg: 379, admixtureKg: 2.40, totalDensity: 2400 },
@@ -32,7 +32,7 @@ const DEFAULT_RECIPES_GGBS: Record<string, MixRecipe> = {
   'M50': { grade: 'M50', targetMpa: 58.3, wcr: 0.34, cementKg: 368, mineralAdmixtureKg: 92, waterLitres: 156, mSandKg: 921, agg20mmKg: 520, agg10mmKg: 346, admixtureKg: 3.68, totalDensity: 2400 }
 };
 
-const DEFAULT_RECIPES_FLY_ASH: Record<string, MixRecipe> = {
+export const BILGI_QA_REV2_FLY_ASH: Record<string, MixRecipe> = {
   'M10': { grade: 'M10', targetMpa: 15.0, wcr: 0.65, cementKg: 168, mineralAdmixtureKg: 42, waterLitres: 136, mSandKg: 1057, agg20mmKg: 597, agg10mmKg: 398, admixtureKg: 1.68, totalDensity: 2400 },
   'M15': { grade: 'M15', targetMpa: 20.8, wcr: 0.56, cementKg: 200, mineralAdmixtureKg: 50, waterLitres: 140, mSandKg: 1034, agg20mmKg: 584, agg10mmKg: 390, admixtureKg: 2.00, totalDensity: 2400 },
   'M20': { grade: 'M20', targetMpa: 26.6, wcr: 0.49, cementKg: 240, mineralAdmixtureKg: 60, waterLitres: 147, mSandKg: 1005, agg20mmKg: 567, agg10mmKg: 379, admixtureKg: 2.40, totalDensity: 2400 },
@@ -45,18 +45,16 @@ const DEFAULT_RECIPES_FLY_ASH: Record<string, MixRecipe> = {
 };
 
 const extractCleanSiteName = (name: string): string => {
-  if (!name) return 'DEFAULT';
+  if (!name) return 'BASVARAJ';
   let clean = String(name).trim();
-  if (clean.includes('(')) {
-    clean = clean.split('(')[0].trim();
-  }
+  if (clean.includes('(')) clean = clean.split('(')[0].trim();
   return clean.toUpperCase();
 };
 
 export const MixDesignModule: React.FC = () => {
   const getUserRole = (): 'ADMIN' | 'EMPLOYEE' | 'READ_ONLY' => {
     try {
-      const userRaw = sessionStorage.getItem('concrete360_user');
+      const userRaw = sessionStorage.getItem('concrete360_user') || localStorage.getItem('concrete360_user');
       if (userRaw) {
         const parsed = JSON.parse(userRaw);
         const r = String(parsed.role || '').toUpperCase();
@@ -82,10 +80,10 @@ export const MixDesignModule: React.FC = () => {
           return extractCleanSiteName(activeRaw);
         }
       }
-      const selected = sessionStorage.getItem('concrete360_selected_site');
+      const selected = sessionStorage.getItem('concrete360_selected_site') || localStorage.getItem('concrete360_selected_site');
       if (selected) return extractCleanSiteName(selected);
     } catch {}
-    return 'DEFAULT';
+    return 'BASVARAJ';
   };
 
   const [currentSiteKey, setCurrentSiteKey] = useState<string>(getActiveSiteKey());
@@ -93,7 +91,19 @@ export const MixDesignModule: React.FC = () => {
   const getSiteModeKey = (site: string) => `concrete360_admixture_mode_${site}`;
   const getSiteMixKey = (site: string, mode: AdmixtureMode) => `concrete360_mixes_${site}_${mode}`;
 
-  // Default to GGBS mode per plant QA cards
+  // Check and upgrade outdated local storage values automatically
+  const checkAndUpgradeStorage = (site: string, mode: AdmixtureMode) => {
+    try {
+      const schemaKey = 'concrete360_mix_schema_v2';
+      const isUpgraded = localStorage.getItem(schemaKey);
+      if (!isUpgraded) {
+        localStorage.setItem(getSiteMixKey(site, 'GGBS'), JSON.stringify(BILGI_QA_REV2_GGBS));
+        localStorage.setItem(getSiteMixKey(site, 'FLY_ASH'), JSON.stringify(BILGI_QA_REV2_FLY_ASH));
+        localStorage.setItem(schemaKey, 'true');
+      }
+    } catch {}
+  };
+
   const [admixtureMode, setAdmixtureMode] = useState<AdmixtureMode>(() => {
     try {
       const site = getActiveSiteKey();
@@ -104,50 +114,55 @@ export const MixDesignModule: React.FC = () => {
   });
 
   const getInitialMixes = (site: string, mode: AdmixtureMode): Record<string, MixRecipe> => {
+    checkAndUpgradeStorage(site, mode);
     try {
       const saved = localStorage.getItem(getSiteMixKey(site, mode));
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed['M10'] && parsed['M30']?.waterLitres === 160) {
+          return parsed;
+        }
+      }
     } catch {}
-    return mode === 'GGBS' ? DEFAULT_RECIPES_GGBS : DEFAULT_RECIPES_FLY_ASH;
+    return mode === 'GGBS' ? BILGI_QA_REV2_GGBS : BILGI_QA_REV2_FLY_ASH;
   };
 
   const [mixes, setMixes] = useState<Record<string, MixRecipe>>(() => getInitialMixes(currentSiteKey, admixtureMode));
   const [activeGrade, setActiveGrade] = useState<string>('M25');
   const [isEditing, setIsEditing] = useState<boolean>(false);
-  const [editForm, setEditForm] = useState<MixRecipe>(mixes['M25'] || DEFAULT_RECIPES_GGBS['M25']);
+  const [editForm, setEditForm] = useState<MixRecipe>(mixes['M25'] || BILGI_QA_REV2_GGBS['M25']);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  const handleSiteSync = () => {
-    const newSite = getActiveSiteKey();
-    setCurrentSiteKey(newSite);
+  const syncActiveState = () => {
+    const site = getActiveSiteKey();
+    setCurrentSiteKey(site);
 
     let siteMode: AdmixtureMode = 'GGBS';
     try {
-      const savedMode = localStorage.getItem(getSiteModeKey(newSite)) || localStorage.getItem('concrete360_admixture_mode');
+      const savedMode = localStorage.getItem(getSiteModeKey(site)) || localStorage.getItem('concrete360_admixture_mode');
       if (savedMode === 'GGBS' || savedMode === 'FLY_ASH') {
         siteMode = savedMode;
       }
     } catch {}
 
     setAdmixtureMode(siteMode);
-    const siteMixes = getInitialMixes(newSite, siteMode);
-    setMixes(siteMixes);
+    const resolvedMixes = getInitialMixes(site, siteMode);
+    setMixes(resolvedMixes);
     setIsEditing(false);
-    setEditForm(siteMixes[activeGrade] || (siteMode === 'GGBS' ? DEFAULT_RECIPES_GGBS[activeGrade] : DEFAULT_RECIPES_FLY_ASH[activeGrade]));
+    setEditForm(resolvedMixes[activeGrade] || (siteMode === 'GGBS' ? BILGI_QA_REV2_GGBS[activeGrade] : BILGI_QA_REV2_FLY_ASH[activeGrade]));
   };
 
   useEffect(() => {
-    window.addEventListener('concrete360_site_switched', handleSiteSync);
-    window.addEventListener('concrete360_cloud_synced', handleSiteSync);
-    window.addEventListener('storage', handleSiteSync);
-    window.addEventListener('focus', handleSiteSync);
+    syncActiveState();
+    window.addEventListener('concrete360_site_switched', syncActiveState);
+    window.addEventListener('concrete360_cloud_synced', syncActiveState);
+    window.addEventListener('storage', syncActiveState);
     return () => {
-      window.removeEventListener('concrete360_site_switched', handleSiteSync);
-      window.removeEventListener('concrete360_cloud_synced', handleSiteSync);
-      window.removeEventListener('storage', handleSiteSync);
-      window.removeEventListener('focus', handleSiteSync);
+      window.removeEventListener('concrete360_site_switched', syncActiveState);
+      window.removeEventListener('concrete360_cloud_synced', syncActiveState);
+      window.removeEventListener('storage', syncActiveState);
     };
-  }, [activeGrade]);
+  }, []);
 
   const handleModeSwitch = (newMode: AdmixtureMode) => {
     setAdmixtureMode(newMode);
@@ -159,11 +174,12 @@ export const MixDesignModule: React.FC = () => {
     const newMixes = getInitialMixes(currentSiteKey, newMode);
     setMixes(newMixes);
     setIsEditing(false);
-    setEditForm(newMixes[activeGrade] || (newMode === 'GGBS' ? DEFAULT_RECIPES_GGBS[activeGrade] : DEFAULT_RECIPES_FLY_ASH[activeGrade]));
-    setSuccessMessage(`Switched ${currentSiteKey} to ${newMode === 'GGBS' ? 'GGBS (20% Binder)' : 'FLY ASH'} proportions!`);
+    setEditForm(newMixes[activeGrade] || (newMode === 'GGBS' ? BILGI_QA_REV2_GGBS[activeGrade] : BILGI_QA_REV2_FLY_ASH[activeGrade]));
+    setSuccessMessage(`Switched to ${newMode === 'GGBS' ? 'GGBS (20% Binder Replacement)' : 'Fly Ash'} proportions!`);
     setTimeout(() => setSuccessMessage(null), 3000);
   };
 
+  // Broadcast to other components & storage
   useEffect(() => {
     try {
       localStorage.setItem(getSiteMixKey(currentSiteKey, admixtureMode), JSON.stringify(mixes));
@@ -193,19 +209,17 @@ export const MixDesignModule: React.FC = () => {
     } catch {}
   }, [mixes, admixtureMode, currentSiteKey]);
 
-  const currentMix = mixes[activeGrade] || (admixtureMode === 'GGBS' ? DEFAULT_RECIPES_GGBS[activeGrade] : DEFAULT_RECIPES_FLY_ASH[activeGrade]);
+  const currentMix = mixes[activeGrade] || (admixtureMode === 'GGBS' ? BILGI_QA_REV2_GGBS[activeGrade] : BILGI_QA_REV2_FLY_ASH[activeGrade]);
 
   const handleStartEdit = () => {
     if (!canModifyMixes) {
-      alert('Permission Denied: Only ADMIN accounts can modify concrete mix design proportions.');
+      alert('Permission Denied: Only ADMIN accounts can modify mix proportions.');
       return;
     }
     setEditForm({ ...currentMix });
     setIsEditing(true);
   };
 
-  // Re-balances aggregate quantities matching IS 10262:2019 & Bilgi QA specifications
-  // 51.5% Fine Aggregate (M-Sand) and 48.5% Coarse Aggregate split 60:40 (20mm:10mm)
   const balanceAggregatesTo2400 = (baseForm: MixRecipe): MixRecipe => {
     const fixedWeight = baseForm.cementKg + baseForm.mineralAdmixtureKg + baseForm.waterLitres + baseForm.admixtureKg;
     const remainingAggregateWeight = Math.max(0, 2400 - fixedWeight);
@@ -259,24 +273,22 @@ export const MixDesignModule: React.FC = () => {
       await cloudStorage.pullFromCloud();
     }
 
-    setSuccessMessage(`Mix design for ${activeGrade} saved with exact 2400 kg/m³ yield!`);
+    setSuccessMessage(`Mix design for ${activeGrade} saved with exact 2,400.0 kg/m³ yield!`);
     setTimeout(() => setSuccessMessage(null), 3000);
   };
 
-  const handleResetMix = () => {
-    if (!canModifyMixes) {
-      alert('Permission Denied: Only ADMIN accounts can reset mix designs.');
-      return;
-    }
-    const defaultDict = admixtureMode === 'GGBS' ? DEFAULT_RECIPES_GGBS : DEFAULT_RECIPES_FLY_ASH;
-    if (window.confirm(`Reset ${activeGrade} (${admixtureMode}) to Bilgi QA Card specifications (2400 kg/m³)?`)) {
-      const defaultVal = defaultDict[activeGrade];
-      setMixes(prev => ({
-        ...prev,
-        [activeGrade]: { ...defaultVal }
-      }));
-      setSuccessMessage(`${activeGrade} reset to Bilgi QA Card defaults!`);
-      setTimeout(() => setSuccessMessage(null), 3000);
+  // Restores all grades to QA Card defaults immediately
+  const handleForceResetAll = () => {
+    if (!canModifyMixes) return;
+    if (window.confirm(`Force-load Bilgi QA Batch Cards (Rev. 2, M10-M40) for ${currentSiteKey}?`)) {
+      const freshMixes = admixtureMode === 'GGBS' ? { ...BILGI_QA_REV2_GGBS } : { ...BILGI_QA_REV2_FLY_ASH };
+      setMixes(freshMixes);
+      localStorage.setItem(getSiteMixKey(currentSiteKey, admixtureMode), JSON.stringify(freshMixes));
+      localStorage.setItem('concrete360_mix_schema_v2', 'true');
+      setEditForm(freshMixes[activeGrade]);
+      setIsEditing(false);
+      setSuccessMessage('Successfully loaded Bilgi Buildcon RMC QA Cards (Rev. 2)!');
+      setTimeout(() => setSuccessMessage(null), 3500);
     }
   };
 
@@ -293,36 +305,45 @@ export const MixDesignModule: React.FC = () => {
           <h2 className="text-xl font-black text-white mt-1">Ready-Mix Concrete Mix Proportioning & Quality Control</h2>
         </div>
 
-        {/* Command Switch: Site-Saved Admixture Preference */}
-        <div className="bg-[#070d1a] border border-[#1b273d] p-1.5 rounded-2xl flex items-center gap-1.5 shadow-xl font-mono shrink-0">
-          <div className="px-3 py-1 flex items-center gap-1.5 text-slate-400 text-xs font-bold uppercase tracking-wider">
-            <Zap className="w-3.5 h-3.5 text-amber-400" />
-            <span>COMMAND:</span>
+        {/* Command Controls */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleForceResetAll}
+            className="px-3.5 py-2 rounded-xl text-xs font-mono font-bold text-amber-400 hover:text-white bg-amber-500/10 hover:bg-amber-600/30 border border-amber-500/30 transition flex items-center gap-1.5 cursor-pointer"
+            title="Reload Bilgi QA Rev. 2 Card Proportions"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>Load QA Cards</span>
+          </button>
+
+          <div className="bg-[#070d1a] border border-[#1b273d] p-1.5 rounded-2xl flex items-center gap-1.5 shadow-xl font-mono shrink-0">
+            <div className="px-3 py-1 flex items-center gap-1.5 text-slate-400 text-xs font-bold uppercase tracking-wider">
+              <Zap className="w-3.5 h-3.5 text-amber-400" />
+              <span>COMMAND:</span>
+            </div>
+
+            <button
+              onClick={() => handleModeSwitch('GGBS')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                admixtureMode === 'GGBS'
+                  ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30'
+                  : 'text-slate-400 hover:text-white hover:bg-[#121c2d]'
+              }`}
+            >
+              <span>USE GGBS (20%)</span>
+            </button>
+
+            <button
+              onClick={() => handleModeSwitch('FLY_ASH')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                admixtureMode === 'FLY_ASH'
+                  ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30'
+                  : 'text-slate-400 hover:text-white hover:bg-[#121c2d]'
+              }`}
+            >
+              <span>USE FLY ASH</span>
+            </button>
           </div>
-
-          <button
-            onClick={() => handleModeSwitch('GGBS')}
-            disabled={!canModifyMixes && userRole === 'READ_ONLY'}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-              admixtureMode === 'GGBS'
-                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30'
-                : 'text-slate-400 hover:text-white hover:bg-[#121c2d]'
-            }`}
-          >
-            <span>USE GGBS (20%)</span>
-          </button>
-
-          <button
-            onClick={() => handleModeSwitch('FLY_ASH')}
-            disabled={!canModifyMixes && userRole === 'READ_ONLY'}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-              admixtureMode === 'FLY_ASH'
-                ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30'
-                : 'text-slate-400 hover:text-white hover:bg-[#121c2d]'
-            }`}
-          >
-            <span>USE FLY ASH</span>
-          </button>
         </div>
       </div>
 
@@ -335,8 +356,8 @@ export const MixDesignModule: React.FC = () => {
 
       {/* Grade Selector Tabs: Includes M10 to M50 */}
       <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-2 font-mono">
-        {Object.keys(DEFAULT_RECIPES_GGBS).map((gradeKey) => {
-          const m = mixes[gradeKey] || (admixtureMode === 'GGBS' ? DEFAULT_RECIPES_GGBS[gradeKey] : DEFAULT_RECIPES_FLY_ASH[gradeKey]);
+        {Object.keys(BILGI_QA_REV2_GGBS).map((gradeKey) => {
+          const m = mixes[gradeKey] || (admixtureMode === 'GGBS' ? BILGI_QA_REV2_GGBS[gradeKey] : BILGI_QA_REV2_FLY_ASH[gradeKey]);
           const isActive = activeGrade === gradeKey;
           return (
             <button
@@ -380,23 +401,13 @@ export const MixDesignModule: React.FC = () => {
           <div className="flex items-center gap-2">
             {canModifyMixes ? (
               !isEditing ? (
-                <>
-                  <button
-                    onClick={handleStartEdit}
-                    className="px-4 py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer font-mono transition"
-                  >
-                    <Edit2 className="w-3.5 h-3.5" />
-                    <span>Edit Mix</span>
-                  </button>
-                  <button
-                    onClick={handleResetMix}
-                    className="px-4 py-2 bg-[#121c2d] hover:bg-[#1a263d] text-cyan-400 border border-cyan-500/30 font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer font-mono transition"
-                    title={`Reset to Bilgi QA Card Proportions`}
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                    <span>Reset</span>
-                  </button>
-                </>
+                <button
+                  onClick={handleStartEdit}
+                  className="px-4 py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer font-mono transition"
+                >
+                  <Edit2 className="w-3.5 h-3.5" />
+                  <span>Edit Mix</span>
+                </button>
               ) : (
                 <button
                   onClick={() => setIsEditing(false)}
@@ -464,7 +475,7 @@ export const MixDesignModule: React.FC = () => {
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">PCE ADMIXTURE (0.80% BINDER)</span>
               <div className="text-2xl font-extrabold text-rose-400">{currentMix.admixtureKg} kg</div>
               <span className="text-[11px] text-emerald-400 font-bold block">
-                Approx. {(currentMix.admixtureKg / 1.08).toFixed(2)} Litres • Density: 2,400.0 kg/m³
+                Approx. {(currentMix.admixtureKg / 1.08).toFixed(2)} Litres • Total Density: 2,400.0 kg/m³
               </span>
             </div>
           </div>
