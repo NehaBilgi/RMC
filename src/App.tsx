@@ -19,7 +19,7 @@ export default function App() {
     }
   });
 
-  // 2. Active site selection (Strictly null unless user explicitly clicks a site card)
+  // 2. Active site selection (Strictly null on fresh login until chosen)
   const [selectedSite, setSelectedSite] = useState<string | null>(() => {
     try {
       return sessionStorage.getItem('concrete360_selected_site') || null;
@@ -106,7 +106,6 @@ export default function App() {
   // Listen strictly to explicit site change actions
   useEffect(() => {
     const handleSiteSwitch = (e: any) => {
-      // ONLY change site if a valid non-empty string site name is passed in e.detail
       if (typeof e?.detail === 'string' && e.detail.trim().length > 0) {
         setSelectedSite(e.detail.trim());
       } else if (e?.detail === null || e?.detail === '') {
@@ -115,7 +114,6 @@ export default function App() {
         localStorage.removeItem('concrete360_active_site');
         localStorage.removeItem('concrete360_selected_site');
       }
-      // Note: Never auto-read localStorage fallback here to prevent premature bypass
     };
 
     window.addEventListener('concrete360_site_switched', handleSiteSwitch);
@@ -158,7 +156,7 @@ export default function App() {
           onLoginSuccess={(loggedInUser) => {
             try {
               sessionStorage.setItem('concrete360_user', JSON.stringify(loggedInUser));
-              // Clear any cached site from localStorage and sessionStorage
+              // Clear cached site to ensure fresh routing directly to the creation / site selection modal
               sessionStorage.removeItem('concrete360_selected_site');
               localStorage.removeItem('concrete360_active_site');
               localStorage.removeItem('concrete360_selected_site');
@@ -173,7 +171,7 @@ export default function App() {
     );
   }
 
-  // 2. Logged in, site not chosen -> Show Site Selection (stays here until a card is clicked)
+  // 2. Logged in, site not chosen -> Show Site Selection with the modal directly open
   if (!selectedSite) {
     return (
       <div className={`app-theme ${themeClass}`}>
