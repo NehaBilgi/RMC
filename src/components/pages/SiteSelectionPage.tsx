@@ -98,8 +98,8 @@ export const SiteSelectionPage: React.FC<Props> = ({
   const [sites, setSites] = useState<any[]>(loadStoredSites);
   const [selectedTypeFilter, setSelectedTypeFilter] = useState<'ALL' | 'BUILDING' | 'ROAD'>(projectType);
 
-  // Directly opens the creation modal upon arriving at the site selection page
-  const [isAddModalOpen, setIsAddModalOpen] = useState(true);
+  // Closed by default - will only open when you click "+ Add"
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
   // Form Fields
   const [category, setCategory] = useState<'Building' | 'Road'>('Building');
@@ -152,7 +152,6 @@ export const SiteSelectionPage: React.FC<Props> = ({
         })
       );
 
-      // Force view directly to Dashboard
       localStorage.setItem('concrete360_active_tab', 'dashboard');
       sessionStorage.setItem('concrete360_active_tab', 'dashboard');
 
@@ -361,7 +360,11 @@ export const SiteSelectionPage: React.FC<Props> = ({
             {canCreateSite && (
               <button
                 type="button"
-                onClick={() => setIsAddModalOpen(true)}
+                onClick={() => {
+                  setCategory('Building');
+                  setFloorScope('G + 3 Floors');
+                  setIsAddModalOpen(true);
+                }}
                 className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-lg shadow-blue-600/30 cursor-pointer transition active:scale-95"
               >
                 + Add Ongoing Building Section
@@ -420,7 +423,11 @@ export const SiteSelectionPage: React.FC<Props> = ({
             {canCreateSite && (
               <button
                 type="button"
-                onClick={() => setIsAddModalOpen(true)}
+                onClick={() => {
+                  setCategory('Building');
+                  setFloorScope('G + 3 Floors');
+                  setIsAddModalOpen(true);
+                }}
                 className="p-5 rounded-3xl border-2 border-dashed border-[#1E293B] hover:border-blue-500/50 bg-[#0c1427]/30 hover:bg-[#0c1427] transition-all cursor-pointer flex flex-col items-center justify-center text-center space-y-2 min-h-[140px] group"
               >
                 <div className="w-10 h-10 rounded-xl bg-blue-600/10 group-hover:bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400 transition-colors">
@@ -440,7 +447,7 @@ export const SiteSelectionPage: React.FC<Props> = ({
         CONCRETE 360 • Bilgi RMC Field ERP
       </div>
 
-      {/* POPUP MODAL: ADD ONGOING BUILDING / ROAD SECTION */}
+      {/* MODAL: ADD ONGOING BUILDING SECTION (Manual Click Only) */}
       {isAddModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white text-slate-800 rounded-3xl w-full max-w-md p-6 shadow-2xl relative max-h-[94vh] overflow-y-auto">
