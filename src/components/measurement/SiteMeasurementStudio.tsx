@@ -168,17 +168,43 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
     }
   };
 
+  const getSavedWastage = (siteKey: string): number => {
+    try {
+      const saved = localStorage.getItem(`concrete360_wastage_percent_${siteKey}`);
+      if (saved !== null && saved !== '') {
+        const parsed = parseFloat(saved);
+        if (!isNaN(parsed)) return Math.max(0, parsed);
+      }
+      const sessionRaw = localStorage.getItem('concrete360_measurement');
+      if (sessionRaw) {
+        const parsedS = JSON.parse(sessionRaw);
+        if (parsedS.safetyWastagePercent !== undefined && parsedS.safetyWastagePercent !== null) {
+          const parsed = parseFloat(parsedS.safetyWastagePercent);
+          if (!isNaN(parsed)) return Math.max(0, parsed);
+        }
+      }
+      if (session?.safetyWastagePercent !== undefined && session?.safetyWastagePercent !== null) {
+        return session.safetyWastagePercent;
+      }
+    } catch {}
+    return 5;
+  };
+
+  const [wastagePercent, setWastagePercent] = useState<number | ''>(() => getSavedWastage(getActiveSiteKey()));
+
   useEffect(() => {
     loadRegisteredSites();
     const siteKey = getActiveSiteKey();
     setCurrentSiteKey(siteKey);
     loadSiteMeasurements(siteKey);
+    setWastagePercent(getSavedWastage(siteKey));
 
     const handleSiteSwitch = () => {
       const newKey = getActiveSiteKey();
       setCurrentSiteKey(newKey);
       loadRegisteredSites();
       loadSiteMeasurements(newKey);
+      setWastagePercent(getSavedWastage(newKey));
     };
 
     window.addEventListener('concrete360_site_switched', handleSiteSwitch);
@@ -212,9 +238,6 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
   const [modalWorkDate, setModalWorkDate] = useState<string>(new Date().toISOString().split('T')[0]);
 
   const [mixerCapacityM3, setMixerCapacityM3] = useState<number>(session?.transitTruckCapacityM3 || 7.0);
-  const [wastagePercent, setWastagePercent] = useState<number | ''>(
-    session?.safetyWastagePercent !== undefined ? session.safetyWastagePercent : 5
-  );
   const [unitMode, setUnitMode] = useState<UnitSystem>('METRIC');
 
   const [selectedCategories, setSelectedCategories] = useState<StructuralType[]>(['SLAB']);
@@ -657,9 +680,23 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
                 const val = e.target.value;
                 if (val === '') {
                   setWastagePercent('');
+                  try {
+                    localStorage.setItem(`concrete360_wastage_percent_${currentSiteKey}`, '');
+                  } catch {}
                 } else {
                   const num = parseFloat(val);
-                  setWastagePercent(isNaN(num) ? 0 : Math.max(0, num));
+                  const cleanVal = isNaN(num) ? 0 : Math.max(0, num);
+                  setWastagePercent(cleanVal);
+                  try {
+                    localStorage.setItem(`concrete360_wastage_percent_${currentSiteKey}`, String(cleanVal));
+
+                    const measurementRaw = localStorage.getItem('concrete360_measurement');
+                    const parsed = measurementRaw ? JSON.parse(measurementRaw) : {};
+                    localStorage.setItem(
+                      'concrete360_measurement',
+                      JSON.stringify({ ...parsed, safetyWastagePercent: cleanVal })
+                    );
+                  } catch {}
                 }
               }}
               className="w-14 text-right bg-[#10192E] border border-[#1E2E4E] rounded px-1.5 py-0.5 text-xs text-cyan-300 font-bold outline-none focus:border-cyan-500"
