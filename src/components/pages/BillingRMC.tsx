@@ -612,46 +612,6 @@ export const BillingRMC: React.FC = () => {
     const sgst = isGstActive ? sub * 0.09 : 0;
     const calculatedGrandTotal = sub + cgst + sgst;
 
-    const gradeKey = (inv.mixGrade || 'M20').substring(0, 3).toUpperCase();
-    let recipe = DEFAULT_RECIPES[gradeKey] || DEFAULT_RECIPES['M20'];
-
-    let activeAdmixtureMode: 'FLY_ASH' | 'GGBS' = 'FLY_ASH';
-    try {
-      const savedMode = localStorage.getItem(`concrete360_admixture_mode_${currentSiteKey}`) || localStorage.getItem('concrete360_admixture_mode');
-      if (savedMode === 'GGBS' || savedMode === 'FLY_ASH') {
-        activeAdmixtureMode = savedMode;
-      }
-      const rawMixes = localStorage.getItem(`concrete360_mix_designs_${currentSiteKey}`) || localStorage.getItem('concrete360_mix_designs');
-      if (rawMixes) {
-        const parsedList = JSON.parse(rawMixes);
-        if (Array.isArray(parsedList)) {
-          const match = parsedList.find((m: any) => String(m.grade || m.code || '').toUpperCase().includes(gradeKey));
-          if (match) {
-            recipe = {
-              cementKgPerM3: Number(match.cementKgPerM3 ?? recipe.cementKgPerM3),
-              flyAshKgPerM3: Number(match.flyAshKgPerM3 ?? recipe.flyAshKgPerM3),
-              ggbsKgPerM3: Number(match.ggbsKgPerM3 ?? recipe.ggbsKgPerM3 ?? 0),
-              waterLitresPerM3: Number(match.waterLitresPerM3 ?? recipe.waterLitresPerM3),
-              mSandKgPerM3: Number(match.mSandKgPerM3 ?? recipe.mSandKgPerM3),
-              agg20mmKgPerM3: Number(match.agg20mmKgPerM3 ?? recipe.agg20mmKgPerM3),
-              agg10mmKgPerM3: Number(match.agg10mmKgPerM3 ?? recipe.agg10mmKgPerM3)
-            };
-            if (match.admixtureMode) activeAdmixtureMode = match.admixtureMode;
-          }
-        }
-      }
-    } catch {}
-
-    const useGgbs = activeAdmixtureMode === 'GGBS' || (recipe.ggbsKgPerM3 > 0 && (!recipe.flyAshKgPerM3 || recipe.flyAshKgPerM3 === 0));
-    const cement2Prop = useGgbs ? (recipe.ggbsKgPerM3 || recipe.mineralAdmixtureKg || 120) : (recipe.flyAshKgPerM3 || recipe.mineralAdmixtureKg || 90);
-
-    const cement1Kg = Math.round(inv.volumeM3 * recipe.cementKgPerM3);
-    const cement2Kg = Math.round(inv.volumeM3 * cement2Prop);
-    const mSandKg = Math.round(inv.volumeM3 * recipe.mSandKgPerM3);
-    const agg20Kg = Math.round(inv.volumeM3 * recipe.agg20mmKgPerM3);
-    const agg10Kg = Math.round(inv.volumeM3 * recipe.agg10mmKgPerM3);
-    const waterLtr = Math.round(inv.volumeM3 * recipe.waterLitresPerM3);
-
     let linkedReport = null;
     if (inv.workElementId && measurementItems.length > 0) {
       linkedReport = measurementItems.find(it => it.id === inv.workElementId);
@@ -682,14 +642,12 @@ export const BillingRMC: React.FC = () => {
             th { background: #0f172a; color: #ffffff; font-size: 9px; font-weight: bold; text-transform: uppercase; padding: 6px 8px; text-align: left; border: 1px solid #0f172a; }
             td { padding: 6px 8px; border: 1px solid #cbd5e1; font-size: 10px; }
             .text-right { text-align: right; }
-            .summary-section { display: flex; justify-content: space-between; margin-bottom: 15px; }
+            .summary-section { display: flex; justify-content: space-between; margin-bottom: 25px; }
             .bank-box { width: 55%; border: 1px solid #cbd5e1; padding: 8px; background: #f8fafc; font-size: 9px; }
             .totals-box { width: 42%; border: 1px solid #cbd5e1; }
             .totals-row { display: flex; justify-content: space-between; padding: 5px 8px; border-bottom: 1px solid #cbd5e1; font-size: 10px; }
             .totals-row:last-child { border-bottom: none; font-weight: bold; background: #f1f5f9; font-size: 11px; color: #0f172a; }
-            .material-breakdown { border: 1px solid #cbd5e1; background: #f8fafc; padding: 10px; font-size: 10px; margin-bottom: 20px; }
-            .material-breakdown-title { font-weight: bold; color: #0f172a; margin-bottom: 6px; text-transform: uppercase; font-size: 10px; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; }
-            .signatures { display: flex; justify-content: space-between; margin-top: 25px; font-size: 9px; }
+            .signatures { display: flex; justify-content: space-between; margin-top: 40px; font-size: 9px; }
             .sig-line { width: 160px; border-top: 1px dashed #64748b; text-align: center; padding-top: 4px; }
           </style>
         </head>
@@ -769,51 +727,6 @@ export const BillingRMC: React.FC = () => {
               ` : ''}
               <div class="totals-row" style="font-weight: bold; background: #f1f5f9; color: #0f172a; font-size: 11px;"><span>PAYABLE AMOUNT:</span><span>₹${Math.round(calculatedGrandTotal).toLocaleString('en-IN')}</span></div>
             </div>
-          </div>
-
-          <div class="material-breakdown">
-            <div class="material-breakdown-title">BATCH MATERIAL BREAKDOWN TABLE (REPORT CONSUMPTION FOR ${inv.volumeM3} M³):</div>
-            <table>
-              <thead>
-                <tr>
-                  <th>Material Component</th>
-                  <th class="text-right">Proportion per m³</th>
-                  <th class="text-right">Total Quantity (${inv.volumeM3} m³)</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>Cement Silo 1</td>
-                  <td class="text-right">${recipe.cementKgPerM3} kg/m³</td>
-                  <td class="text-right"><strong>${cement1Kg.toLocaleString('en-IN')} kg</strong></td>
-                </tr>
-                <tr>
-                  <td>Cement Silo 2</td>
-                  <td class="text-right">${cement2Prop} kg/m³</td>
-                  <td class="text-right"><strong>${cement2Kg.toLocaleString('en-IN')} kg</strong></td>
-                </tr>
-                <tr>
-                  <td>M-Sand (Zone II)</td>
-                  <td class="text-right">${recipe.mSandKgPerM3} kg/m³</td>
-                  <td class="text-right"><strong>${mSandKg.toLocaleString('en-IN')} kg</strong></td>
-                </tr>
-                <tr>
-                  <td>20MM Aggregate</td>
-                  <td class="text-right">${recipe.agg20mmKgPerM3} kg/m³</td>
-                  <td class="text-right"><strong>${agg20Kg.toLocaleString('en-IN')} kg</strong></td>
-                </tr>
-                <tr>
-                  <td>10MM Aggregate</td>
-                  <td class="text-right">${recipe.agg10mmKgPerM3} kg/m³</td>
-                  <td class="text-right"><strong>${agg10Kg.toLocaleString('en-IN')} kg</strong></td>
-                </tr>
-                <tr>
-                  <td>Batching Water</td>
-                  <td class="text-right">${recipe.waterLitresPerM3} L/m³</td>
-                  <td class="text-right"><strong>${waterLtr.toLocaleString('en-IN')} Litres</strong></td>
-                </tr>
-              </tbody>
-            </table>
           </div>
 
           <div class="signatures">
@@ -1368,7 +1281,7 @@ export const BillingRMC: React.FC = () => {
               <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#1b273d]">
                 <button
                   type="button"
-                  onClick={() =>setIsModalOpen(false)}
+                  onClick={() => setIsModalOpen(false)}
                   className="px-5 py-3 bg-[#070d1a] hover:bg-[#121c2d] text-slate-300 font-bold rounded-xl cursor-pointer text-xs"
                 >
                   Cancel
