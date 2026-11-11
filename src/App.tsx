@@ -115,7 +115,6 @@ export default function App() {
   // Listen for site deletions and switch events
   useEffect(() => {
     const handleSiteSwitch = (e: any) => {
-      // Only reset if detail is explicitly an empty string or null (indicating an explicit deletion)
       if (e?.detail === '' || e?.detail === null) {
         setSelectedSite(null);
         sessionStorage.removeItem('concrete360_selected_site');
@@ -123,7 +122,6 @@ export default function App() {
       } else if (typeof e?.detail === 'string' && e.detail.trim().length > 0) {
         setSelectedSite(e.detail.trim());
       } else {
-        // If an update or sync occurred without passing a new site key, retain active site
         const existingSite =
           sessionStorage.getItem('concrete360_selected_site') ||
           localStorage.getItem('concrete360_selected_site');
@@ -147,6 +145,13 @@ export default function App() {
     } catch {}
   }, [measurementSession]);
 
+  // Action to return to Site Selection page
+  const handleSwitchSite = () => {
+    sessionStorage.removeItem('concrete360_selected_site');
+    localStorage.removeItem('concrete360_active_site');
+    setSelectedSite(null);
+  };
+
   // Logout action resets session completely and signs out of Supabase
   const handleLogout = () => {
     sessionStorage.removeItem('concrete360_user');
@@ -159,7 +164,7 @@ export default function App() {
     setSelectedSite(null);
   };
 
-  // STEP 1: Always show Login page if no active user session
+  // STEP 1: Show Login page if no active user session
   if (!user) {
     return (
       <div className={`app-theme ${themeClass}`}>
@@ -167,8 +172,12 @@ export default function App() {
           onLoginSuccess={(loggedInUser) => {
             try {
               sessionStorage.setItem('concrete360_user', JSON.stringify(loggedInUser));
+              // Always reset site so login routes directly to Site Selection
+              sessionStorage.removeItem('concrete360_selected_site');
+              localStorage.removeItem('concrete360_active_site');
             } catch {}
             setUser(loggedInUser);
+            setSelectedSite(null);
           }}
           theme={theme}
           onToggleTheme={() => setTheme((current) => (current === 'light' ? 'dark' : 'light'))}
@@ -177,12 +186,12 @@ export default function App() {
     );
   }
 
-  // STEP 2: Always show Site Selection page after login if no site is active for this session
+  // STEP 2: Show Site Selection page immediately after login until a site is picked
   if (!selectedSite) {
     return (
       <div className={`app-theme ${themeClass}`}>
         <SiteSelectionPage
-          projectType="BUILDING"
+          projectType="ALL"
           onSelectSite={(siteName) => {
             sessionStorage.setItem('concrete360_selected_site', siteName);
             setSelectedSite(siteName);
@@ -195,7 +204,7 @@ export default function App() {
     );
   }
 
-  // STEP 3: Enter main workspace once both user login & site selection are completed
+  // STEP 3: Enter main workspace once user login & site selection are completed
   return (
     <div className={`app-theme ${themeClass} relative min-h-screen font-sans`}>
       <Sidebar
@@ -203,6 +212,7 @@ export default function App() {
         onUpdateMeasurementSession={setMeasurementSession}
         user={user}
         onLogout={handleLogout}
+        onSwitchSite={handleSwitchSite}
         theme={theme}
         onToggleTheme={() => setTheme((current) => (current === 'light' ? 'dark' : 'light'))}
       />
