@@ -95,7 +95,7 @@ export const SiteMaterialReportModule: React.FC = () => {
   const [selectedWorkId, setSelectedWorkId] = useState<string>('ALL');
 
   const [truckCapacityM3, setTruckCapacityM3] = useState<number>(9);
-  const [wastagePercent, setWastagePercent] = useState<number>(5);
+  const [wastagePercent, setWastagePercent] = useState<number | ''>(5);
   const [admixtureMode, setAdmixtureMode] = useState<'FLY_ASH' | 'GGBS'>('FLY_ASH');
   const [mixRecipes, setMixRecipes] = useState<Record<string, MixRecipe>>(FALLBACK_RECIPES_FLY_ASH);
   const [selectedGrade, setSelectedGrade] = useState<string>('M20');
@@ -207,6 +207,10 @@ export const SiteMaterialReportModule: React.FC = () => {
     };
   }, []);
 
+  const parsedWastage = useMemo(() => {
+    return wastagePercent === '' ? 0 : Number(wastagePercent);
+  }, [wastagePercent]);
+
   const netTargetVolumeM3 = useMemo(() => {
     if (selectedWorkId === 'ALL') {
       const total = measurementItems.reduce((sum, it) => sum + (Number(it.volumeM3) || 0), 0);
@@ -228,8 +232,8 @@ export const SiteMaterialReportModule: React.FC = () => {
   }, [measurementItems, selectedWorkId, currentSiteKey]);
 
   const targetVolumeM3 = useMemo(() => {
-    return netTargetVolumeM3 * (1 + wastagePercent / 100);
-  }, [netTargetVolumeM3, wastagePercent]);
+    return netTargetVolumeM3 * (1 + parsedWastage / 100);
+  }, [netTargetVolumeM3, parsedWastage]);
 
   useEffect(() => {
     if (selectedWorkId !== 'ALL') {
@@ -297,7 +301,7 @@ export const SiteMaterialReportModule: React.FC = () => {
               <span>{admixtureMode === 'FLY_ASH' ? 'FLY ASH MODE' : 'GGBS MODE'}</span>
             </span>
           </div>
-          <h2 className="text-xl font-black text-white mt-1">Material Consumption &amp; Reports</h2>
+          <h2 className="text-xl font-black text-white mt-1">Material Consumption & Reports</h2>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
@@ -380,16 +384,25 @@ export const SiteMaterialReportModule: React.FC = () => {
             <span className="text-[9px] text-slate-400 font-bold uppercase">Wastage %</span>
             {isReadOnly ? (
               <span className="text-xs text-cyan-300 font-bold px-1.5 py-1 mt-1">
-                {wastagePercent}%
+                {wastagePercent === '' ? 0 : wastagePercent}%
               </span>
             ) : (
               <input
                 type="number"
                 min="0"
-                max="30"
+                max="100"
+                step="any"
                 value={wastagePercent}
-                onChange={(e) => setWastagePercent(Math.max(0, Number(e.target.value)))}
-                className="w-12 text-right bg-[#070d1a] border border-[#1b273d] rounded-lg px-1.5 py-1 text-xs text-cyan-300 font-bold outline-none mt-1"
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === '') {
+                    setWastagePercent('');
+                  } else {
+                    const num = parseFloat(val);
+                    setWastagePercent(isNaN(num) ? 0 : Math.max(0, num));
+                  }
+                }}
+                className="w-14 text-right bg-[#070d1a] border border-[#1b273d] rounded-lg px-1.5 py-1 text-xs text-cyan-300 font-bold outline-none mt-1 focus:border-cyan-500"
                 title="Adjust Wastage Percentage"
               />
             )}
@@ -422,7 +435,7 @@ export const SiteMaterialReportModule: React.FC = () => {
           </div>
           <div className="flex items-center gap-2">
             <span className="text-xs font-mono text-slate-400 shrink-0">
-              Volume: <strong className="text-cyan-400">{targetVolumeM3.toFixed(2)} m³</strong> (Net: {netTargetVolumeM3.toFixed(2)} m³ + {wastagePercent}%) | Grade: <strong className="text-white">{selectedGrade}</strong>
+              Volume: <strong className="text-cyan-400">{targetVolumeM3.toFixed(2)} m³</strong> (Net: {netTargetVolumeM3.toFixed(2)} m³ + {parsedWastage}%) | Grade: <strong className="text-white">{selectedGrade}</strong>
             </span>
             {isReadOnly && (
               <span className="text-slate-500 text-[10px] inline-flex items-center gap-1 font-mono border border-slate-700 px-2 py-0.5 rounded-md">
