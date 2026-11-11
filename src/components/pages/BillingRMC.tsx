@@ -643,11 +643,11 @@ export const BillingRMC: React.FC = () => {
     } catch {}
 
     const useGgbs = activeAdmixtureMode === 'GGBS' || (recipe.ggbsKgPerM3 > 0 && (!recipe.flyAshKgPerM3 || recipe.flyAshKgPerM3 === 0));
-    const mineralAdmixtureName = useGgbs ? 'GGBS (Slag)' : 'Fly Ash';
-    const mineralAdmixtureProp = useGgbs ? (recipe.ggbsKgPerM3 || recipe.mineralAdmixtureKg || 120) : (recipe.flyAshKgPerM3 || recipe.mineralAdmixtureKg || 90);
+    const cement2Label = useGgbs ? 'Cement 2 (GGBS)' : 'Cement 2 (Fly Ash)';
+    const cement2Prop = useGgbs ? (recipe.ggbsKgPerM3 || recipe.mineralAdmixtureKg || 120) : (recipe.flyAshKgPerM3 || recipe.mineralAdmixtureKg || 90);
 
-    const cementKg = Math.round(inv.volumeM3 * recipe.cementKgPerM3);
-    const mineralKg = Math.round(inv.volumeM3 * mineralAdmixtureProp);
+    const cement1Kg = Math.round(inv.volumeM3 * recipe.cementKgPerM3);
+    const cement2Kg = Math.round(inv.volumeM3 * cement2Prop);
     const mSandKg = Math.round(inv.volumeM3 * recipe.mSandKgPerM3);
     const agg20Kg = Math.round(inv.volumeM3 * recipe.agg20mmKgPerM3);
     const agg10Kg = Math.round(inv.volumeM3 * recipe.agg10mmKgPerM3);
@@ -785,14 +785,14 @@ export const BillingRMC: React.FC = () => {
               </thead>
               <tbody>
                 <tr>
-                  <td>Cement (OPC 53)</td>
+                  <td>Cement 1 (OPC 53)</td>
                   <td class="text-right">${recipe.cementKgPerM3} kg/m³</td>
-                  <td class="text-right"><strong>${cementKg.toLocaleString('en-IN')} kg</strong></td>
+                  <td class="text-right"><strong>${cement1Kg.toLocaleString('en-IN')} kg</strong></td>
                 </tr>
                 <tr>
-                  <td>${mineralAdmixtureName}</td>
-                  <td class="text-right">${mineralAdmixtureProp} kg/m³</td>
-                  <td class="text-right"><strong>${mineralKg.toLocaleString('en-IN')} kg</strong></td>
+                  <td>${cement2Label}</td>
+                  <td class="text-right">${cement2Prop} kg/m³</td>
+                  <td class="text-right"><strong>${cement2Kg.toLocaleString('en-IN')} kg</strong></td>
                 </tr>
                 <tr>
                   <td>M-Sand (Zone II)</td>
