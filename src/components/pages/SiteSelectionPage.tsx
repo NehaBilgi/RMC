@@ -95,7 +95,10 @@ export const SiteSelectionPage: React.FC<Props> = ({
 
   const [sites, setSites] = useState<any[]>(loadStoredSites);
   const [selectedTypeFilter, setSelectedTypeFilter] = useState<'ALL' | 'BUILDING' | 'ROAD'>(projectType);
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+
+  // Directly opens the "Create New Site Corridor" dialog upon landing
+  const [isAddModalOpen, setIsAddModalOpen] = useState(true);
+
   const [newSiteName, setNewSiteName] = useState('');
   const [newLocation, setNewLocation] = useState('');
   const [newCategory, setNewCategory] = useState<'BUILDING' | 'ROAD'>('BUILDING');
@@ -140,6 +143,10 @@ export const SiteSelectionPage: React.FC<Props> = ({
           location: siteLocation
         })
       );
+
+      // Explicitly set the landing tab to Dashboard
+      localStorage.setItem('concrete360_active_tab', 'dashboard');
+      sessionStorage.setItem('concrete360_active_tab', 'dashboard');
 
       window.dispatchEvent(new CustomEvent('concrete360_site_switched', { detail: cleanKey }));
     } catch {}
@@ -419,7 +426,7 @@ export const SiteSelectionPage: React.FC<Props> = ({
         CONCRETE 360 • Bilgi RMC Field ERP
       </div>
 
-      {/* Create Site Modal */}
+      {/* Create Site Modal (Opens Immediately) */}
       {isAddModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150">
           <div className="bg-[#121927] border border-[#1E293B] rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4 text-slate-100 max-h-[92vh] overflow-y-auto">
