@@ -67,6 +67,19 @@ export const OngoingSiteTransfer: React.FC = () => {
     return '';
   });
 
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingTargetKey, setEditingTargetKey] = useState<string | null>(null);
+  const [siteToDelete, setSiteToDelete] = useState<any | null>(null);
+
+  const [category, setCategory] = useState<'Road' | 'Building'>('Building');
+  const [name, setName] = useState('');
+  const [location, setLocation] = useState('');
+  const [supervisor, setSupervisor] = useState('adminbilgi');
+  const [phone, setPhone] = useState('');
+  const [clientName, setClientName] = useState('');
+  const [gstin, setGstin] = useState('');
+  const [floorScope, setFloorScope] = useState('G + 3 Floors');
+
   useEffect(() => {
     void cloudStorage.pullFromCloud();
 
@@ -85,28 +98,13 @@ export const OngoingSiteTransfer: React.FC = () => {
 
     window.addEventListener('concrete360_site_switched', handleSync);
     window.addEventListener('concrete360_cloud_synced', handleSync);
-    window.addEventListener('concrete360_remote_update', handleSync);
     window.addEventListener('storage', handleSync);
     return () => {
       window.removeEventListener('concrete360_site_switched', handleSync);
       window.removeEventListener('concrete360_cloud_synced', handleSync);
-      window.removeEventListener('concrete360_remote_update', handleSync);
       window.removeEventListener('storage', handleSync);
     };
   }, []);
-
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingSiteId, setEditingSiteId] = useState<string | null>(null);
-  const [siteToDelete, setSiteToDelete] = useState<any | null>(null);
-
-  const [category, setCategory] = useState<'Road' | 'Building'>('Building');
-  const [name, setName] = useState('');
-  const [location, setLocation] = useState('');
-  const [supervisor, setSupervisor] = useState('adminbilgi');
-  const [phone, setPhone] = useState('');
-  const [clientName, setClientName] = useState('');
-  const [gstin, setGstin] = useState('');
-  const [floorScope, setFloorScope] = useState('G + 3 Floors');
 
   const handleSelectActiveSite = (site: any) => {
     if (!site) return;
@@ -132,7 +130,7 @@ export const OngoingSiteTransfer: React.FC = () => {
   };
 
   const handleOpenAddModal = () => {
-    setEditingSiteId(null);
+    setEditingTargetKey(null);
     setCategory('Building');
     setName('');
     setLocation('');
@@ -156,7 +154,8 @@ export const OngoingSiteTransfer: React.FC = () => {
     const cleanKey = extractCleanSiteName(site.name || site.siteName);
     const cat = site.category === 'Road' ? 'Road' : 'Building';
 
-    setEditingSiteId(site.id || site.siteId || cleanKey);
+    // Track original cleanKey so we can reliably match & replace
+    setEditingTargetKey(cleanKey);
     setCategory(cat);
     setName(cleanKey);
     setLocation(site.location || '');
@@ -170,10 +169,6 @@ export const OngoingSiteTransfer: React.FC = () => {
 
   const handleSaveSite = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canCreate && !editingSiteId) {
-      alert('Permission Denied: Read-Only accounts cannot create ongoing sites.');
-      return;
-    }
     if (!name.trim()) return;
 
     const currentList = getSitesFromStorage();
@@ -184,9 +179,14 @@ export const OngoingSiteTransfer: React.FC = () => {
 
     const siteTitle = category === 'Building' ? `${cleanKey} (${detail})` : cleanKey;
 
-    if (editingSiteId) {
-      // EDIT MODE
-      const existingSite = currentList.find(s => (s.id || s.siteId || extractCleanSiteName(s.name || s.siteName)) === editingSiteId) || {};
+    let updatedList: any[] = [];
+
+    if (editingTargetKey) {
+      // EDIT MODE: Match against the site being edited
+      const existingSite = currentList.find(s => 
+        extractCleanSiteName(s.name || s.siteName || s.id) === editingTargetKey
+      ) || {};
+
       const updatedSite = {
         ...existingSite,
         id: cleanKey,
@@ -203,42 +203,49 @@ export const OngoingSiteTransfer: React.FC = () => {
         assignedFleet: existingSite.assignedFleet || 4
       };
 
-      const updated = currentList.map(s => {
-        const sMatch = (s.id || s.siteId || extractCleanSiteName(s.name || s.siteName)) === editingSiteId;
-        return sMatch ? updatedSite : s;
+      updatedList = currentList.map(s => {
+        const isMatch = extractCleanSiteName(s.name || s.siteName || s.id) === editingTargetKey;
+        return isMatch ? updatedSite : s;
       });
 
-      localStorage.setItem('concrete360_sites', JSON.stringify(updated));
-      localStorage.setItem('concrete360_ongoing_sites', JSON.stringify(updated));
+      // Update state & localStorage first so UI reflects instantly
+      setSites(updatedList);
+      localStorage.setItem('concrete360_sites', JSON.stringify(updatedList));
+      localStorage.setItem('concrete360_ongoing_sites', JSON.stringify(updatedList));
 
-      if (supabase) {
-        await (supabase as any)
-          .from('sites')
-          .upsert({
-            id: cleanKey,
-            site_id: updatedSite.siteId,
-            name: cleanKey,
-            site_name: siteTitle,
-            category: category,
-            location: updatedSite.location,
-            supervisor: supervisor,
-            phone: updatedSite.phone,
-            client_name: updatedSite.clientName,
-            gstin: updatedSite.gstin,
-            scope: detail,
-            assigned_fleet: updatedSite.assignedFleet,
-            status: 'active',
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'id' });
-        await cloudStorage.pullFromCloud();
-      }
-
-      setSites(updated);
-      setIsModalOpen(false);
-
-      if (currentActiveKey === extractCleanSiteName(editingSiteId) || currentActiveKey === cleanKey) {
+      if (currentActiveKey === editingTargetKey || currentActiveKey === cleanKey) {
         handleSelectActiveSite(updatedSite);
       }
+
+      setIsModalOpen(false);
+
+      // Cloud sync wrapped in try/catch to prevent blocking state save
+      try {
+        if (supabase) {
+          await (supabase as any)
+            .from('sites')
+            .upsert({
+              id: cleanKey,
+              site_id: updatedSite.siteId,
+              name: cleanKey,
+              site_name: siteTitle,
+              category: category,
+              location: updatedSite.location,
+              supervisor: supervisor,
+              phone: updatedSite.phone,
+              client_name: updatedSite.clientName,
+              gstin: updatedSite.gstin,
+              scope: detail,
+              assigned_fleet: updatedSite.assignedFleet,
+              status: 'active',
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'id' });
+          void cloudStorage.pullFromCloud();
+        }
+      } catch (err) {
+        console.warn('Cloud sync error during site edit:', err);
+      }
+
     } else {
       // CREATE MODE
       const newSite = {
@@ -256,36 +263,40 @@ export const OngoingSiteTransfer: React.FC = () => {
         assignedFleet: 4
       };
 
-      const updated = [newSite, ...currentList.filter(s => extractCleanSiteName(s.name || s.siteName) !== cleanKey)];
+      updatedList = [newSite, ...currentList.filter(s => extractCleanSiteName(s.name || s.siteName) !== cleanKey)];
 
-      localStorage.setItem('concrete360_sites', JSON.stringify(updated));
-      localStorage.setItem('concrete360_ongoing_sites', JSON.stringify(updated));
+      setSites(updatedList);
+      localStorage.setItem('concrete360_sites', JSON.stringify(updatedList));
+      localStorage.setItem('concrete360_ongoing_sites', JSON.stringify(updatedList));
 
-      if (supabase) {
-        await (supabase as any)
-          .from('sites')
-          .upsert({
-            id: cleanKey,
-            site_id: newSite.siteId,
-            name: cleanKey,
-            site_name: siteTitle,
-            category: category,
-            location: newSite.location,
-            supervisor: supervisor,
-            phone: newSite.phone,
-            client_name: newSite.clientName,
-            gstin: newSite.gstin,
-            scope: detail,
-            assigned_fleet: 4,
-            status: 'active',
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'id' });
-        await cloudStorage.pullFromCloud();
-      }
-
-      setSites(updated);
       setIsModalOpen(false);
       handleSelectActiveSite(newSite);
+
+      try {
+        if (supabase) {
+          await (supabase as any)
+            .from('sites')
+            .upsert({
+              id: cleanKey,
+              site_id: newSite.siteId,
+              name: cleanKey,
+              site_name: siteTitle,
+              category: category,
+              location: newSite.location,
+              supervisor: supervisor,
+              phone: newSite.phone,
+              client_name: newSite.clientName,
+              gstin: newSite.gstin,
+              scope: detail,
+              assigned_fleet: 4,
+              status: 'active',
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'id' });
+          void cloudStorage.pullFromCloud();
+        }
+      } catch (err) {
+        console.warn('Cloud sync error during site create:', err);
+      }
     }
   };
 
@@ -327,16 +338,18 @@ export const OngoingSiteTransfer: React.FC = () => {
     localStorage.setItem('concrete360_ongoing_sites', JSON.stringify(updated));
 
     if (supabase) {
-      await (supabase as any)
-        .from('sites')
-        .delete()
-        .or(`id.eq.${targetName},name.eq.${targetName},id.eq.${targetId}`);
+      try {
+        await (supabase as any)
+          .from('sites')
+          .delete()
+          .or(`id.eq.${targetName},name.eq.${targetName},id.eq.${targetId}`);
 
-      await (supabase as any).from('invoices').delete().eq('site_name', targetName);
-      await (supabase as any).from('haulage_trips').delete().eq('site_name', targetName);
-      await (supabase as any).from('site_tests').delete().eq('site_name', targetName);
+        await (supabase as any).from('invoices').delete().eq('site_name', targetName);
+        await (supabase as any).from('haulage_trips').delete().eq('site_name', targetName);
+        await (supabase as any).from('site_tests').delete().eq('site_name', targetName);
 
-      await cloudStorage.pullFromCloud();
+        void cloudStorage.pullFromCloud();
+      } catch {}
     }
 
     setSites(updated);
@@ -430,7 +443,7 @@ export const OngoingSiteTransfer: React.FC = () => {
                         <button
                           type="button"
                           onClick={(e) => handleOpenEditModal(site, e)}
-                          className="p-1.5 text-slate-500 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition cursor-pointer"
+                          className="p-1.5 text-slate-400 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition cursor-pointer"
                           title="Edit Site Details"
                         >
                           <Edit2 className="w-3.5 h-3.5" />
@@ -570,7 +583,7 @@ export const OngoingSiteTransfer: React.FC = () => {
                   <Building2 className="w-5 h-5" />
                 </div>
                 <h3 className="text-base font-black text-slate-900 tracking-tight uppercase">
-                  {editingSiteId ? `EDIT ONGOING ${category.toUpperCase()} SECTION` : `ADD ONGOING ${category.toUpperCase()} SECTION`}
+                  {editingTargetKey ? `EDIT ONGOING ${category.toUpperCase()} SECTION` : `ADD ONGOING ${category.toUpperCase()} SECTION`}
                 </h3>
               </div>
               <button
@@ -735,7 +748,7 @@ export const OngoingSiteTransfer: React.FC = () => {
                   type="submit"
                   className="px-6 py-3 bg-[#2d588f] hover:bg-[#234570] text-white font-bold rounded-2xl text-xs transition shadow-md shadow-blue-900/20 cursor-pointer"
                 >
-                  {editingSiteId ? 'Save Changes' : 'Create Site Section'}
+                  Save Changes
                 </button>
               </div>
             </form>
