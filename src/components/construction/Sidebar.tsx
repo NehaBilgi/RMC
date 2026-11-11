@@ -70,7 +70,6 @@ export const Sidebar: React.FC<Props> = ({
   theme,
   onToggleTheme
 }) => {
-  // Reads active site strictly from localStorage
   const getActiveSiteKey = (): string => {
     try {
       const activeRaw = localStorage.getItem('concrete360_active_site');
@@ -92,10 +91,10 @@ export const Sidebar: React.FC<Props> = ({
 
   const [currentSite, setCurrentSite] = useState<string>(() => getActiveSiteKey());
   
-  // Always default directly to 'dashboard' upon selection/login
+  // Read active tab from session or default to dashboard
   const [activeTab, setActiveTab] = useState<string>(() => {
     try {
-      const savedTab = localStorage.getItem('concrete360_active_tab') || sessionStorage.getItem('concrete360_active_tab');
+      const savedTab = sessionStorage.getItem('concrete360_active_tab') || localStorage.getItem('concrete360_active_tab');
       return savedTab || 'dashboard';
     } catch {
       return 'dashboard';
@@ -104,7 +103,6 @@ export const Sidebar: React.FC<Props> = ({
 
   const [isSidebarOpenMobile, setIsSidebarOpenMobile] = useState(false);
 
-  // Authenticated user state supporting localStorage persistence
   const [currentUser, setCurrentUser] = useState<SessionUser>(() => {
     try {
       const savedUser = localStorage.getItem('concrete360_user') || sessionStorage.getItem('concrete360_user');
@@ -124,7 +122,6 @@ export const Sidebar: React.FC<Props> = ({
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(() => cloudStorage.getStatus());
   const [isManualSyncing, setIsManualSyncing] = useState(false);
 
-  // Keep currentSite synchronized across site creations, selections, and deletions
   useEffect(() => {
     const unsub = cloudStorage.onStatusChange((status) => {
       setSyncStatus(status);
@@ -132,14 +129,9 @@ export const Sidebar: React.FC<Props> = ({
 
     const handleSiteSwitch = (e?: any) => {
       const siteName = e?.detail !== undefined ? normalizeSiteKey(e.detail) : getActiveSiteKey();
-      setCurrentSite(siteName);
-      
-      // Automatically route to Dashboard whenever a site switch occurs
-      setActiveTab('dashboard');
-      try {
-        localStorage.setItem('concrete360_active_tab', 'dashboard');
-        sessionStorage.setItem('concrete360_active_tab', 'dashboard');
-      } catch {}
+      if (siteName && siteName !== currentSite) {
+        setCurrentSite(siteName);
+      }
     };
 
     const handleUserSync = () => {
@@ -169,7 +161,7 @@ export const Sidebar: React.FC<Props> = ({
       window.removeEventListener('storage', handleUserSync);
       window.removeEventListener('concrete360_user_updated', handleUserSync);
     };
-  }, []);
+  }, [currentSite]);
 
   const sidebarNavItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, section: 'SITE OPERATIONS' },
@@ -202,10 +194,6 @@ export const Sidebar: React.FC<Props> = ({
       items: visibleNavItems.filter(item => item.section === section)
     }))
     .filter(group => group.items.length > 0);
-
-  useEffect(() => {
-    if (activePage && activePage !== activeTab) setActiveTab(activePage);
-  }, [activePage, activeTab]);
 
   const handleNavigate = (targetId: string) => {
     let normalizedTarget = targetId;
@@ -450,7 +438,6 @@ export const Sidebar: React.FC<Props> = ({
           </div>
         </header>
 
-        {/* Stable workspace mount without aggressive remount key tearing */}
         <main className="workspace-content flex-1 p-6 max-w-7xl w-full mx-auto min-w-0">
           {!activePage && (
             <div className="rounded-2xl border border-[#1b273d] bg-[#0b1322] p-6 text-sm text-slate-400">
