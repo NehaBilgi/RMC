@@ -3,12 +3,8 @@ import {
   Factory, 
   Printer, 
   Calendar, 
-  Truck, 
   RotateCcw, 
-  Scale, 
-  CheckCircle2, 
-  Search,
-  Layers
+  Search
 } from 'lucide-react';
 import { cloudStorage } from '../../services/cloudStorage';
 
@@ -39,15 +35,17 @@ interface BatchRecord {
   operator: string;
 }
 
+// Bilgi Buildcon RMC 1 m³ Standard Batch Cards (Rev. 2, Target Yield: 2,400.0 kg/m³)
 const DEFAULT_RECIPES: Record<string, any> = {
-  'M15': { cement: 250, flyAsh: 75, ggbs: 100, water: 150, mSand: 825, agg20: 658, agg10: 440 },
-  'M20': { cement: 300, flyAsh: 90, ggbs: 120, water: 148, mSand: 789, agg20: 642, agg10: 428 },
-  'M25': { cement: 350, flyAsh: 105, ggbs: 140, water: 145, mSand: 752, agg20: 627, agg10: 418 },
-  'M30': { cement: 380, flyAsh: 115, ggbs: 150, water: 142, mSand: 721, agg20: 623, agg10: 415 },
-  'M35': { cement: 400, flyAsh: 120, ggbs: 160, water: 138, mSand: 704, agg20: 620, agg10: 414 },
-  'M40': { cement: 420, flyAsh: 125, ggbs: 170, water: 135, mSand: 681, agg20: 620, agg10: 414 },
-  'M45': { cement: 440, flyAsh: 130, ggbs: 180, water: 132, mSand: 660, agg20: 619, agg10: 414 },
-  'M50': { cement: 460, flyAsh: 135, ggbs: 190, water: 130, mSand: 641, agg20: 617, agg10: 411 }
+  'M10': { cement: 168, flyAsh: 42, ggbs: 42, water: 136, mSand: 1057, agg20: 597, agg10: 398 },
+  'M15': { cement: 200, flyAsh: 50, ggbs: 50, water: 140, mSand: 1034, agg20: 584, agg10: 390 },
+  'M20': { cement: 240, flyAsh: 60, ggbs: 60, water: 147, mSand: 1005, agg20: 567, agg10: 379 },
+  'M25': { cement: 280, flyAsh: 70, ggbs: 70, water: 158, mSand: 973, agg20: 550, agg10: 366 },
+  'M30': { cement: 304, flyAsh: 76, ggbs: 76, water: 160, mSand: 956, agg20: 541, agg10: 360 },
+  'M35': { cement: 320, flyAsh: 80, ggbs: 80, water: 160, mSand: 946, agg20: 535, agg10: 356 },
+  'M40': { cement: 336, flyAsh: 84, ggbs: 84, water: 160, mSand: 936, agg20: 529, agg10: 352 },
+  'M45': { cement: 352, flyAsh: 88, ggbs: 88, water: 158, mSand: 928, agg20: 524, agg10: 349 },
+  'M50': { cement: 368, flyAsh: 92, ggbs: 92, water: 156, mSand: 921, agg20: 520, agg10: 346 }
 };
 
 const extractCleanSiteName = (name: string): string => {
@@ -84,7 +82,7 @@ export const RMCBatchReportPage: React.FC = () => {
       const savedInvoicesRaw = localStorage.getItem(`concrete360_site_invoices_${siteKey}`);
       const invoices = savedInvoicesRaw ? JSON.parse(savedInvoicesRaw) : [];
 
-      let activeAdmixtureMode: 'FLY_ASH' | 'GGBS' = 'FLY_ASH';
+      let activeAdmixtureMode: 'FLY_ASH' | 'GGBS' = 'GGBS';
       const savedMode = localStorage.getItem(`concrete360_admixture_mode_${siteKey}`) || localStorage.getItem('concrete360_admixture_mode');
       if (savedMode === 'GGBS' || savedMode === 'FLY_ASH') activeAdmixtureMode = savedMode;
 
@@ -164,26 +162,34 @@ export const RMCBatchReportPage: React.FC = () => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
 
+    const s1Var = (((b.silo1ActualKg - b.silo1TargetKg) / b.silo1TargetKg) * 100).toFixed(1);
+    const s2Var = (((b.silo2ActualKg - b.silo2TargetKg) / b.silo2TargetKg) * 100).toFixed(1);
+    const sandVar = (((b.mSandActualKg - b.mSandTargetKg) / b.mSandTargetKg) * 100).toFixed(1);
+    const a20Var = (((b.agg20mmActualKg - b.agg20mmTargetKg) / b.agg20mmTargetKg) * 100).toFixed(1);
+    const a10Var = (((b.agg10mmActualKg - b.agg10mmTargetKg) / b.agg10mmTargetKg) * 100).toFixed(1);
+    const waterVar = (((b.waterActualLtr - b.waterTargetLtr) / b.waterTargetLtr) * 100).toFixed(1);
+
     printWindow.document.write(`
       <html>
         <head>
           <title>Plant Batching Report - ${b.docketNo}</title>
           <style>
-            @page { size: A4; margin: 15mm; }
+            @page { size: A4 landscape; margin: 12mm; }
             body { font-family: monospace; color: #000; font-size: 11px; margin: 0; }
             .header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 12px; }
-            .header h1 { margin: 0; font-size: 16px; font-weight: bold; }
-            .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 15px; border: 1px solid #000; padding: 10px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-            th, td { border: 1px solid #000; padding: 6px 8px; text-align: left; }
-            th { background: #f0f0f0; }
-            .text-right { text-align: right; }
-            .footer { margin-top: 40px; display: flex; justify-content: space-between; }
+            .header h1 { margin: 0; font-size: 17px; font-weight: bold; }
+            .header p { margin: 4px 0 0 0; font-size: 10px; }
+            .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 15px; border: 1px solid #000; padding: 10px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 10px; }
+            th, td { border: 1px solid #000; padding: 7px 6px; text-align: center; }
+            th { background: #f0f0f0; font-weight: bold; }
+            td.row-title { text-align: left; font-weight: bold; background: #fafafa; width: 140px; }
+            .footer { margin-top: 40px; display: flex; justify-content: space-between; font-size: 11px; }
           </style>
         </head>
         <body>
           <div class="header">
-            <h1>BILGI RMC AUTOMATED BATCHING PLANT</h1>
+            <h1>BILGI BUILDCON RMC AUTOMATED BATCHING PLANT</h1>
             <p>PLANT BATCH REPORT / DISPATCH DOCKET • COMPLIANT WITH IS 4926</p>
           </div>
 
@@ -201,56 +207,51 @@ export const RMCBatchReportPage: React.FC = () => {
           <table>
             <thead>
               <tr>
-                <th>Material Component</th>
-                <th class="text-right">Target Weight</th>
-                <th class="text-right">Actual Batched</th>
-                <th class="text-right">Variance (%)</th>
+                <th style="text-align: left;">Parameters / Material</th>
+                <th>Cement Silo 1</th>
+                <th>Cement Silo 2</th>
+                <th>M-Sand (Zone II)</th>
+                <th>20MM Aggregate</th>
+                <th>10MM Aggregate</th>
+                <th>Batching Water</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td>Cement Silo 1</td>
-                <td class="text-right">${b.silo1TargetKg} kg</td>
-                <td class="text-right"><strong>${b.silo1ActualKg} kg</strong></td>
-                <td class="text-right">${(((b.silo1ActualKg - b.silo1TargetKg) / b.silo1TargetKg) * 100).toFixed(1)}%</td>
+                <td class="row-title">Target Weight</td>
+                <td>${b.silo1TargetKg} kg</td>
+                <td>${b.silo2TargetKg} kg</td>
+                <td>${b.mSandTargetKg} kg</td>
+                <td>${b.agg20mmTargetKg} kg</td>
+                <td>${b.agg10mmTargetKg} kg</td>
+                <td>${b.waterTargetLtr} Litres</td>
               </tr>
               <tr>
-                <td>Cement Silo 2</td>
-                <td class="text-right">${b.silo2TargetKg} kg</td>
-                <td class="text-right"><strong>${b.silo2ActualKg} kg</strong></td>
-                <td class="text-right">${(((b.silo2ActualKg - b.silo2TargetKg) / b.silo2TargetKg) * 100).toFixed(1)}%</td>
+                <td class="row-title">Actual Batched</td>
+                <td><strong>${b.silo1ActualKg} kg</strong></td>
+                <td><strong>${b.silo2ActualKg} kg</strong></td>
+                <td><strong>${b.mSandActualKg} kg</strong></td>
+                <td><strong>${b.agg20mmActualKg} kg</strong></td>
+                <td><strong>${b.agg10mmActualKg} kg</strong></td>
+                <td><strong>${b.waterActualLtr} Litres</strong></td>
               </tr>
               <tr>
-                <td>M-Sand (Zone II)</td>
-                <td class="text-right">${b.mSandTargetKg} kg</td>
-                <td class="text-right"><strong>${b.mSandActualKg} kg</strong></td>
-                <td class="text-right">${(((b.mSandActualKg - b.mSandTargetKg) / b.mSandTargetKg) * 100).toFixed(1)}%</td>
-              </tr>
-              <tr>
-                <td>20MM Aggregate</td>
-                <td class="text-right">${b.agg20mmTargetKg} kg</td>
-                <td class="text-right"><strong>${b.agg20mmActualKg} kg</strong></td>
-                <td class="text-right">${(((b.agg20mmActualKg - b.agg20mmTargetKg) / b.agg20mmTargetKg) * 100).toFixed(1)}%</td>
-              </tr>
-              <tr>
-                <td>10MM Aggregate</td>
-                <td class="text-right">${b.agg10mmTargetKg} kg</td>
-                <td class="text-right"><strong>${b.agg10mmActualKg} kg</strong></td>
-                <td class="text-right">${(((b.agg10mmActualKg - b.agg10mmTargetKg) / b.agg10mmTargetKg) * 100).toFixed(1)}%</td>
-              </tr>
-              <tr>
-                <td>Batching Water</td>
-                <td class="text-right">${b.waterTargetLtr} Litres</td>
-                <td class="text-right"><strong>${b.waterActualLtr} Litres</strong></td>
-                <td class="text-right">${(((b.waterActualLtr - b.waterTargetLtr) / b.waterTargetLtr) * 100).toFixed(1)}%</td>
+                <td class="row-title">Variance (%)</td>
+                <td>${Number(s1Var) > 0 ? `+${s1Var}` : s1Var}%</td>
+                <td>${Number(s2Var) > 0 ? `+${s2Var}` : s2Var}%</td>
+                <td>${Number(sandVar) > 0 ? `+${sandVar}` : sandVar}%</td>
+                <td>${Number(a20Var) > 0 ? `+${a20Var}` : a20Var}%</td>
+                <td>${Number(a10Var) > 0 ? `+${a10Var}` : a10Var}%</td>
+                <td>${Number(waterVar) > 0 ? `+${waterVar}` : waterVar}%</td>
               </tr>
             </tbody>
           </table>
 
           <div class="footer">
-            <div>Plant Quality In-Charge: _________________</div>
-            <div>Transit Mixer Driver: _________________</div>
+            <div>Plant Quality In-Charge: ______________________</div>
+            <div>Transit Mixer Driver: ______________________</div>
           </div>
+
           <script>window.print();</script>
         </body>
       </html>
