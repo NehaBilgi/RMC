@@ -88,17 +88,36 @@ export const SiteMaterialReportModule: React.FC = () => {
     return 'DEFAULT';
   };
 
+  const getPersistedWastage = (siteKey: string): number => {
+    try {
+      const saved = localStorage.getItem(`concrete360_wastage_percent_${siteKey}`);
+      if (saved !== null && saved !== '') {
+        const parsed = parseFloat(saved);
+        if (!isNaN(parsed)) return Math.max(0, parsed);
+      }
+      const measurementSession = localStorage.getItem('concrete360_measurement');
+      if (measurementSession) {
+        const parsedS = JSON.parse(measurementSession);
+        if (parsedS.safetyWastagePercent !== undefined && parsedS.safetyWastagePercent !== null && parsedS.safetyWastagePercent !== '') {
+          const parsed = parseFloat(parsedS.safetyWastagePercent);
+          if (!isNaN(parsed)) return Math.max(0, parsed);
+        }
+      }
+    } catch {}
+    return 5;
+  };
+
   const [currentSiteKey, setCurrentSiteKey] = useState<string>(getActiveSiteKey());
   const [activeSiteName, setActiveSiteName] = useState<string>(getActiveSiteKey());
   
   const [measurementItems, setMeasurementItems] = useState<any[]>([]);
   const [selectedWorkId, setSelectedWorkId] = useState<string>('ALL');
 
-  const [truckCapacityM3, setTruckCapacityM3] = useState<number>(9);
-  const [wastagePercent, setWastagePercent] = useState<number | ''>(5);
+  const [truckCapacityM3, setTruckCapacityM3] = useState<number>(7);
+  const [wastagePercent, setWastagePercent] = useState<number | ''>(() => getPersistedWastage(getActiveSiteKey()));
   const [admixtureMode, setAdmixtureMode] = useState<'FLY_ASH' | 'GGBS'>('FLY_ASH');
   const [mixRecipes, setMixRecipes] = useState<Record<string, MixRecipe>>(FALLBACK_RECIPES_FLY_ASH);
-  const [selectedGrade, setSelectedGrade] = useState<string>('M20');
+  const [selectedGrade, setSelectedGrade] = useState<string>('M25');
 
   const syncMixDesigns = () => {
     try {
@@ -157,7 +176,8 @@ export const SiteMaterialReportModule: React.FC = () => {
       const siteKey = getActiveSiteKey();
       setCurrentSiteKey(siteKey);
       setActiveSiteName(siteKey);
-      setSelectedWorkId('ALL');
+
+      setWastagePercent(getPersistedWastage(siteKey));
 
       let parsedItems: any[] = [];
       const measurementsRaw = localStorage.getItem(`concrete360_advanced_measurements_${siteKey}`);
@@ -168,10 +188,14 @@ export const SiteMaterialReportModule: React.FC = () => {
         } catch {}
       }
 
-      setMeasurementItems(Array.isArray(parsedItems) ? parsedItems : []);
+      const activeItems = Array.isArray(parsedItems) ? parsedItems : [];
+      setMeasurementItems(activeItems);
 
-      if (Array.isArray(parsedItems) && parsedItems.length > 0 && parsedItems[0].mixGrade) {
-        setSelectedGrade(parsedItems[0].mixGrade);
+      const activeMixGradeSaved = localStorage.getItem(`concrete360_active_mix_grade_${siteKey}`);
+      if (activeMixGradeSaved) {
+        setSelectedGrade(activeMixGradeSaved);
+      } else if (activeItems.length > 0 && activeItems[0].mixGrade) {
+        setSelectedGrade(activeItems[0].mixGrade);
       }
 
       const measurementSession = localStorage.getItem('concrete360_measurement');
@@ -179,9 +203,6 @@ export const SiteMaterialReportModule: React.FC = () => {
         const parsedS = JSON.parse(measurementSession);
         if (parsedS.transitTruckCapacityM3) {
           setTruckCapacityM3(Number(parsedS.transitTruckCapacityM3));
-        }
-        if (parsedS.safetyWastagePercent !== undefined) {
-          setWastagePercent(Number(parsedS.safetyWastagePercent));
         }
       }
     } catch {}
@@ -192,15 +213,18 @@ export const SiteMaterialReportModule: React.FC = () => {
 
     const handleSiteSwitch = () => syncTelemetryData();
     const handleMixUpdate = () => syncMixDesigns();
+    const handleMeasurementsUpdated = () => syncTelemetryData();
 
     window.addEventListener('concrete360_site_switched', handleSiteSwitch);
     window.addEventListener('concrete360_cloud_synced', handleSiteSwitch);
+    window.addEventListener('concrete360_measurement_updated', handleMeasurementsUpdated);
     window.addEventListener('concrete360_mix_designs_updated', handleMixUpdate);
     window.addEventListener('storage', handleSiteSwitch);
     window.addEventListener('focus', handleSiteSwitch);
     return () => {
       window.removeEventListener('concrete360_site_switched', handleSiteSwitch);
       window.removeEventListener('concrete360_cloud_synced', handleSiteSwitch);
+      window.removeEventListener('concrete360_measurement_updated', handleMeasurementsUpdated);
       window.removeEventListener('concrete360_mix_designs_updated', handleMixUpdate);
       window.removeEventListener('storage', handleSiteSwitch);
       window.removeEventListener('focus', handleSiteSwitch);
@@ -397,9 +421,24 @@ export const SiteMaterialReportModule: React.FC = () => {
                   const val = e.target.value;
                   if (val === '') {
                     setWastagePercent('');
+                    try {
+                      localStorage.setItem(`concrete360_wastage_percent_${currentSiteKey}`, '');
+                    } catch {}
                   } else {
                     const num = parseFloat(val);
-                    setWastagePercent(isNaN(num) ? 0 : Math.max(0, num));
+                    const cleanVal = isNaN(num) ? 0 : Math.max(0, num);
+                    setWastagePercent(cleanVal);
+                    try {
+                      localStorage.setItem(`concrete360_wastage_percent_${currentSiteKey}`, String(cleanVal));
+
+                      const measurementRaw = localStorage.getItem('concrete360_measurement');
+                      const parsed = measurementRaw ? JSON.parse(measurementRaw) : {};
+                      localStorage.setItem(
+                        'concrete360_measurement',
+                        JSON.stringify({ ...parsed, safetyWastagePercent: cleanVal })
+                      );
+                      window.dispatchEvent(new CustomEvent('concrete360_measurement_updated'));
+                    } catch {}
                   }
                 }}
                 className="w-14 text-right bg-[#070d1a] border border-[#1b273d] rounded-lg px-1.5 py-1 text-xs text-cyan-300 font-bold outline-none mt-1 focus:border-cyan-500"
