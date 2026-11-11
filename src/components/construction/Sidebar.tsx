@@ -21,7 +21,8 @@ import {
   Cloud,
   CloudOff,
   RefreshCw,
-  ArrowLeftRight
+  ArrowLeftRight,
+  Factory
 } from 'lucide-react';
 import { cloudStorage, SyncStatus } from '../../services/cloudStorage';
 import { SiteMeasurementSession } from '../../types/rmc';
@@ -33,6 +34,7 @@ import { MaterialHaulageTripsModule } from '../pages/MaterialHaulageTripsModule'
 import { Dashboard } from '../pages/Dashboard';
 import { UserManagement } from '../pages/UserManagement';
 import { MixDesignModule } from '../pages/MixDesignModule';
+import { RMCBatchReportPage } from '../pages/RMCBatchReportPage';
 import { SiteMaterialReportModule } from '../pages/SiteMaterialReportModule';
 import { TransitMixerPage } from '../pages/TransitMixerPage';
 import { ConcretePumpsPage } from '../pages/ConcretePumpsPage';
@@ -174,6 +176,7 @@ export const Sidebar: React.FC<Props> = ({
     { id: 'transit_mixer', label: 'Transit Mixer', icon: Truck, section: 'ENGINEERING' },
     { id: 'concrete_pumps', label: 'Concrete Pumps', icon: Wrench, section: 'ENGINEERING' },
     { id: 'mix_design', label: 'Mix Design', icon: Layers, section: 'ENGINEERING' },
+    { id: 'rmc_batch_report', label: 'RMC Batch Report (Plant)', icon: Factory, section: 'ENGINEERING' },
     { id: 'site_report', label: 'Report / Material Used', icon: FileBarChart, section: 'ENGINEERING' },
     { id: 'measurements', label: 'Site Inventory Measurements', icon: FileCheck2, section: 'ENGINEERING' },
     { id: 'company_details', label: 'Company Details', icon: Building, section: 'CONFIGURATION' },
@@ -219,6 +222,12 @@ export const Sidebar: React.FC<Props> = ({
         break;
       case 'mix-design':
         normalizedTarget = 'mix_design';
+        break;
+      case 'rmc-batch-report':
+      case 'rmc_batch_report':
+      case 'batch-report':
+      case 'plant-batch-report':
+        normalizedTarget = 'rmc_batch_report';
         break;
       case 'reports':
       case 'site-report':
@@ -453,6 +462,7 @@ export const Sidebar: React.FC<Props> = ({
           {activePage === 'transit_mixer' && <TransitMixerPage />}
           {activePage === 'concrete_pumps' && <ConcretePumpsPage />}
           {activePage === 'mix_design' && <MixDesignModule />}
+          {activePage === 'rmc_batch_report' && <RMCBatchReportPage />}
           {activePage === 'site_report' && <SiteMaterialReportModule />}
           {activePage === 'material_category' && <MaterialCategory />}
           {activePage === 'trips' && <MaterialHaulageTripsModule />}
