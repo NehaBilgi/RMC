@@ -43,6 +43,8 @@ interface BatchRecord {
   time: string;
   siteName: string;
   clientName: string;
+  transporterName: string;
+  plantModel: string;
   mixGrade: string;
   vehicleNo: string;
   batchQtyM3: number;
@@ -102,7 +104,7 @@ export const RMCBatchReportPage: React.FC = () => {
 
   const [currentSite, setCurrentSite] = useState<string>(getActiveSite());
   
-  // Plant batch mixer capacity state (default 0.75 m3)
+  // Plant batch mixer capacity state (default 0.75 m3 per batch)
   const [plantMixerCapacity, setPlantMixerCapacity] = useState<number>(() => {
     try {
       const saved = localStorage.getItem(`concrete360_plant_mixer_cap_${getActiveSite()}`);
@@ -237,6 +239,8 @@ export const RMCBatchReportPage: React.FC = () => {
           time: '11:45 AM',
           siteName: siteKey,
           clientName: inv.clientName || siteKey,
+          transporterName: 'BILGI BUILDCON RMC',
+          plantModel: 'CONMAT BATCHING PLANT (0.75 m³)',
           mixGrade: inv.mixGrade || 'M30',
           vehicleNo: inv.vehicleNo || 'KA28AC3087',
           batchQtyM3: totalLoadVol,
@@ -329,7 +333,7 @@ export const RMCBatchReportPage: React.FC = () => {
     printWindow.document.write(`
       <html>
         <head>
-          <title>Plant Batching Report - ${b.docketNo}</title>
+          <title>CONMAT Plant Batching Report - ${b.docketNo}</title>
           <style>
             @page { size: A4 landscape; margin: 10mm; }
             body { font-family: monospace; color: #000; font-size: 11px; margin: 0; line-height: 1.35; }
@@ -347,7 +351,7 @@ export const RMCBatchReportPage: React.FC = () => {
         </head>
         <body>
           <div class="header">
-            <h1>BILGI BUILDCON RMC AUTOMATED BATCHING PLANT</h1>
+            <h1>CONMAT AUTOMATED BATCHING PLANT</h1>
             <p>PLANT BATCH REPORT / TM DISPATCH TELEMETRY DOCKET • IS 4926 / IS 456 COMPLIANT</p>
           </div>
 
@@ -356,10 +360,14 @@ export const RMCBatchReportPage: React.FC = () => {
             <div><strong>Date & Time:</strong> ${b.date} | ${b.time}</div>
             <div><strong>Project Site:</strong> ${b.siteName}</div>
             <div><strong>Client Name:</strong> ${b.clientName}</div>
+            <div><strong>Transporter:</strong> ${b.transporterName}</div>
+            <div><strong>Plant Make:</strong> CONMAT (${b.mixerCapacityM3} m³)</div>
             <div><strong>Mix Grade:</strong> ${b.mixGrade}</div>
             <div><strong>Transit Mixer:</strong> ${b.vehicleNo}</div>
             <div><strong>Total TM Load:</strong> ${b.batchQtyM3} m³</div>
             <div><strong>Plant Mixer Size:</strong> ${b.mixerCapacityM3} m³</div>
+            <div><strong>Total Drops:</strong> ${b.totalBatchesCount} Batches</div>
+            <div><strong>Batch Operator:</strong> ${b.operator}</div>
           </div>
 
           <!-- Section 1: Standard Proportions for 1 m3 directly from Mix Design -->
@@ -455,6 +463,7 @@ export const RMCBatchReportPage: React.FC = () => {
           </table>
 
           <div class="footer">
+            <div>Transporter: <strong>${b.transporterName}</strong></div>
             <div>Plant Operator: <strong>${b.operator}</strong></div>
             <div>Quality Engineer: ______________________</div>
             <div>Transit Mixer Driver: ______________________</div>
@@ -473,11 +482,11 @@ export const RMCBatchReportPage: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-0.5 rounded-full">
-            PLANT AUTOMATION TELEMETRY • {currentSite}
+            CONMAT PLANT AUTOMATION • TRANSPORTER: BILGI BUILDCON RMC • SITE: {currentSite}
           </span>
           <h2 className="text-xl font-black text-white mt-1 flex items-center gap-2">
             <Factory className="w-6 h-6 text-emerald-400" />
-            <span>RMC Batch Report (Plant Level)</span>
+            <span>CONMAT RMC Batch Report (Plant Level)</span>
           </h2>
         </div>
 
@@ -490,10 +499,10 @@ export const RMCBatchReportPage: React.FC = () => {
               setIsMixerCapModalOpen(true);
             }}
             className="px-3.5 py-2 rounded-xl text-xs font-mono font-bold text-cyan-400 hover:text-white bg-cyan-500/10 hover:bg-cyan-600/30 border border-cyan-500/30 transition flex items-center gap-2 cursor-pointer shadow-lg shadow-cyan-500/10"
-            title="Configure Plant Batching Pan Capacity"
+            title="Configure CONMAT Plant Batching Capacity"
           >
             <Settings className="w-3.5 h-3.5" />
-            <span>Mixer Size: <strong>{plantMixerCapacity} m³ / batch</strong></span>
+            <span>CONMAT Mixer Size: <strong>{plantMixerCapacity} m³ / batch</strong></span>
           </button>
         </div>
       </div>
@@ -631,7 +640,7 @@ export const RMCBatchReportPage: React.FC = () => {
 
                               <div className="flex items-center justify-between">
                                 <span className="text-xs font-bold text-cyan-400 uppercase tracking-wider">
-                                  Plant Batch Dropping Sequence ({b.totalBatchesCount} drops into TM {b.vehicleNo} @ {plantMixerCapacity} m³/drop)
+                                  CONMAT Dropping Sequence ({b.totalBatchesCount} drops into TM {b.vehicleNo} @ {plantMixerCapacity} m³/drop) • Transporter: {b.transporterName}
                                 </span>
                                 <span className="text-[11px] text-slate-400">Total TM Volume: {b.batchQtyM3} m³</span>
                               </div>
@@ -665,7 +674,7 @@ export const RMCBatchReportPage: React.FC = () => {
         </div>
       </div>
 
-      {/* MODAL: EDIT PLANT MIXER CAPACITY */}
+      {/* MODAL: EDIT CONMAT PLANT MIXER CAPACITY */}
       {isMixerCapModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-[#0b1322] border border-[#1e2d46] rounded-3xl w-full max-w-sm p-6 shadow-2xl relative font-mono space-y-4">
@@ -673,7 +682,7 @@ export const RMCBatchReportPage: React.FC = () => {
               <div className="flex items-center gap-2">
                 <Settings className="w-5 h-5 text-cyan-400" />
                 <h4 className="text-sm font-bold text-white uppercase font-sans">
-                  Plant Mixer Capacity
+                  CONMAT Mixer Capacity
                 </h4>
               </div>
               <button
@@ -688,7 +697,7 @@ export const RMCBatchReportPage: React.FC = () => {
             <form onSubmit={handleSaveMixerCap} className="space-y-4 text-xs">
               <div>
                 <label className="text-slate-300 block mb-1.5 font-bold uppercase">
-                  Batching Pan / Twin-Shaft Size (m³)
+                  CONMAT Twin-Shaft / Pan Size (m³)
                 </label>
                 <input
                   type="number"
@@ -702,7 +711,7 @@ export const RMCBatchReportPage: React.FC = () => {
                   placeholder="e.g. 0.75"
                 />
                 <p className="text-[10px] text-slate-400 mt-1 font-sans">
-                  Sub-batches into the transit mixer will automatically scale based on this capacity.
+                  Sub-batches into the transit mixer will automatically scale based on this CONMAT capacity.
                 </p>
               </div>
 
