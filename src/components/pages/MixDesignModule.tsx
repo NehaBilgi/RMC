@@ -112,14 +112,14 @@ export const MixDesignModule: React.FC = () => {
   };
 
   const [mixes, setMixes] = useState<Record<string, MixRecipe>>(() => getInitialMixes(currentSiteKey, admixtureMode));
-  const [activeGrade, setActiveGrade] = useState<string>('M25');
+  const [activeGrade, setActiveGrade] = useState<string>('M35');
   const [isEditing, setIsEditing] = useState<boolean>(false);
-  const [editForm, setEditForm] = useState<any>(mixes['M25'] || BILGI_QA_REV2_GGBS['M25']);
+  const [editForm, setEditForm] = useState<any>(mixes['M35'] || BILGI_QA_REV2_GGBS['M35']);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // Sync state only when NOT currently editing
   const syncActiveState = () => {
-    if (isEditing) return; // Do not interrupt or reset active edits
+    if (isEditing) return;
     const site = getActiveSiteKey();
     setCurrentSiteKey(site);
 
@@ -153,8 +153,26 @@ export const MixDesignModule: React.FC = () => {
     setMixes(newMixes);
     setIsEditing(false);
     setEditForm(newMixes[activeGrade] || (newMode === 'GGBS' ? BILGI_QA_REV2_GGBS[activeGrade] : BILGI_QA_REV2_FLY_ASH[activeGrade]));
-    setSuccessMessage(`Switched to ${newMode === 'GGBS' ? 'GGBS (20% Binder Replacement)' : 'Fly Ash'} mode!`);
+    setSuccessMessage(`Switched active Silo 2 to ${newMode === 'GGBS' ? 'GGBS (20% Binder Replacement)' : 'Class F Fly Ash'}!`);
     setTimeout(() => setSuccessMessage(null), 3000);
+
+    const arr = Object.values(newMixes).map(m => ({
+      grade: m.grade,
+      code: m.grade,
+      admixtureMode: newMode,
+      siteKey: currentSiteKey,
+      cementKgPerM3: m.cementKg,
+      flyAshKgPerM3: newMode === 'FLY_ASH' ? m.mineralAdmixtureKg : 0,
+      ggbsKgPerM3: newMode === 'GGBS' ? m.mineralAdmixtureKg : 0,
+      mineralAdmixtureKg: m.mineralAdmixtureKg,
+      waterLitresPerM3: m.waterLitres,
+      mSandKgPerM3: m.mSandKg,
+      agg20mmKgPerM3: m.agg20mmKg,
+      agg10mmKgPerM3: m.agg10mmKg,
+      admixtureKgPerM3: m.admixtureKg,
+      totalDensity: m.totalDensity
+    }));
+    window.dispatchEvent(new CustomEvent('concrete360_mix_designs_updated', { detail: arr }));
   };
 
   const currentMix = mixes[activeGrade] || (admixtureMode === 'GGBS' ? BILGI_QA_REV2_GGBS[activeGrade] : BILGI_QA_REV2_FLY_ASH[activeGrade]);
@@ -168,7 +186,6 @@ export const MixDesignModule: React.FC = () => {
     setIsEditing(true);
   };
 
-  // Safe manual input handler: allows free typing without zero-snapping or overriding other fields
   const handleInputChange = (field: keyof MixRecipe, rawVal: string) => {
     const val = rawVal === '' ? '' : Number(rawVal);
     setEditForm((prev: any) => {
@@ -198,7 +215,6 @@ export const MixDesignModule: React.FC = () => {
     e.preventDefault();
     if (!canModifyMixes) return;
 
-    // Convert any temporary blank inputs to numeric 0
     const finalForm: MixRecipe = {
       grade: activeGrade,
       targetMpa: Number(editForm.targetMpa) || currentMix.targetMpa,
@@ -313,18 +329,20 @@ export const MixDesignModule: React.FC = () => {
               <span>COMMAND:</span>
             </div>
 
+            {/* GGBS button: Active state reflects when GGBS is selected */}
             <button
               type="button"
               onClick={() => handleModeSwitch('GGBS')}
               className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
                 admixtureMode === 'GGBS'
-                  ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30'
+                  ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30'
                   : 'text-slate-400 hover:text-white hover:bg-[#121c2d]'
               }`}
             >
               <span>USE GGBS (20%)</span>
             </button>
 
+            {/* FLY ASH button: Active state reflects when FLY ASH is selected */}
             <button
               type="button"
               onClick={() => handleModeSwitch('FLY_ASH')}
@@ -431,13 +449,14 @@ export const MixDesignModule: React.FC = () => {
               <span className="text-[11px] text-slate-500 block">80% Total Binder (IS 269) • {(currentMix.cementKg / 50).toFixed(1)} Bags</span>
             </div>
 
-            <div className="p-5 bg-[#070d1a] border border-indigo-500/30 bg-indigo-950/10 rounded-2xl space-y-1">
-              <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider block">
-                {admixtureMode === 'GGBS' ? 'GGBS (SILO 2)' : 'CLASS F FLY ASH (SILO 2)'}
+            {/* Dynamically swaps title and standard based on active admixtureMode */}
+            <div className="p-5 bg-[#070d1a] border border-purple-500/30 bg-purple-950/10 rounded-2xl space-y-1">
+              <span className="text-[10px] font-bold text-purple-400 uppercase tracking-wider block">
+                {admixtureMode === 'GGBS' ? 'GROUND GRANULATED BLAST-FURNACE SLAG (SILO 2)' : 'CLASS F FLY ASH (SILO 2)'}
               </span>
-              <div className="text-2xl font-extrabold text-indigo-300">{currentMix.mineralAdmixtureKg} kg</div>
+              <div className="text-2xl font-extrabold text-purple-300">{currentMix.mineralAdmixtureKg} kg</div>
               <span className="text-[11px] text-slate-500 block">
-                {admixtureMode === 'GGBS' ? '20% Replacement (IS 16714)' : 'Pozzolanic Replacement (IS 3812)'}
+                {admixtureMode === 'GGBS' ? '20% Binder Replacement (IS 16714)' : 'Pozzolanic Replacement (IS 3812)'}
               </span>
             </div>
 
@@ -526,7 +545,7 @@ export const MixDesignModule: React.FC = () => {
               </div>
 
               <div className="space-y-1">
-                <label className={`font-bold uppercase text-[10px] ${admixtureMode === 'GGBS' ? 'text-indigo-400' : 'text-purple-400'}`}>
+                <label className="font-bold uppercase text-[10px] text-purple-400">
                   {admixtureMode === 'GGBS' ? 'GGBS - Silo 2 (kg/m³)' : 'Fly Ash - Silo 2 (kg/m³)'}
                 </label>
                 <input
