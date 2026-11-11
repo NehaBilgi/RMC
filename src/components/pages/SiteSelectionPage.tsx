@@ -6,19 +6,18 @@ import {
   Truck,
   HardHat,
   LogOut,
-  ArrowLeft,
   X,
   Moon,
   Sun,
   RefreshCw,
-  Cloud
+  Road
 } from 'lucide-react';
 import { canViewPage } from '../../utils/accessControl';
 import { cloudStorage } from '../../services/cloudStorage';
 import { supabase } from '../../lib/supabase';
 
 interface Props {
-  projectType?: 'ROAD' | 'BUILDING';
+  projectType?: 'ROAD' | 'BUILDING' | 'ALL';
   onSelectSite: (siteName: string) => void;
   onBackToDomainSelect?: () => void;
   theme: 'light' | 'dark';
@@ -35,15 +34,14 @@ const extractCleanSiteName = (name: string): string => {
 };
 
 export const SiteSelectionPage: React.FC<Props> = ({
-  projectType = 'BUILDING',
+  projectType = 'ALL',
   onSelectSite,
-  onBackToDomainSelect,
   theme,
   onToggleTheme
 }) => {
   const [currentUser] = useState<{ username: string; role: string; pageAccess?: string[] | null }>(() => {
     try {
-      const savedUser = localStorage.getItem('concrete360_user') || sessionStorage.getItem('concrete360_user');
+      const savedUser = sessionStorage.getItem('concrete360_user') || localStorage.getItem('concrete360_user');
       if (savedUser) {
         const parsed = JSON.parse(savedUser);
         const r = String(parsed.role || '').toUpperCase();
@@ -71,32 +69,23 @@ export const SiteSelectionPage: React.FC<Props> = ({
       const sitesRaw = localStorage.getItem('concrete360_sites');
 
       let combined: any[] = [];
-      if (ongoingRaw) {
-        const parsed = JSON.parse(ongoingRaw);
-        if (Array.isArray(parsed)) {
-          combined = parsed.map((s: any, idx: number) => ({
-            siteId: s.siteId || s.id || `S-0${idx + 1}`,
-            siteName: s.name || s.siteName,
-            location: s.location || s.address || 'Ainapur Site',
-            vehicles: s.vehicles || s.assignedFleet || [1, 2, 3, 4],
-            projectType: s.category ? String(s.category).toUpperCase() : (s.projectType || 'BUILDING'),
-            buildingFloors: s.detail || s.structureScope || s.scope || s.buildingFloors || 'G + 3 Floors'
-          }));
-        }
-      }
+      const sourceList = ongoingRaw ? JSON.parse(ongoingRaw) : (sitesRaw ? JSON.parse(sitesRaw) : []);
 
-      if (combined.length === 0 && sitesRaw) {
-        const parsed = JSON.parse(sitesRaw);
-        if (Array.isArray(parsed)) {
-          combined = parsed.map((s: any, idx: number) => ({
+      if (Array.isArray(sourceList)) {
+        combined = sourceList.map((s: any, idx: number) => {
+          const rawCat = s.category ? String(s.category).toUpperCase() : (s.projectType ? String(s.projectType).toUpperCase() : 'BUILDING');
+          const isRoad = rawCat.includes('ROAD');
+          return {
             siteId: s.siteId || s.id || `S-0${idx + 1}`,
             siteName: s.name || s.siteName,
-            location: s.location || s.address || 'Ainapur Site',
+            location: s.location || s.address || (isRoad ? 'Highway Corridor' : 'Ainapur Site'),
             vehicles: s.vehicles || s.assignedFleet || [1, 2, 3, 4],
-            projectType: s.category ? String(s.category).toUpperCase() : (s.projectType || 'BUILDING'),
-            buildingFloors: s.detail || s.structureScope || s.scope || s.buildingFloors || 'G + 3 Floors'
-          }));
-        }
+            projectType: isRoad ? 'ROAD' : 'BUILDING',
+            buildingFloors: s.detail || s.structureScope || s.scope || s.buildingFloors || (isRoad ? 'Km 0 to 12.5' : 'G + 3 Floors'),
+            chainageRange: s.chainageRange || 'Km 0 to 12.5',
+            supervisor: s.supervisor || currentUser.username
+          };
+        });
       }
 
       return combined;
@@ -105,9 +94,11 @@ export const SiteSelectionPage: React.FC<Props> = ({
   };
 
   const [sites, setSites] = useState<any[]>(loadStoredSites);
+  const [selectedTypeFilter, setSelectedTypeFilter] = useState<'ALL' | 'BUILDING' | 'ROAD'>(projectType);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [newSiteName, setNewSiteName] = useState('');
   const [newLocation, setNewLocation] = useState('');
+  const [newCategory, setNewCategory] = useState<'BUILDING' | 'ROAD'>('BUILDING');
   const [buildingFloors, setBuildingFloors] = useState<string>('G + 3 Floors');
 
   useEffect(() => {
@@ -126,13 +117,9 @@ export const SiteSelectionPage: React.FC<Props> = ({
   }, []);
 
   const filteredSites = useMemo(() => {
-    return sites.filter((site: any) => {
-      if (site.projectType) {
-        return site.projectType === projectType;
-      }
-      return true;
-    });
-  }, [sites, projectType]);
+    if (selectedTypeFilter === 'ALL') return sites;
+    return sites.filter((site: any) => site.projectType === selectedTypeFilter);
+  }, [sites, selectedTypeFilter]);
 
   const handleLaunchSite = (site: any) => {
     const rawName = String(site.siteName || site.name || '').trim();
@@ -163,14 +150,14 @@ export const SiteSelectionPage: React.FC<Props> = ({
   const handleCreateSite = (e: React.FormEvent) => {
     e.preventDefault();
     if (!canCreateSite) {
-      alert('Permission Denied: Read-Only accounts cannot create new building sites.');
+      alert('Permission Denied: Read-Only accounts cannot create new sites.');
       return;
     }
     if (!newSiteName.trim()) return;
 
     const rawInput = newSiteName.trim().toUpperCase();
     const cleanKey = extractCleanSiteName(rawInput);
-    const loc = newLocation.trim() || 'Ainapur Site';
+    const loc = newLocation.trim() || (newCategory === 'ROAD' ? 'Highway Corridor' : 'Ainapur Site');
     const currentList = loadStoredSites();
 
     const newSite = {
@@ -178,28 +165,28 @@ export const SiteSelectionPage: React.FC<Props> = ({
       siteName: cleanKey,
       location: loc,
       vehicles: [1, 2, 3, 4],
-      projectType: projectType,
-      buildingFloors: buildingFloors || 'G + 3 Floors'
+      projectType: newCategory,
+      buildingFloors: buildingFloors || (newCategory === 'ROAD' ? 'Km 0 to 12.5' : 'G + 3 Floors'),
+      supervisor: currentUser.username
     };
 
     const updated = [newSite, ...currentList];
     setSites(updated);
 
     try {
-      // 1. Sync ongoing sites array matching OngoingSiteTransfer structure
       const ongoingRaw = localStorage.getItem('concrete360_ongoing_sites');
       const ongoingArr = ongoingRaw ? JSON.parse(ongoingRaw) : [];
       const newOngoingEntry = {
         id: `site-${Date.now()}`,
         siteId: `S-0${ongoingArr.length + 1}`,
-        category: projectType === 'ROAD' ? 'Road' : 'Building',
+        category: newCategory === 'ROAD' ? 'Road' : 'Building',
         name: cleanKey,
         siteName: cleanKey,
         location: loc,
         supervisor: currentUser.username || 'adminbilgi',
         clientName: cleanKey,
         gstin: '29UNREGISTERED',
-        detail: buildingFloors || 'G + 3 Floors',
+        detail: newSite.buildingFloors,
         assignedFleet: 4
       };
 
@@ -215,12 +202,12 @@ export const SiteSelectionPage: React.FC<Props> = ({
             site_id: newOngoingEntry.siteId,
             name: cleanKey,
             site_name: cleanKey,
-            category: projectType === 'ROAD' ? 'Road' : 'Building',
+            category: newCategory === 'ROAD' ? 'Road' : 'Building',
             location: loc,
             supervisor: currentUser.username || 'adminbilgi',
             client_name: cleanKey,
             gstin: '29UNREGISTERED',
-            scope: buildingFloors || 'G + 3 Floors',
+            scope: newSite.buildingFloors,
             assigned_fleet: 4,
             status: 'active',
             updated_at: new Date().toISOString()
@@ -281,6 +268,7 @@ export const SiteSelectionPage: React.FC<Props> = ({
             <RefreshCw className="w-3.5 h-3.5 text-emerald-400" />
             <span className="hidden sm:inline">Sync Cloud</span>
           </button>
+
           <button
             type="button"
             onClick={onToggleTheme}
@@ -290,16 +278,6 @@ export const SiteSelectionPage: React.FC<Props> = ({
           >
             {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
           </button>
-          {onBackToDomainSelect && (
-            <button
-              type="button"
-              onClick={onBackToDomainSelect}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#121927] hover:bg-[#1c273d] border border-[#1E293B] text-slate-300 text-xs font-semibold transition-all cursor-pointer"
-            >
-              <ArrowLeft className="w-3.5 h-3.5" />
-              <span>Switch Domain</span>
-            </button>
-          )}
 
           <div className="hidden sm:block text-right">
             <div className="text-xs font-bold text-white">{currentUser.username}</div>
@@ -318,14 +296,42 @@ export const SiteSelectionPage: React.FC<Props> = ({
       </div>
 
       {/* Main Selection Area */}
-      <div className="max-w-5xl w-full mx-auto my-auto py-8 space-y-8">
+      <div className="max-w-5xl w-full mx-auto my-auto py-8 space-y-6">
         <div className="text-center space-y-2">
           <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-            Select Active Building Project
+            Select Active Construction Site
           </h2>
           <p className="text-xs sm:text-sm text-slate-400 max-w-xl mx-auto">
-            Choose an active tower or campus construction site to track structural components, concrete, and site expenses.
+            Choose an ongoing building or road site corridor to open the telemetry and inventory management suite.
           </p>
+
+          {/* Filter Pills */}
+          <div className="inline-flex p-1 bg-[#121927] border border-[#1E293B] rounded-xl text-xs font-mono mt-3">
+            <button
+              onClick={() => setSelectedTypeFilter('ALL')}
+              className={`px-3 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+                selectedTypeFilter === 'ALL' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              All Projects ({sites.length})
+            </button>
+            <button
+              onClick={() => setSelectedTypeFilter('BUILDING')}
+              className={`px-3 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+                selectedTypeFilter === 'BUILDING' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Building Sites
+            </button>
+            <button
+              onClick={() => setSelectedTypeFilter('ROAD')}
+              className={`px-3 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+                selectedTypeFilter === 'ROAD' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Road Corridors
+            </button>
+          </div>
         </div>
 
         {filteredSites.length === 0 ? (
@@ -337,7 +343,7 @@ export const SiteSelectionPage: React.FC<Props> = ({
                 onClick={() => setIsAddModalOpen(true)}
                 className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-lg shadow-blue-600/30 cursor-pointer transition active:scale-95"
               >
-                + Add First Building Site
+                + Add Project Corridor
               </button>
             )}
           </div>
@@ -345,6 +351,7 @@ export const SiteSelectionPage: React.FC<Props> = ({
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredSites.map((site: any) => {
               const cleanName = extractCleanSiteName(site.siteName);
+              const isRoad = site.projectType === 'ROAD';
               return (
                 <div
                   key={site.siteId}
@@ -354,20 +361,24 @@ export const SiteSelectionPage: React.FC<Props> = ({
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1.5">
-                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                        <span className={`w-2.5 h-2.5 rounded-full ${isRoad ? 'bg-sky-400' : 'bg-emerald-400'} animate-pulse`} />
                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">
-                          Building Site
+                          {isRoad ? 'Road Site' : 'Building Site'}
                         </span>
                       </div>
                       <span className="text-[10px] font-mono font-bold text-slate-400 bg-[#080d19] px-2 py-0.5 rounded-md border border-[#182643]">
                         {site.siteId}
                       </span>
                     </div>
-                    <h3 className="text-base font-black text-white group-hover:text-blue-300 transition-colors line-clamp-2">
+
+                    <h3 className="text-lg font-black text-white group-hover:text-blue-300 transition-colors line-clamp-1">
                       {cleanName}
                     </h3>
+                    <p className="text-xs text-slate-300 font-mono">
+                      {site.location}
+                    </p>
                     <p className="text-[11px] text-slate-400 font-mono">
-                      Scope: {site.buildingFloors || 'G + 3 Floors'}
+                      Scope: <strong className={isRoad ? 'text-sky-400' : 'text-emerald-400'}>{site.buildingFloors}</strong>
                     </p>
                   </div>
 
@@ -395,7 +406,7 @@ export const SiteSelectionPage: React.FC<Props> = ({
                   <Plus className="w-5 h-5" />
                 </div>
                 <div className="text-xs font-bold text-slate-300 group-hover:text-white">
-                  + Add New Building Site
+                  + Add Ongoing Site Section
                 </div>
               </button>
             )}
@@ -405,7 +416,7 @@ export const SiteSelectionPage: React.FC<Props> = ({
 
       {/* Footer */}
       <div className="border-t border-[#1E293B] pt-4 text-center text-[11px] text-slate-500 font-mono">
-        Secured Building Infrastructure Telematics
+        CONCRETE 360 • Bilgi RMC Field ERP
       </div>
 
       {/* Create Site Modal */}
@@ -415,7 +426,7 @@ export const SiteSelectionPage: React.FC<Props> = ({
             <div className="flex items-center justify-between border-b border-[#1E293B] pb-3">
               <div className="flex items-center gap-2 text-white font-bold text-base">
                 <Building2 className="w-5 h-5 text-emerald-400" />
-                <span>Create Building Construction Project</span>
+                <span>Create New Site Corridor</span>
               </div>
               <button
                 type="button"
@@ -428,11 +439,45 @@ export const SiteSelectionPage: React.FC<Props> = ({
 
             <form onSubmit={handleCreateSite} className="space-y-3.5 text-xs font-mono">
               <div>
-                <label className="block text-slate-300 font-bold mb-1">Building / Tower Project Name *</label>
+                <label className="block text-slate-300 font-bold mb-1">Project Classification</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewCategory('BUILDING');
+                      setBuildingFloors('G + 3 Floors');
+                    }}
+                    className={`py-2 rounded-xl font-bold border transition ${
+                      newCategory === 'BUILDING'
+                        ? 'bg-emerald-600/20 border-emerald-500 text-emerald-300'
+                        : 'bg-[#162032] border-[#1E293B] text-slate-400'
+                    }`}
+                  >
+                    Building Site
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewCategory('ROAD');
+                      setBuildingFloors('Km 0 to 12.5');
+                    }}
+                    className={`py-2 rounded-xl font-bold border transition ${
+                      newCategory === 'ROAD'
+                        ? 'bg-sky-600/20 border-sky-500 text-sky-300'
+                        : 'bg-[#162032] border-[#1E293B] text-slate-400'
+                    }`}
+                  >
+                    Road Corridor
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-bold mb-1">Site / Project Code Name *</label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Sector 4 High-Rise or Metro Corridor"
+                  placeholder="e.g. BASVARAJ or VVV"
                   value={newSiteName}
                   onChange={(e) => setNewSiteName(e.target.value)}
                   className="w-full px-3.5 py-2.5 bg-[#162032] border border-[#1E293B] rounded-xl text-white outline-none focus:border-blue-500 uppercase font-bold"
@@ -443,7 +488,7 @@ export const SiteSelectionPage: React.FC<Props> = ({
                 <label className="block text-slate-300 font-bold mb-1">Location / Zone</label>
                 <input
                   type="text"
-                  placeholder="e.g. Tikota Road / Ainapur"
+                  placeholder="e.g. Tikota Road / Highway Corridor"
                   value={newLocation}
                   onChange={(e) => setNewLocation(e.target.value)}
                   className="w-full px-3.5 py-2.5 bg-[#162032] border border-[#1E293B] rounded-xl text-white outline-none focus:border-blue-500"
@@ -451,12 +496,14 @@ export const SiteSelectionPage: React.FC<Props> = ({
               </div>
 
               <div>
-                <label className="block text-slate-300 font-bold mb-1">Building Structure / Floor Scope</label>
+                <label className="block text-slate-300 font-bold mb-1">
+                  {newCategory === 'ROAD' ? 'Chainage Range' : 'Building Floors / Scope'}
+                </label>
                 <input
                   type="text"
                   value={buildingFloors}
                   onChange={(e) => setBuildingFloors(e.target.value)}
-                  placeholder="e.g. G + 3 Floors"
+                  placeholder={newCategory === 'ROAD' ? 'Km 0 to 12.5' : 'G + 3 Floors'}
                   className="w-full px-3.5 py-2.5 bg-[#162032] border border-[#1E293B] rounded-xl text-white outline-none focus:border-emerald-500"
                 />
               </div>
@@ -473,7 +520,7 @@ export const SiteSelectionPage: React.FC<Props> = ({
                   type="submit"
                   className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-black transition-all shadow-lg shadow-blue-600/30 cursor-pointer"
                 >
-                  Create &amp; Launch Site
+                  Create & Launch Site
                 </button>
               </div>
             </form>
