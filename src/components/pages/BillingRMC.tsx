@@ -643,7 +643,6 @@ export const BillingRMC: React.FC = () => {
     } catch {}
 
     const useGgbs = activeAdmixtureMode === 'GGBS' || (recipe.ggbsKgPerM3 > 0 && (!recipe.flyAshKgPerM3 || recipe.flyAshKgPerM3 === 0));
-    const cement2Label = useGgbs ? 'Cement 2 (GGBS)' : 'Cement 2 (Fly Ash)';
     const cement2Prop = useGgbs ? (recipe.ggbsKgPerM3 || recipe.mineralAdmixtureKg || 120) : (recipe.flyAshKgPerM3 || recipe.mineralAdmixtureKg || 90);
 
     const cement1Kg = Math.round(inv.volumeM3 * recipe.cementKgPerM3);
@@ -785,12 +784,12 @@ export const BillingRMC: React.FC = () => {
               </thead>
               <tbody>
                 <tr>
-                  <td>Cement 1 (OPC 53)</td>
+                  <td>Silo 1</td>
                   <td class="text-right">${recipe.cementKgPerM3} kg/m³</td>
                   <td class="text-right"><strong>${cement1Kg.toLocaleString('en-IN')} kg</strong></td>
                 </tr>
                 <tr>
-                  <td>${cement2Label}</td>
+                  <td>Silo 2</td>
                   <td class="text-right">${cement2Prop} kg/m³</td>
                   <td class="text-right"><strong>${cement2Kg.toLocaleString('en-IN')} kg</strong></td>
                 </tr>
