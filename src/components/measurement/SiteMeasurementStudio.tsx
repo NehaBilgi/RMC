@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { SiteMeasurementSession, StructuralMeasurementItem } from '../../types/rmc';
 import { supabase } from '../../lib/supabase';
 import { cloudStorage } from '../../services/cloudStorage';
@@ -212,7 +212,9 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
   const [modalWorkDate, setModalWorkDate] = useState<string>(new Date().toISOString().split('T')[0]);
 
   const [mixerCapacityM3, setMixerCapacityM3] = useState<number>(session?.transitTruckCapacityM3 || 7.0);
-  const [wastagePercent, setWastagePercent] = useState<number>(session?.safetyWastagePercent || 5);
+  const [wastagePercent, setWastagePercent] = useState<number | ''>(
+    session?.safetyWastagePercent !== undefined ? session.safetyWastagePercent : 5
+  );
   const [unitMode, setUnitMode] = useState<UnitSystem>('METRIC');
 
   const [selectedCategories, setSelectedCategories] = useState<StructuralType[]>(['SLAB']);
@@ -530,17 +532,26 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
     return items.reduce((sum, it) => sum + (Number(it.volumeM3) || 0), 0);
   }, [items]);
 
+  const parsedWastage = useMemo(() => {
+    return wastagePercent === '' ? 0 : Number(wastagePercent);
+  }, [wastagePercent]);
+
   const totalWithWastage = useMemo(() => {
-    return totalWetM3 * (1 + wastagePercent / 100);
-  }, [totalWetM3, wastagePercent]);
+    return totalWetM3 * (1 + parsedWastage / 100);
+  }, [totalWetM3, parsedWastage]);
 
   const totalRmcVehicles = useMemo(() => {
     if (mixerCapacityM3 <= 0 || totalWithWastage <= 0) return 0;
     return Math.ceil(totalWithWastage / mixerCapacityM3);
   }, [totalWithWastage, mixerCapacityM3]);
 
+  const onUpdateSessionRef = useRef(onUpdateSession);
   useEffect(() => {
-    if (typeof onUpdateSession !== 'function') return;
+    onUpdateSessionRef.current = onUpdateSession;
+  }, [onUpdateSession]);
+
+  useEffect(() => {
+    if (typeof onUpdateSessionRef.current !== 'function') return;
     const structures: StructuralMeasurementItem[] = items.map((it) => {
       const category = (it.categories && it.categories[0]) || 'SLAB';
       const type: StructuralMeasurementItem['type'] = category === 'COLUMN'
@@ -567,16 +578,29 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
       };
     });
 
-    onUpdateSession({
+    const netM3 = Number(totalWetM3.toFixed(1));
+    const grossM3 = Number(totalWithWastage.toFixed(1));
+
+    if (
+      session?.totalNetM3 === netM3 &&
+      session?.totalGrossM3 === grossM3 &&
+      session?.requiredTruckLoads === totalRmcVehicles &&
+      session?.transitTruckCapacityM3 === mixerCapacityM3 &&
+      session?.safetyWastagePercent === parsedWastage
+    ) {
+      return;
+    }
+
+    onUpdateSessionRef.current({
       ...session,
       structures,
-      totalNetM3: Number(totalWetM3.toFixed(1)),
-      totalGrossM3: Number(totalWithWastage.toFixed(1)),
+      totalNetM3: netM3,
+      totalGrossM3: grossM3,
       requiredTruckLoads: totalRmcVehicles,
       transitTruckCapacityM3: mixerCapacityM3,
-      safetyWastagePercent: wastagePercent
+      safetyWastagePercent: parsedWastage
     });
-  }, [items, totalWetM3, totalWithWastage, totalRmcVehicles, mixerCapacityM3, wastagePercent]);
+  }, [items, totalWetM3, totalWithWastage, totalRmcVehicles, mixerCapacityM3, parsedWastage, session]);
 
   return (
     <div className="space-y-6 w-full max-w-full overflow-hidden">
@@ -621,13 +645,24 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
         <div className="bg-[#0B1120] border border-[#17233D] p-4 rounded-2xl shadow-xl">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-              Order (+{wastagePercent}% Wastage)
+              Order (+{wastagePercent === '' ? 0 : wastagePercent}% Wastage)
             </span>
             <input
               type="number"
+              min="0"
+              max="100"
+              step="any"
               value={wastagePercent}
-              onChange={(e) => setWastagePercent(Math.max(0, Number(e.target.value)))}
-              className="w-12 text-right bg-[#10192E] border border-[#1E2E4E] rounded px-1 text-xs text-cyan-300 outline-none"
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val === '') {
+                  setWastagePercent('');
+                } else {
+                  const num = parseFloat(val);
+                  setWastagePercent(isNaN(num) ? 0 : Math.max(0, num));
+                }
+              }}
+              className="w-14 text-right bg-[#10192E] border border-[#1E2E4E] rounded px-1.5 py-0.5 text-xs text-cyan-300 font-bold outline-none focus:border-cyan-500"
               title="Pumping & Line Wastage %"
             />
           </div>
