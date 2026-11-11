@@ -114,10 +114,12 @@ export const MixDesignModule: React.FC = () => {
   const [mixes, setMixes] = useState<Record<string, MixRecipe>>(() => getInitialMixes(currentSiteKey, admixtureMode));
   const [activeGrade, setActiveGrade] = useState<string>('M25');
   const [isEditing, setIsEditing] = useState<boolean>(false);
-  const [editForm, setEditForm] = useState<MixRecipe>(mixes['M25'] || BILGI_QA_REV2_GGBS['M25']);
+  const [editForm, setEditForm] = useState<any>(mixes['M25'] || BILGI_QA_REV2_GGBS['M25']);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
+  // Sync state only when NOT currently editing
   const syncActiveState = () => {
+    if (isEditing) return; // Do not interrupt or reset active edits
     const site = getActiveSiteKey();
     setCurrentSiteKey(site);
 
@@ -138,7 +140,7 @@ export const MixDesignModule: React.FC = () => {
     return () => {
       window.removeEventListener('concrete360_site_switched', syncActiveState);
     };
-  }, [activeGrade]);
+  }, [activeGrade, isEditing]);
 
   const handleModeSwitch = (newMode: AdmixtureMode) => {
     setAdmixtureMode(newMode);
@@ -159,33 +161,35 @@ export const MixDesignModule: React.FC = () => {
 
   const handleStartEdit = () => {
     if (!canModifyMixes) {
-      alert('Permission Denied: Only ADMIN or EMPLOYEE accounts can modify mix proportions.');
+      alert('Permission Denied: Read-only accounts cannot modify mix designs.');
       return;
     }
     setEditForm({ ...currentMix });
     setIsEditing(true);
   };
 
-  // Dynamically update field values and recalculate w/b and total density in real time
-  const handleFieldChange = (field: keyof MixRecipe, value: number) => {
-    setEditForm(prev => {
-      const updated = { ...prev, [field]: value };
-      const totalBinder = (updated.cementKg || 0) + (updated.mineralAdmixtureKg || 0);
-      const calculatedWcr = totalBinder > 0 ? Number(((updated.waterLitres || 0) / totalBinder).toFixed(2)) : 0.45;
-      const calculatedDensity = Math.round(
-        (updated.cementKg || 0) +
-        (updated.mineralAdmixtureKg || 0) +
-        (updated.waterLitres || 0) +
-        (updated.mSandKg || 0) +
-        (updated.agg20mmKg || 0) +
-        (updated.agg10mmKg || 0) +
-        (updated.admixtureKg || 0)
-      );
+  // Safe manual input handler: allows free typing without zero-snapping or overriding other fields
+  const handleInputChange = (field: keyof MixRecipe, rawVal: string) => {
+    const val = rawVal === '' ? '' : Number(rawVal);
+    setEditForm((prev: any) => {
+      const next = { ...prev, [field]: val };
+
+      const c = Number(next.cementKg) || 0;
+      const m = Number(next.mineralAdmixtureKg) || 0;
+      const w = Number(next.waterLitres) || 0;
+      const ms = Number(next.mSandKg) || 0;
+      const a20 = Number(next.agg20mmKg) || 0;
+      const a10 = Number(next.agg10mmKg) || 0;
+      const adm = Number(next.admixtureKg) || 0;
+
+      const binder = c + m;
+      const computedWcr = binder > 0 && w > 0 ? Number((w / binder).toFixed(2)) : next.wcr;
+      const computedDensity = Math.round(c + m + w + ms + a20 + a10 + adm);
 
       return {
-        ...updated,
-        wcr: calculatedWcr,
-        totalDensity: calculatedDensity
+        ...next,
+        wcr: field === 'wcr' ? val : computedWcr,
+        totalDensity: field === 'totalDensity' ? val : computedDensity
       };
     });
   };
@@ -194,9 +198,24 @@ export const MixDesignModule: React.FC = () => {
     e.preventDefault();
     if (!canModifyMixes) return;
 
+    // Convert any temporary blank inputs to numeric 0
+    const finalForm: MixRecipe = {
+      grade: activeGrade,
+      targetMpa: Number(editForm.targetMpa) || currentMix.targetMpa,
+      wcr: Number(editForm.wcr) || 0.45,
+      cementKg: Number(editForm.cementKg) || 0,
+      mineralAdmixtureKg: Number(editForm.mineralAdmixtureKg) || 0,
+      waterLitres: Number(editForm.waterLitres) || 0,
+      mSandKg: Number(editForm.mSandKg) || 0,
+      agg20mmKg: Number(editForm.agg20mmKg) || 0,
+      agg10mmKg: Number(editForm.agg10mmKg) || 0,
+      admixtureKg: Number(editForm.admixtureKg) || 0,
+      totalDensity: Number(editForm.totalDensity) || 2400
+    };
+
     const updatedMixes = {
       ...mixes,
-      [activeGrade]: { ...editForm }
+      [activeGrade]: finalForm
     };
 
     setMixes(updatedMixes);
@@ -230,17 +249,17 @@ export const MixDesignModule: React.FC = () => {
 
     if (supabase) {
       await (supabase as any).from('mix_designs').upsert({
-        grade: editForm.grade,
-        target_mpa: editForm.targetMpa,
-        wcr: editForm.wcr,
-        cement_kg: editForm.cementKg,
-        mineral_admixture_kg: editForm.mineralAdmixtureKg,
-        water_litres: editForm.waterLitres,
-        m_sand_kg: editForm.mSandKg,
-        agg_20mm_kg: editForm.agg20mmKg,
-        agg_10mm_kg: editForm.agg10mmKg,
-        admixture_kg: editForm.admixtureKg,
-        total_density: editForm.totalDensity,
+        grade: finalForm.grade,
+        target_mpa: finalForm.targetMpa,
+        wcr: finalForm.wcr,
+        cement_kg: finalForm.cementKg,
+        mineral_admixture_kg: finalForm.mineralAdmixtureKg,
+        water_litres: finalForm.waterLitres,
+        m_sand_kg: finalForm.mSandKg,
+        agg_20mm_kg: finalForm.agg20mmKg,
+        agg_10mm_kg: finalForm.agg10mmKg,
+        admixture_kg: finalForm.admixtureKg,
+        total_density: finalForm.totalDensity,
         mode: admixtureMode,
         updated_at: new Date().toISOString()
       }, { onConflict: 'grade' });
@@ -253,13 +272,13 @@ export const MixDesignModule: React.FC = () => {
 
   const handleForceResetAll = () => {
     if (!canModifyMixes) return;
-    if (window.confirm(`Force-load Bilgi QA Batch Cards (Rev. 2) for ${currentSiteKey}?`)) {
+    if (window.confirm(`Reset all grade proportions to Bilgi QA Cards (Rev. 2) for ${currentSiteKey}?`)) {
       const freshMixes = admixtureMode === 'GGBS' ? { ...BILGI_QA_REV2_GGBS } : { ...BILGI_QA_REV2_FLY_ASH };
       setMixes(freshMixes);
       localStorage.setItem(getSiteMixKey(currentSiteKey, admixtureMode), JSON.stringify(freshMixes));
       setEditForm(freshMixes[activeGrade]);
       setIsEditing(false);
-      setSuccessMessage('Successfully reloaded Bilgi Buildcon RMC QA Cards (Rev. 2)!');
+      setSuccessMessage('Successfully loaded Bilgi Buildcon RMC QA Cards (Rev. 2)!');
       setTimeout(() => setSuccessMessage(null), 3500);
     }
   };
@@ -465,8 +484,8 @@ export const MixDesignModule: React.FC = () => {
                 <input
                   type="number"
                   step="any"
-                  value={editForm.targetMpa}
-                  onChange={(e) => handleFieldChange('targetMpa', Number(e.target.value) || 0)}
+                  value={editForm.targetMpa ?? ''}
+                  onChange={(e) => handleInputChange('targetMpa', e.target.value)}
                   className="w-full px-4 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-white font-bold outline-none focus:border-blue-500"
                   required
                 />
@@ -477,8 +496,8 @@ export const MixDesignModule: React.FC = () => {
                 <input
                   type="number"
                   step="any"
-                  value={editForm.wcr}
-                  onChange={(e) => handleFieldChange('wcr', Number(e.target.value) || 0)}
+                  value={editForm.wcr ?? ''}
+                  onChange={(e) => handleInputChange('wcr', e.target.value)}
                   className="w-full px-4 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-emerald-400 font-bold outline-none focus:border-blue-500"
                 />
               </div>
@@ -488,8 +507,8 @@ export const MixDesignModule: React.FC = () => {
                 <input
                   type="number"
                   step="any"
-                  value={editForm.totalDensity}
-                  onChange={(e) => handleFieldChange('totalDensity', Number(e.target.value) || 0)}
+                  value={editForm.totalDensity ?? ''}
+                  onChange={(e) => handleInputChange('totalDensity', e.target.value)}
                   className="w-full px-4 py-3 bg-[#070d1a] border border-cyan-500/30 rounded-xl text-cyan-300 font-black outline-none focus:border-blue-500"
                 />
               </div>
@@ -499,8 +518,8 @@ export const MixDesignModule: React.FC = () => {
                 <input
                   type="number"
                   step="any"
-                  value={editForm.cementKg}
-                  onChange={(e) => handleFieldChange('cementKg', Number(e.target.value) || 0)}
+                  value={editForm.cementKg ?? ''}
+                  onChange={(e) => handleInputChange('cementKg', e.target.value)}
                   className="w-full px-4 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-blue-400 font-bold outline-none focus:border-blue-500"
                   required
                 />
@@ -513,8 +532,8 @@ export const MixDesignModule: React.FC = () => {
                 <input
                   type="number"
                   step="any"
-                  value={editForm.mineralAdmixtureKg}
-                  onChange={(e) => handleFieldChange('mineralAdmixtureKg', Number(e.target.value) || 0)}
+                  value={editForm.mineralAdmixtureKg ?? ''}
+                  onChange={(e) => handleInputChange('mineralAdmixtureKg', e.target.value)}
                   className="w-full px-4 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-white font-bold outline-none focus:border-blue-500"
                   required
                 />
@@ -525,8 +544,8 @@ export const MixDesignModule: React.FC = () => {
                 <input
                   type="number"
                   step="any"
-                  value={editForm.waterLitres}
-                  onChange={(e) => handleFieldChange('waterLitres', Number(e.target.value) || 0)}
+                  value={editForm.waterLitres ?? ''}
+                  onChange={(e) => handleInputChange('waterLitres', e.target.value)}
                   className="w-full px-4 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-cyan-400 font-bold outline-none focus:border-blue-500"
                   required
                 />
@@ -537,8 +556,8 @@ export const MixDesignModule: React.FC = () => {
                 <input
                   type="number"
                   step="any"
-                  value={editForm.mSandKg}
-                  onChange={(e) => handleFieldChange('mSandKg', Number(e.target.value) || 0)}
+                  value={editForm.mSandKg ?? ''}
+                  onChange={(e) => handleInputChange('mSandKg', e.target.value)}
                   className="w-full px-4 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-amber-300 font-bold outline-none focus:border-blue-500"
                   required
                 />
@@ -549,8 +568,8 @@ export const MixDesignModule: React.FC = () => {
                 <input
                   type="number"
                   step="any"
-                  value={editForm.agg20mmKg}
-                  onChange={(e) => handleFieldChange('agg20mmKg', Number(e.target.value) || 0)}
+                  value={editForm.agg20mmKg ?? ''}
+                  onChange={(e) => handleInputChange('agg20mmKg', e.target.value)}
                   className="w-full px-4 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-emerald-300 font-bold outline-none focus:border-blue-500"
                   required
                 />
@@ -561,8 +580,8 @@ export const MixDesignModule: React.FC = () => {
                 <input
                   type="number"
                   step="any"
-                  value={editForm.agg10mmKg}
-                  onChange={(e) => handleFieldChange('agg10mmKg', Number(e.target.value) || 0)}
+                  value={editForm.agg10mmKg ?? ''}
+                  onChange={(e) => handleInputChange('agg10mmKg', e.target.value)}
                   className="w-full px-4 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-emerald-300 font-bold outline-none focus:border-blue-500"
                   required
                 />
@@ -575,8 +594,8 @@ export const MixDesignModule: React.FC = () => {
                 <input
                   type="number"
                   step="any"
-                  value={editForm.admixtureKg}
-                  onChange={(e) => handleFieldChange('admixtureKg', Number(e.target.value) || 0)}
+                  value={editForm.admixtureKg ?? ''}
+                  onChange={(e) => handleInputChange('admixtureKg', e.target.value)}
                   className="w-full px-4 py-3 bg-[#0b1322] border border-[#1b273d] rounded-xl text-rose-400 font-bold outline-none focus:border-blue-500"
                   required
                 />
