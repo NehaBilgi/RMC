@@ -41,7 +41,6 @@ export const OngoingSiteTransfer: React.FC = () => {
   const canCreate = userRole === 'ADMIN' || userRole === 'EMPLOYEE';
   const canDelete = userRole === 'ADMIN';
 
-  // Read sites directly from localStorage
   const getSitesFromStorage = (): any[] => {
     try {
       const raw = localStorage.getItem('concrete360_ongoing_sites') || localStorage.getItem('concrete360_sites');
@@ -65,7 +64,6 @@ export const OngoingSiteTransfer: React.FC = () => {
     return '';
   });
 
-  // Re-read storage on window focus or explicit site switch
   useEffect(() => {
     void cloudStorage.pullFromCloud();
 
@@ -103,8 +101,6 @@ export const OngoingSiteTransfer: React.FC = () => {
   const [supervisor, setSupervisor] = useState('adminbilgi');
   const [clientName, setClientName] = useState('');
   const [gstin, setGstin] = useState('');
-  const [startKm, setStartKm] = useState('0');
-  const [endKm, setEndKm] = useState('12.5');
   const [floorScope, setFloorScope] = useState('G + 3 Floors');
 
   const handleSelectActiveSite = (site: any) => {
@@ -138,8 +134,11 @@ export const OngoingSiteTransfer: React.FC = () => {
     if (!name.trim()) return;
 
     const currentList = getSitesFromStorage();
-    const detail = category === 'Road' ? `Km ${startKm} to ${endKm}` : floorScope;
     const cleanKey = extractCleanSiteName(name);
+    const detail = category === 'Road' 
+      ? (floorScope.includes('Km') ? floorScope : 'Km 0 to 12.5') 
+      : (floorScope || 'G + 3 Floors');
+
     const siteTitle = category === 'Building' ? `${cleanKey} (${detail})` : cleanKey;
 
     const newSite = {
@@ -148,7 +147,7 @@ export const OngoingSiteTransfer: React.FC = () => {
       category,
       name: cleanKey,
       siteName: siteTitle,
-      location: location || (category === 'Road' ? 'Highway Corridor' : 'Ainapur Site'),
+      location: location || (category === 'Road' ? 'Highway Corridor' : 'Sector 4 Commercial Zone'),
       supervisor: supervisor || 'adminbilgi',
       clientName: clientName.trim() || cleanKey,
       gstin: gstin.trim().toUpperCase(),
@@ -280,6 +279,7 @@ export const OngoingSiteTransfer: React.FC = () => {
           <button
             onClick={() => {
               setCategory('Building');
+              setFloorScope('G + 3 Floors');
               setIsAddModalOpen(true);
             }}
             className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs flex items-center gap-2 shadow-lg shadow-blue-600/30 transition shrink-0 cursor-pointer active:scale-95"
@@ -442,21 +442,22 @@ export const OngoingSiteTransfer: React.FC = () => {
         </div>
       )}
 
-      {/* POPUP MODAL MATCHING DESIGN */}
+      {/* POPUP MODAL: ADD ONGOING BUILDING SECTION */}
       {isAddModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white text-slate-800 rounded-3xl w-full max-w-md p-6 shadow-2xl relative max-h-[92vh] overflow-y-auto">
+          <div className="bg-white text-slate-800 rounded-3xl w-full max-w-md p-6 shadow-2xl relative max-h-[94vh] overflow-y-auto">
             {/* Header */}
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center">
+            <div className="flex items-center justify-between pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-[#e6fbf4] border border-[#a4eed6] text-[#00a86b] flex items-center justify-center">
                   <Building2 className="w-5 h-5" />
                 </div>
-                <h3 className="text-base font-black text-slate-900 tracking-tight">
-                  Create New Site Corridor
+                <h3 className="text-base font-black text-slate-900 tracking-tight uppercase">
+                  ADD ONGOING {category.toUpperCase()} SECTION
                 </h3>
               </div>
               <button
+                type="button"
                 onClick={() => setIsAddModalOpen(false)}
                 className="text-slate-400 hover:text-slate-700 p-1 rounded-lg cursor-pointer transition-colors"
               >
@@ -465,91 +466,128 @@ export const OngoingSiteTransfer: React.FC = () => {
             </div>
 
             {/* Form */}
-            <form onSubmit={handleAddSite} className="space-y-4 pt-4 text-xs font-mono">
-              {/* Project Classification */}
+            <form onSubmit={handleAddSite} className="space-y-4 pt-1 font-mono text-xs">
+              {/* Construction Category */}
               <div>
-                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
-                  Project Classification
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+                  CONSTRUCTION CATEGORY *
                 </label>
                 <div className="grid grid-cols-2 gap-2.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCategory('Building');
-                      setFloorScope('G + 3 Floors');
-                    }}
-                    className={`py-2.5 rounded-xl font-bold transition border cursor-pointer text-xs ${
-                      category === 'Building'
-                        ? 'bg-emerald-100 border-emerald-400 text-emerald-800 shadow-sm'
-                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
-                    }`}
-                  >
-                    Building Site
-                  </button>
                   <button
                     type="button"
                     onClick={() => {
                       setCategory('Road');
                       setFloorScope('Km 0 to 12.5');
                     }}
-                    className={`py-2.5 rounded-xl font-bold transition border cursor-pointer text-xs ${
+                    className={`py-3 rounded-2xl font-bold flex items-center justify-center gap-2 transition cursor-pointer text-xs border ${
                       category === 'Road'
-                        ? 'bg-emerald-100 border-emerald-400 text-emerald-800 shadow-sm'
+                        ? 'bg-[#d8f5ec] border-[#00a86b] text-[#008f5a]'
                         : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
                     }`}
                   >
-                    Road Corridor
+                    <Signpost className="w-4 h-4" />
+                    <span>Road</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCategory('Building');
+                      setFloorScope('G + 3 Floors');
+                    }}
+                    className={`py-3 rounded-2xl font-bold flex items-center justify-center gap-2 transition cursor-pointer text-xs border ${
+                      category === 'Building'
+                        ? 'bg-[#d8f5ec] border-[#00a86b] text-[#008f5a]'
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    <Building2 className="w-4 h-4" />
+                    <span>Building</span>
                   </button>
                 </div>
               </div>
 
-              {/* Site / Project Code Name */}
+              {/* Building / Tower Project Name */}
               <div>
-                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
-                  Site / Project Code Name *
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+                  {category === 'Road' ? 'ROAD CORRIDOR NAME *' : 'BUILDING / TOWER PROJECT NAME *'}
                 </label>
                 <input
                   type="text"
                   required
-                  placeholder="E.G. BASVARAJ OR VVV"
+                  placeholder={category === 'Road' ? 'E.G. HIGHWAY CORRIDOR VVV' : 'E.G. BILGI HEIGHTS TOWER-A'}
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 text-xs uppercase font-bold"
+                  className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 text-xs uppercase font-bold"
                 />
               </div>
 
-              {/* Location / Zone */}
+              {/* Client Name & GSTIN Number (Side-by-side) */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+                    CLIENT NAME (OPTIONAL)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Buildwell Ltd."
+                    value={clientName}
+                    onChange={(e) => setClientName(e.target.value)}
+                    className="w-full bg-white border border-slate-200 rounded-2xl px-3.5 py-3 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 text-xs font-sans"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+                    GSTIN NUMBER (OPTIONAL)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="E.G. 29AAACB..."
+                    value={gstin}
+                    onChange={(e) => setGstin(e.target.value)}
+                    className="w-full bg-white border border-slate-200 rounded-2xl px-3.5 py-3 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 text-xs uppercase font-bold"
+                  />
+                </div>
+              </div>
+
+              {/* Site Location / Campus */}
               <div>
-                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
-                  Location / Zone
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+                  SITE LOCATION / CAMPUS
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Tikota Road / Highway Corridor"
+                  placeholder={category === 'Road' ? 'e.g. Tikota Road / Highway Corridor' : 'e.g. Sector 4 Commercial Zone'}
                   value={location}
                   onChange={(e) => setLocation(e.target.value)}
-                  className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 text-xs font-sans"
+                  className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 text-xs font-sans"
                 />
               </div>
 
-              {/* Scope */}
+              {/* Site Supervisor */}
               <div>
-                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
-                  {category === 'Road' ? 'Chainage Range' : 'Building Floors / Scope'}
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+                  SITE SUPERVISOR
                 </label>
                 <input
                   type="text"
-                  value={category === 'Road' ? `Km ${startKm} to ${endKm}` : floorScope}
-                  onChange={(e) => {
-                    if (category === 'Road') {
-                      setStartKm('0');
-                      setEndKm('12.5');
-                    } else {
-                      setFloorScope(e.target.value);
-                    }
-                  }}
+                  value={supervisor}
+                  onChange={(e) => setSupervisor(e.target.value)}
+                  className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 text-xs font-sans"
+                />
+              </div>
+
+              {/* Building Structure / Floor Scope */}
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+                  {category === 'Road' ? 'CHAINAGE RANGE' : 'BUILDING STRUCTURE / FLOOR SCOPE'}
+                </label>
+                <input
+                  type="text"
+                  value={floorScope}
+                  onChange={(e) => setFloorScope(e.target.value)}
                   placeholder={category === 'Road' ? 'Km 0 to 12.5' : 'G + 3 Floors'}
-                  className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 text-xs"
+                  className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3 text-slate-900 font-bold focus:outline-none focus:border-blue-500 text-xs"
                 />
               </div>
 
@@ -558,15 +596,15 @@ export const OngoingSiteTransfer: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setIsAddModalOpen(false)}
-                  className="px-4 py-2.5 text-slate-500 hover:text-slate-800 font-bold text-xs cursor-pointer transition-colors"
+                  className="px-4 py-2.5 text-slate-600 hover:text-slate-900 font-semibold text-xs cursor-pointer transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-2.5 bg-[#26538d] hover:bg-[#1d4373] text-white font-bold rounded-xl text-xs transition shadow-md shadow-blue-900/20 cursor-pointer"
+                  className="px-6 py-3 bg-[#2d588f] hover:bg-[#234570] text-white font-bold rounded-2xl text-xs transition shadow-md shadow-blue-900/20 cursor-pointer"
                 >
-                  Create & Launch Site
+                  Create Site Section
                 </button>
               </div>
             </form>
