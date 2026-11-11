@@ -784,12 +784,12 @@ export const BillingRMC: React.FC = () => {
               </thead>
               <tbody>
                 <tr>
-                  <td>Silo 1</td>
+                  <td>Cement Silo 1</td>
                   <td class="text-right">${recipe.cementKgPerM3} kg/m³</td>
                   <td class="text-right"><strong>${cement1Kg.toLocaleString('en-IN')} kg</strong></td>
                 </tr>
                 <tr>
-                  <td>Silo 2</td>
+                  <td>Cement Silo 2</td>
                   <td class="text-right">${cement2Prop} kg/m³</td>
                   <td class="text-right"><strong>${cement2Kg.toLocaleString('en-IN')} kg</strong></td>
                 </tr>
