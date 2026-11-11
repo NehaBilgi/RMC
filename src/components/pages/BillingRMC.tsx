@@ -1368,7 +1368,7 @@ export const BillingRMC: React.FC = () => {
               <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#1b273d]">
                 <button
                   type="button"
-                  onClick={() => setIsModalOpen(false)}
+                  onClick={() =>setIsModalOpen(false)}
                   className="px-5 py-3 bg-[#070d1a] hover:bg-[#121c2d] text-slate-300 font-bold rounded-xl cursor-pointer text-xs"
                 >
                   Cancel
