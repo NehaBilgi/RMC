@@ -10,7 +10,7 @@ import {
   Moon,
   Sun,
   RefreshCw,
-  Road
+  Signpost
 } from 'lucide-react';
 import { canViewPage } from '../../utils/accessControl';
 import { cloudStorage } from '../../services/cloudStorage';
@@ -78,12 +78,14 @@ export const SiteSelectionPage: React.FC<Props> = ({
           return {
             siteId: s.siteId || s.id || `S-0${idx + 1}`,
             siteName: s.name || s.siteName,
-            location: s.location || s.address || (isRoad ? 'Highway Corridor' : 'Ainapur Site'),
+            location: s.location || s.address || (isRoad ? 'Highway Corridor' : 'Sector 4 Commercial Zone'),
             vehicles: s.vehicles || s.assignedFleet || [1, 2, 3, 4],
             projectType: isRoad ? 'ROAD' : 'BUILDING',
             buildingFloors: s.detail || s.structureScope || s.scope || s.buildingFloors || (isRoad ? 'Km 0 to 12.5' : 'G + 3 Floors'),
             chainageRange: s.chainageRange || 'Km 0 to 12.5',
-            supervisor: s.supervisor || currentUser.username
+            supervisor: s.supervisor || currentUser.username,
+            clientName: s.clientName || '',
+            gstin: s.gstin || ''
           };
         });
       }
@@ -96,13 +98,17 @@ export const SiteSelectionPage: React.FC<Props> = ({
   const [sites, setSites] = useState<any[]>(loadStoredSites);
   const [selectedTypeFilter, setSelectedTypeFilter] = useState<'ALL' | 'BUILDING' | 'ROAD'>(projectType);
 
-  // Directly opens the "Create New Site Corridor" dialog upon landing
+  // Directly opens the creation modal upon arriving at the site selection page
   const [isAddModalOpen, setIsAddModalOpen] = useState(true);
 
-  const [newSiteName, setNewSiteName] = useState('');
-  const [newLocation, setNewLocation] = useState('');
-  const [newCategory, setNewCategory] = useState<'BUILDING' | 'ROAD'>('BUILDING');
-  const [buildingFloors, setBuildingFloors] = useState<string>('G + 3 Floors');
+  // Form Fields
+  const [category, setCategory] = useState<'Building' | 'Road'>('Building');
+  const [projectName, setProjectName] = useState('');
+  const [clientName, setClientName] = useState('');
+  const [gstin, setGstin] = useState('');
+  const [siteLocation, setSiteLocation] = useState('');
+  const [supervisor, setSupervisor] = useState(currentUser.username || 'adminbilgi');
+  const [floorScope, setFloorScope] = useState('G + 3 Floors');
 
   useEffect(() => {
     void cloudStorage.pullFromCloud();
@@ -127,8 +133,8 @@ export const SiteSelectionPage: React.FC<Props> = ({
   const handleLaunchSite = (site: any) => {
     const rawName = String(site.siteName || site.name || '').trim();
     const cleanKey = extractCleanSiteName(rawName);
-    const siteScope = site.buildingFloors || site.structureScope || 'G + 3 Floors';
-    const siteLocation = site.location || site.address || 'Ainapur Site';
+    const siteScope = site.buildingFloors || site.structureScope || (site.projectType === 'ROAD' ? 'Km 0 to 12.5' : 'G + 3 Floors');
+    const location = site.location || site.address || (site.projectType === 'ROAD' ? 'Highway Corridor' : 'Sector 4 Commercial Zone');
 
     try {
       localStorage.setItem('concrete360_selected_site', cleanKey);
@@ -140,11 +146,13 @@ export const SiteSelectionPage: React.FC<Props> = ({
           name: cleanKey,
           displayName: rawName,
           scope: siteScope,
-          location: siteLocation
+          location: location,
+          clientName: site.clientName || cleanKey,
+          gstin: site.gstin || ''
         })
       );
 
-      // Explicitly set the landing tab to Dashboard
+      // Force view directly to Dashboard
       localStorage.setItem('concrete360_active_tab', 'dashboard');
       sessionStorage.setItem('concrete360_active_tab', 'dashboard');
 
@@ -160,24 +168,28 @@ export const SiteSelectionPage: React.FC<Props> = ({
       alert('Permission Denied: Read-Only accounts cannot create new sites.');
       return;
     }
-    if (!newSiteName.trim()) return;
+    if (!projectName.trim()) return;
 
-    const rawInput = newSiteName.trim().toUpperCase();
+    const rawInput = projectName.trim().toUpperCase();
     const cleanKey = extractCleanSiteName(rawInput);
-    const loc = newLocation.trim() || (newCategory === 'ROAD' ? 'Highway Corridor' : 'Ainapur Site');
+    const loc = siteLocation.trim() || (category === 'Road' ? 'Highway Corridor' : 'Sector 4 Commercial Zone');
     const currentList = loadStoredSites();
+    const isRoad = category === 'Road';
+    const detail = isRoad ? (floorScope.includes('Km') ? floorScope : 'Km 0 to 12.5') : (floorScope || 'G + 3 Floors');
 
     const newSite = {
       siteId: `S-0${currentList.length + 1}`,
       siteName: cleanKey,
       location: loc,
       vehicles: [1, 2, 3, 4],
-      projectType: newCategory,
-      buildingFloors: buildingFloors || (newCategory === 'ROAD' ? 'Km 0 to 12.5' : 'G + 3 Floors'),
-      supervisor: currentUser.username
+      projectType: isRoad ? 'ROAD' : 'BUILDING',
+      buildingFloors: detail,
+      supervisor: supervisor || currentUser.username,
+      clientName: clientName.trim(),
+      gstin: gstin.trim().toUpperCase()
     };
 
-    const updated = [newSite, ...currentList];
+    const updated = [newSite, ...currentList.filter(s => extractCleanSiteName(s.siteName || s.name) !== cleanKey)];
     setSites(updated);
 
     try {
@@ -185,15 +197,15 @@ export const SiteSelectionPage: React.FC<Props> = ({
       const ongoingArr = ongoingRaw ? JSON.parse(ongoingRaw) : [];
       const newOngoingEntry = {
         id: `site-${Date.now()}`,
-        siteId: `S-0${ongoingArr.length + 1}`,
-        category: newCategory === 'ROAD' ? 'Road' : 'Building',
+        siteId: newSite.siteId,
+        category: category,
         name: cleanKey,
         siteName: cleanKey,
         location: loc,
-        supervisor: currentUser.username || 'adminbilgi',
-        clientName: cleanKey,
-        gstin: '29UNREGISTERED',
-        detail: newSite.buildingFloors,
+        supervisor: supervisor || currentUser.username || 'adminbilgi',
+        clientName: clientName.trim() || cleanKey,
+        gstin: gstin.trim().toUpperCase(),
+        detail: detail,
         assignedFleet: 4
       };
 
@@ -209,12 +221,12 @@ export const SiteSelectionPage: React.FC<Props> = ({
             site_id: newOngoingEntry.siteId,
             name: cleanKey,
             site_name: cleanKey,
-            category: newCategory === 'ROAD' ? 'Road' : 'Building',
+            category: category,
             location: loc,
-            supervisor: currentUser.username || 'adminbilgi',
-            client_name: cleanKey,
-            gstin: '29UNREGISTERED',
-            scope: newSite.buildingFloors,
+            supervisor: supervisor || currentUser.username,
+            client_name: clientName.trim() || cleanKey,
+            gstin: gstin.trim().toUpperCase(),
+            scope: detail,
             assigned_fleet: 4,
             status: 'active',
             updated_at: new Date().toISOString()
@@ -224,9 +236,11 @@ export const SiteSelectionPage: React.FC<Props> = ({
     } catch {}
 
     setIsAddModalOpen(false);
-    setNewSiteName('');
-    setNewLocation('');
-    
+    setProjectName('');
+    setSiteLocation('');
+    setClientName('');
+    setGstin('');
+
     handleLaunchSite(newSite);
   };
 
@@ -350,7 +364,7 @@ export const SiteSelectionPage: React.FC<Props> = ({
                 onClick={() => setIsAddModalOpen(true)}
                 className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-lg shadow-blue-600/30 cursor-pointer transition active:scale-95"
               >
-                + Add Project Corridor
+                + Add Ongoing Building Section
               </button>
             )}
           </div>
@@ -426,108 +440,169 @@ export const SiteSelectionPage: React.FC<Props> = ({
         CONCRETE 360 • Bilgi RMC Field ERP
       </div>
 
-      {/* Create Site Modal (Opens Immediately) */}
+      {/* POPUP MODAL: ADD ONGOING BUILDING / ROAD SECTION */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="bg-[#121927] border border-[#1E293B] rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4 text-slate-100 max-h-[92vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-[#1E293B] pb-3">
-              <div className="flex items-center gap-2 text-white font-bold text-base">
-                <Building2 className="w-5 h-5 text-emerald-400" />
-                <span>Create New Site Corridor</span>
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white text-slate-800 rounded-3xl w-full max-w-md p-6 shadow-2xl relative max-h-[94vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-[#e6fbf4] border border-[#a4eed6] text-[#00a86b] flex items-center justify-center">
+                  <Building2 className="w-5 h-5" />
+                </div>
+                <h3 className="text-base font-black text-slate-900 tracking-tight uppercase">
+                  ADD ONGOING {category.toUpperCase()} SECTION
+                </h3>
               </div>
               <button
                 type="button"
                 onClick={() => setIsAddModalOpen(false)}
-                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 cursor-pointer"
+                className="text-slate-400 hover:text-slate-700 p-1 rounded-lg cursor-pointer transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleCreateSite} className="space-y-3.5 text-xs font-mono">
+            {/* Form */}
+            <form onSubmit={handleCreateSite} className="space-y-4 pt-1 font-mono text-xs">
+              {/* Construction Category */}
               <div>
-                <label className="block text-slate-300 font-bold mb-1">Project Classification</label>
-                <div className="grid grid-cols-2 gap-2">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+                  CONSTRUCTION CATEGORY *
+                </label>
+                <div className="grid grid-cols-2 gap-2.5">
                   <button
                     type="button"
                     onClick={() => {
-                      setNewCategory('BUILDING');
-                      setBuildingFloors('G + 3 Floors');
+                      setCategory('Road');
+                      setFloorScope('Km 0 to 12.5');
                     }}
-                    className={`py-2 rounded-xl font-bold border transition ${
-                      newCategory === 'BUILDING'
-                        ? 'bg-emerald-600/20 border-emerald-500 text-emerald-300'
-                        : 'bg-[#162032] border-[#1E293B] text-slate-400'
+                    className={`py-3 rounded-2xl font-bold flex items-center justify-center gap-2 transition cursor-pointer text-xs border ${
+                      category === 'Road'
+                        ? 'bg-[#d8f5ec] border-[#00a86b] text-[#008f5a]'
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
                     }`}
                   >
-                    Building Site
+                    <Signpost className="w-4 h-4" />
+                    <span>Road</span>
                   </button>
+
                   <button
                     type="button"
                     onClick={() => {
-                      setNewCategory('ROAD');
-                      setBuildingFloors('Km 0 to 12.5');
+                      setCategory('Building');
+                      setFloorScope('G + 3 Floors');
                     }}
-                    className={`py-2 rounded-xl font-bold border transition ${
-                      newCategory === 'ROAD'
-                        ? 'bg-sky-600/20 border-sky-500 text-sky-300'
-                        : 'bg-[#162032] border-[#1E293B] text-slate-400'
+                    className={`py-3 rounded-2xl font-bold flex items-center justify-center gap-2 transition cursor-pointer text-xs border ${
+                      category === 'Building'
+                        ? 'bg-[#d8f5ec] border-[#00a86b] text-[#008f5a]'
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
                     }`}
                   >
-                    Road Corridor
+                    <Building2 className="w-4 h-4" />
+                    <span>Building</span>
                   </button>
                 </div>
               </div>
 
+              {/* Building / Tower Project Name */}
               <div>
-                <label className="block text-slate-300 font-bold mb-1">Site / Project Code Name *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. BASVARAJ or VVV"
-                  value={newSiteName}
-                  onChange={(e) => setNewSiteName(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-[#162032] border border-[#1E293B] rounded-xl text-white outline-none focus:border-blue-500 uppercase font-bold"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-300 font-bold mb-1">Location / Zone</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Tikota Road / Highway Corridor"
-                  value={newLocation}
-                  onChange={(e) => setNewLocation(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-[#162032] border border-[#1E293B] rounded-xl text-white outline-none focus:border-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-300 font-bold mb-1">
-                  {newCategory === 'ROAD' ? 'Chainage Range' : 'Building Floors / Scope'}
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+                  {category === 'Road' ? 'ROAD CORRIDOR NAME *' : 'BUILDING / TOWER PROJECT NAME *'}
                 </label>
                 <input
                   type="text"
-                  value={buildingFloors}
-                  onChange={(e) => setBuildingFloors(e.target.value)}
-                  placeholder={newCategory === 'ROAD' ? 'Km 0 to 12.5' : 'G + 3 Floors'}
-                  className="w-full px-3.5 py-2.5 bg-[#162032] border border-[#1E293B] rounded-xl text-white outline-none focus:border-emerald-500"
+                  required
+                  placeholder={category === 'Road' ? 'E.G. HIGHWAY CORRIDOR VVV' : 'E.G. BILGI HEIGHTS TOWER-A'}
+                  value={projectName}
+                  onChange={(e) => setProjectName(e.target.value)}
+                  className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 text-xs uppercase font-bold"
                 />
               </div>
 
-              <div className="flex justify-end gap-2 pt-3 border-t border-[#1E293B]">
+              {/* Client Name & GSTIN Number (Side-by-side) */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+                    CLIENT NAME (OPTIONAL)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Buildwell Ltd."
+                    value={clientName}
+                    onChange={(e) => setClientName(e.target.value)}
+                    className="w-full bg-white border border-slate-200 rounded-2xl px-3.5 py-3 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 text-xs font-sans"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+                    GSTIN NUMBER (OPTIONAL)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="E.G. 29AAACB..."
+                    value={gstin}
+                    onChange={(e) => setGstin(e.target.value)}
+                    className="w-full bg-white border border-slate-200 rounded-2xl px-3.5 py-3 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 text-xs uppercase font-bold"
+                  />
+                </div>
+              </div>
+
+              {/* Site Location / Campus */}
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+                  SITE LOCATION / CAMPUS
+                </label>
+                <input
+                  type="text"
+                  placeholder={category === 'Road' ? 'e.g. Tikota Road / Highway Corridor' : 'e.g. Sector 4 Commercial Zone'}
+                  value={siteLocation}
+                  onChange={(e) => setSiteLocation(e.target.value)}
+                  className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 text-xs font-sans"
+                />
+              </div>
+
+              {/* Site Supervisor */}
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+                  SITE SUPERVISOR
+                </label>
+                <input
+                  type="text"
+                  value={supervisor}
+                  onChange={(e) => setSupervisor(e.target.value)}
+                  className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 text-xs font-sans"
+                />
+              </div>
+
+              {/* Building Structure / Floor Scope */}
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+                  {category === 'Road' ? 'CHAINAGE RANGE' : 'BUILDING STRUCTURE / FLOOR SCOPE'}
+                </label>
+                <input
+                  type="text"
+                  value={floorScope}
+                  onChange={(e) => setFloorScope(e.target.value)}
+                  placeholder={category === 'Road' ? 'Km 0 to 12.5' : 'G + 3 Floors'}
+                  className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3 text-slate-900 font-bold focus:outline-none focus:border-blue-500 text-xs"
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setIsAddModalOpen(false)}
-                  className="px-4 py-2 rounded-xl text-slate-400 hover:text-white cursor-pointer"
+                  className="px-4 py-2.5 text-slate-600 hover:text-slate-900 font-semibold text-xs cursor-pointer transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-black transition-all shadow-lg shadow-blue-600/30 cursor-pointer"
+                  className="px-6 py-3 bg-[#2d588f] hover:bg-[#234570] text-white font-bold rounded-2xl text-xs transition shadow-md shadow-blue-900/20 cursor-pointer"
                 >
-                  Create & Launch Site
+                  Create Site Section
                 </button>
               </div>
             </form>
