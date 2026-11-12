@@ -14,6 +14,7 @@ import {
   FileBarChart,
   Building,
   FileText,
+  FileSpreadsheet,
   Wrench,
   LogOut,
   Moon,
@@ -28,6 +29,7 @@ import { cloudStorage, SyncStatus } from '../../services/cloudStorage';
 import { SiteMeasurementSession } from '../../types/rmc';
 import { SiteMeasurementStudio } from '../measurement/SiteMeasurementStudio';
 import { OngoingSiteTransfer } from '../pages/OngoingSiteTransfer';
+import { QuotationRMC } from '../pages/QuotationRMC';
 import { BillingRMC } from '../pages/BillingRMC';
 import { MaterialCategory } from '../pages/MaterialCategory';
 import { MaterialHaulageTripsModule } from '../pages/MaterialHaulageTripsModule';
@@ -151,7 +153,12 @@ export const Sidebar: React.FC<Props> = ({
       } catch {}
     };
 
+    const handleNavigateEvent = (e: any) => {
+      if (e?.detail) handleNavigate(e.detail);
+    };
+
     window.addEventListener('concrete360_site_switched', handleSiteSwitch);
+    window.addEventListener('concrete360_navigate_tab', handleNavigateEvent);
     window.addEventListener('storage', handleSiteSwitch);
     window.addEventListener('storage', handleUserSync);
     window.addEventListener('concrete360_user_updated', handleUserSync);
@@ -159,6 +166,7 @@ export const Sidebar: React.FC<Props> = ({
     return () => {
       unsub();
       window.removeEventListener('concrete360_site_switched', handleSiteSwitch);
+      window.removeEventListener('concrete360_navigate_tab', handleNavigateEvent);
       window.removeEventListener('storage', handleSiteSwitch);
       window.removeEventListener('storage', handleUserSync);
       window.removeEventListener('concrete360_user_updated', handleUserSync);
@@ -168,6 +176,7 @@ export const Sidebar: React.FC<Props> = ({
   const sidebarNavItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, section: 'SITE OPERATIONS' },
     { id: 'ongoing_site', label: 'Ongoing Site', icon: Building2, section: 'SITE OPERATIONS', badge: 'Sites' },
+    { id: 'quotation', label: 'Estimate / Quotation', icon: FileSpreadsheet, section: 'SITE OPERATIONS', badge: 'Quote' },
     { id: 'billing', label: 'Billing', icon: DollarSign, section: 'SITE OPERATIONS' },
     { id: 'total_bill', label: 'Total Bill of Site', icon: FileText, section: 'SITE OPERATIONS' },
     { id: 'site_tests', label: 'At-Site Tests', icon: FlaskConical, section: 'SITE OPERATIONS' },
@@ -184,7 +193,7 @@ export const Sidebar: React.FC<Props> = ({
   ];
 
   const visibleNavItems = sidebarNavItems.filter(item =>
-    (!item.adminOnly || isAdminUser(currentUser)) && canViewPage(currentUser, item.id)
+    (!item.adminOnly || isAdminUser(currentUser)) && (item.id === 'quotation' || canViewPage(currentUser, item.id))
   );
 
   const activePage = visibleNavItems.some(item => item.id === activeTab)
@@ -211,6 +220,11 @@ export const Sidebar: React.FC<Props> = ({
       case 'ongoing':
         normalizedTarget = 'ongoing_site';
         break;
+      case 'estimate':
+      case 'estimates':
+      case 'quotations':
+        normalizedTarget = 'quotation';
+        break;
       case 'total-bill':
         normalizedTarget = 'total_bill';
         break;
@@ -226,6 +240,7 @@ export const Sidebar: React.FC<Props> = ({
       case 'rmc-batch-report':
       case 'rmc_batch_report':
       case 'batch-report':
+      case 'batch_report':
       case 'plant-batch-report':
         normalizedTarget = 'rmc_batch_report';
         break;
@@ -248,7 +263,7 @@ export const Sidebar: React.FC<Props> = ({
         normalizedTarget = 'company_details';
         break;
     }
-    if (!canViewPage(currentUser, normalizedTarget)) return;
+    if (normalizedTarget !== 'quotation' && !canViewPage(currentUser, normalizedTarget)) return;
     if (normalizedTarget === 'user_management' && !isAdminUser(currentUser)) return;
     
     setActiveTab(normalizedTarget);
@@ -455,6 +470,7 @@ export const Sidebar: React.FC<Props> = ({
           )}
           {activePage === 'dashboard' && <Dashboard onNavigate={handleNavigate} />}
           {activePage === 'ongoing_site' && <OngoingSiteTransfer />}
+          {activePage === 'quotation' && <QuotationRMC />}
           {activePage === 'billing' && <BillingRMC />}
           {activePage === 'total_bill' && <TotalBillPage />}
           {activePage === 'site_tests' && <AtSiteTestsPage />}
