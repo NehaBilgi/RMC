@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { SiteMeasurementSession } from './types/rmc';
 import { INITIAL_MEASUREMENT_SESSION } from './data/mockData';
-import { Sidebar } from './components/construction/Sidebar';
+import { Sidebar, normalizeSiteKey } from './components/construction/Sidebar';
 import { Login } from './components/pages/Login';
 import { SiteSelectionPage } from './components/pages/SiteSelectionPage';
 import { SessionUser } from './utils/accessControl';
@@ -12,7 +12,7 @@ export default function App() {
   // 1. User authentication state
   const [user, setUser] = useState<SessionUser | null>(() => {
     try {
-      const savedUser = sessionStorage.getItem('concrete360_user');
+      const savedUser = sessionStorage.getItem('concrete360_user') || localStorage.getItem('concrete360_user');
       return savedUser ? JSON.parse(savedUser) : null;
     } catch {
       return null;
@@ -79,7 +79,7 @@ export default function App() {
     } catch {}
   }, [theme]);
 
-  // Persist session user in sessionStorage only
+  // Persist session user
   useEffect(() => {
     try {
       if (user) {
@@ -90,11 +90,34 @@ export default function App() {
     } catch {}
   }, [user]);
 
-  // Persist selected site in sessionStorage
+  // Persist selected site & synchronize active site metadata across all modules
   useEffect(() => {
     try {
       if (selectedSite) {
-        sessionStorage.setItem('concrete360_selected_site', selectedSite);
+        const cleanKey = normalizeSiteKey(selectedSite);
+        sessionStorage.setItem('concrete360_selected_site', cleanKey);
+        localStorage.setItem('concrete360_selected_site', cleanKey);
+
+        // Ensure `concrete360_active_site` is populated from registered ongoing sites
+        const ongoingRaw = localStorage.getItem('concrete360_ongoing_sites') || localStorage.getItem('concrete360_sites');
+        const phoneRegRaw = localStorage.getItem('concrete360_site_phone_registry');
+        const phoneMap = phoneRegRaw ? JSON.parse(phoneRegRaw) : {};
+
+        if (ongoingRaw) {
+          const list = JSON.parse(ongoingRaw);
+          if (Array.isArray(list)) {
+            const matched = list.find((s: any) => normalizeSiteKey(s.name || s.siteName || s.id) === cleanKey);
+            if (matched) {
+              const resolvedPhone = matched.phone || matched.phoneNumber || phoneMap[cleanKey] || '';
+              localStorage.setItem('concrete360_active_site', JSON.stringify({
+                ...matched,
+                name: cleanKey,
+                phone: resolvedPhone,
+                phoneNumber: resolvedPhone
+              }));
+            }
+          }
+        }
       } else {
         sessionStorage.removeItem('concrete360_selected_site');
         localStorage.removeItem('concrete360_active_site');
@@ -103,11 +126,11 @@ export default function App() {
     } catch {}
   }, [selectedSite]);
 
-  // Listen strictly to explicit site change actions
+  // Listen to site switch events from OngoingSiteTransfer or header
   useEffect(() => {
     const handleSiteSwitch = (e: any) => {
       if (typeof e?.detail === 'string' && e.detail.trim().length > 0) {
-        setSelectedSite(e.detail.trim());
+        setSelectedSite(normalizeSiteKey(e.detail));
       } else if (e?.detail === null || e?.detail === '') {
         setSelectedSite(null);
         sessionStorage.removeItem('concrete360_selected_site');
@@ -139,8 +162,10 @@ export default function App() {
   const handleLogout = () => {
     sessionStorage.removeItem('concrete360_user');
     sessionStorage.removeItem('concrete360_selected_site');
+    sessionStorage.removeItem('concrete360_active_tab');
     localStorage.removeItem('concrete360_active_site');
     localStorage.removeItem('concrete360_selected_site');
+    localStorage.removeItem('concrete360_active_tab');
     if (supabase) {
       void supabase.auth.signOut();
     }
@@ -156,7 +181,6 @@ export default function App() {
           onLoginSuccess={(loggedInUser) => {
             try {
               sessionStorage.setItem('concrete360_user', JSON.stringify(loggedInUser));
-              // Clear cached site to ensure fresh routing directly to the creation / site selection modal
               sessionStorage.removeItem('concrete360_selected_site');
               localStorage.removeItem('concrete360_active_site');
               localStorage.removeItem('concrete360_selected_site');
@@ -171,15 +195,17 @@ export default function App() {
     );
   }
 
-  // 2. Logged in, site not chosen -> Show Site Selection with the modal directly open
+  // 2. Logged in, site not chosen -> Show Site Selection
   if (!selectedSite) {
     return (
       <div className={`app-theme ${themeClass}`}>
         <SiteSelectionPage
           projectType="ALL"
           onSelectSite={(siteName) => {
-            sessionStorage.setItem('concrete360_selected_site', siteName);
-            setSelectedSite(siteName);
+            const cleanKey = normalizeSiteKey(siteName);
+            sessionStorage.setItem('concrete360_selected_site', cleanKey);
+            localStorage.setItem('concrete360_selected_site', cleanKey);
+            setSelectedSite(cleanKey);
           }}
           theme={theme}
           onToggleTheme={() => setTheme((current) => (current === 'light' ? 'dark' : 'light'))}
