@@ -860,17 +860,23 @@ export const QuotationRMC: React.FC = () => {
       lines = q.measurementLines;
     }
 
-    const totalNetQty = lines.reduce((sum, l) => sum + l.quantityM3, 0);
+    const totalNetQty = Number(lines.reduce((sum, l) => sum + l.quantityM3, 0).toFixed(2));
     const liveWastageSummary = summarizeEntriesWastage(targetWorks, currentSiteKey);
-    const hasWastage =
-      (Number(q.wastagePercent) || 0) > 0 ||
-      (Number(q.wastageVolumeM3) || 0) > 0 ||
-      liveWastageSummary.wastagePct > 0 ||
-      liveWastageSummary.wastageVol > 0;
 
-    const netLabel = hasWastage
-      ? 'Calculated Net Total (incl. Wastage):'
-      : 'Calculated Net Total:';
+    const wastagePct =
+      (Number(q.wastagePercent) || 0) > 0
+        ? Number(q.wastagePercent)
+        : liveWastageSummary.wastagePct;
+
+    const wastageVol =
+      (Number(q.wastageVolumeM3) || 0) > 0
+        ? Number(q.wastageVolumeM3)
+        : wastagePct > 0
+          ? Number((totalNetQty * (wastagePct / 100)).toFixed(2))
+          : liveWastageSummary.wastageVol;
+
+    const hasWastage = wastagePct > 0 || wastageVol > 0;
+    const totalWithWastage = Number((totalNetQty + wastageVol).toFixed(2));
 
     // Clean any accidental wastage % mention from remarks before printing
     const cleanPrintRemarks = (q.remarks || '').replace(/\s*incl\.\s*[\d.]+%\s*wastage/gi, '');
@@ -899,9 +905,23 @@ export const QuotationRMC: React.FC = () => {
               </tr>
             `).join('')}
             <tr style="background:#f8fafc;">
-              <td colspan="3" class="right" style="font-weight:bold;">${netLabel}</td>
-              <td class="right" style="font-weight:bold;">${totalNetQty.toFixed(2)} m³</td>
+              <td colspan="3" class="right" style="font-weight:bold; color:#334155;">Net Measured Total:</td>
+              <td class="right" style="font-weight:bold; color:#334155;">${totalNetQty.toFixed(2)} m³</td>
             </tr>
+            ${hasWastage ? `
+              <tr style="background:#fffbeb;">
+                <td colspan="3" class="right" style="font-weight:bold; color:#b45309;">
+                  Wastage Applied${wastagePct > 0 ? ` (+${wastagePct}%)` : ''}:
+                </td>
+                <td class="right" style="font-weight:bold; color:#b45309;">+${wastageVol.toFixed(2)} m³</td>
+              </tr>
+              <tr style="background:#f8fafc;">
+                <td colspan="3" class="right" style="font-weight:bold; color:#0f172a;">
+                  Calculated Total (incl.${wastagePct > 0 ? ` ${wastagePct}%` : ''} Wastage):
+                </td>
+                <td class="right" style="font-weight:bold; color:#0f172a;">${totalWithWastage.toFixed(2)} m³</td>
+              </tr>
+            ` : ''}
             <tr style="background:#f1f5f9;">
               <td colspan="3" class="right" style="font-weight:bold; color:#0f172a;">
                 Total Quoted Quantity (Round Figure):
