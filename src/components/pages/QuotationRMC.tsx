@@ -27,19 +27,6 @@ interface MeasurementSpecificationItem {
   elementType?: string;
   unitSystem?: string;
   unit?: string;
-  rows?: any[];
-  dimensions?: any[];
-  items?: any[];
-  subItems?: any[];
-  entries?: any[];
-  categoryRows?: Record<string, any[]>;
-  length?: number | string;
-  width?: number | string;
-  thickness?: number | string;
-  depth?: number | string;
-  height?: number | string;
-  nos?: number | string;
-  count?: number | string;
   volumeM3: number;
   mixGrade?: string;
   date?: string;
@@ -71,7 +58,6 @@ interface RMCQuotation {
   grandTotal: number;
   status: 'DRAFT' | 'SENT' | 'ACCEPTED' | 'CONVERTED';
   remarks: string;
-  specifications?: MeasurementSpecificationItem[];
 }
 
 const STANDARD_RMC_RATES: Record<string, number> = {
@@ -99,7 +85,6 @@ const formatDateDDMMYYYY = (dateStr: string) => {
   return parts.length === 3 ? `${parts[2]}-${parts[1]}-${parts[0]}` : dateStr;
 };
 
-// Pulls measurements from both `concrete360_advanced_measurements_${siteKey}` and `concrete360_measurement` session
 const loadAllSiteMeasurements = (siteKey: string): MeasurementSpecificationItem[] => {
   const results: MeasurementSpecificationItem[] = [];
   const seenIds = new Set<string>();
@@ -130,12 +115,6 @@ const loadAllSiteMeasurements = (siteKey: string): MeasurementSpecificationItem[
           if (!seenIds.has(id)) {
             seenIds.add(id);
             results.push({ ...item, id });
-          } else {
-            // Enrich existing item with any nested rows/categories from session
-            const existingIdx = results.findIndex(r => r.id === id);
-            if (existingIdx >= 0) {
-              results[existingIdx] = { ...item, ...results[existingIdx] };
-            }
           }
         });
       }
@@ -163,68 +142,6 @@ const resolveWorkLabel = (it: MeasurementSpecificationItem, idx = 0): string => 
     }
   }
   return `Structural Section #${idx + 1}`;
-};
-
-const formatSingleRowDim = (r: any, lenUnit: string, thickUnit: string): string => {
-  const l = Number(r.length ?? r.l ?? r.len) || 0;
-  const w = Number(r.width ?? r.breadth ?? r.w ?? r.b) || 0;
-  const t = Number(r.thickness ?? r.depth ?? r.height ?? r.t ?? r.d ?? r.h) || 0;
-  const n = Number(r.nos ?? r.quantity ?? r.count ?? r.qty) || 1;
-  const cat = r.category || r.categoryLabel || r.elementType || r.type || '';
-  const nosStr = n > 1 ? ` (${n} Nos)` : '';
-
-  if (l > 0 || w > 0 || t > 0) {
-    const dim = `${l}${lenUnit} × ${w}${lenUnit} × ${t}${thickUnit}${nosStr}`;
-    return cat ? `<strong>${cat}:</strong> ${dim}` : dim;
-  }
-  return cat ? String(cat) : '';
-};
-
-const formatMeasurementDimensions = (sp: MeasurementSpecificationItem): string => {
-  const unitRaw = String(sp.unitSystem || sp.unit || '').toUpperCase();
-  const isImperial = unitRaw.includes('IMPERIAL') || unitRaw.includes('FT');
-  const lenUnit = isImperial ? 'ft' : 'm';
-  const thickUnit = isImperial ? 'in' : 'mm';
-
-  // 1. Multi-category map (e.g., { "Slab / Deck": [...], "Column": [...] })
-  if (sp.categoryRows && typeof sp.categoryRows === 'object') {
-    const blocks: string[] = [];
-    Object.entries(sp.categoryRows).forEach(([catName, rows]) => {
-      if (Array.isArray(rows) && rows.length > 0) {
-        const formatted = rows
-          .map(r => formatSingleRowDim({ ...r, category: '' }, lenUnit, thickUnit))
-          .filter(Boolean);
-        if (formatted.length > 0) {
-          blocks.push(`<strong>${catName}:</strong> ${formatted.join('; ')}`);
-        }
-      }
-    });
-    if (blocks.length > 0) return blocks.join('<br/>');
-  }
-
-  // 2. Nested array of rows / dimensions / items / subItems / entries
-  const nestedRows = sp.rows || sp.dimensions || sp.items || sp.subItems || sp.entries;
-  if (Array.isArray(nestedRows) && nestedRows.length > 0) {
-    const parentCat = sp.category || sp.categoryLabel || sp.elementType || (Array.isArray(sp.categories) ? sp.categories.join(', ') : '');
-    const formatted = nestedRows
-      .map(r => formatSingleRowDim(r, lenUnit, thickUnit))
-      .filter(Boolean);
-    if (formatted.length > 0) {
-      const joined = formatted.join('<br/>');
-      return parentCat && !joined.includes(parentCat) ? `<strong>${parentCat}:</strong> ${joined}` : joined;
-    }
-  }
-
-  // 3. Direct flat dimensions on item
-  const flatDim = formatSingleRowDim(sp, lenUnit, thickUnit);
-  if (flatDim) return flatDim;
-
-  // 4. Fallback to description/remarks or selected categories
-  if (sp.description && String(sp.description).trim()) return String(sp.description).trim();
-  if (sp.remarks && String(sp.remarks).trim()) return String(sp.remarks).trim();
-  if (Array.isArray(sp.categories) && sp.categories.length > 0) return sp.categories.join(', ');
-
-  return `${Number(sp.volumeM3 || 0).toFixed(2)} m³ Measured Concrete`;
 };
 
 export const QuotationRMC: React.FC = () => {
@@ -484,15 +401,14 @@ export const QuotationRMC: React.FC = () => {
       applyGst,
       grandTotal,
       status: 'SENT',
-      remarks,
-      specifications: activeSpecsForSelection
+      remarks
     };
 
     const updated = [newQuote, ...quotations];
     setQuotations(updated);
     localStorage.setItem(`concrete360_site_quotations_${currentSiteKey}`, JSON.stringify(updated));
     setIsModalOpen(false);
-    setToastMsg(`Quotation ${newQuote.quoteNo} created with Site Measurements!`);
+    setToastMsg(`Quotation ${newQuote.quoteNo} created!`);
     setTimeout(() => setToastMsg(null), 3500);
   };
 
@@ -569,37 +485,6 @@ export const QuotationRMC: React.FC = () => {
     const sub = concreteSub + pumpSub;
     const gst = q.applyGst ? sub * 0.18 : 0;
 
-    // Always enrich saved specs with live Site Inventory Measurements so full category & row details appear
-    const liveArr = loadAllSiteMeasurements(currentSiteKey);
-    let specs: MeasurementSpecificationItem[] = [];
-
-    if (q.specifications && q.specifications.length > 0) {
-      specs = q.specifications.map(savedSp => {
-        const liveMatch = liveArr.find(l => l.id === savedSp.id);
-        return liveMatch ? { ...liveMatch, ...savedSp } : savedSp;
-      });
-    } else if (liveArr.length > 0) {
-      specs = q.workElementId && q.workElementId !== 'ALL'
-        ? liveArr.filter(it => it.id === q.workElementId)
-        : liveArr;
-    }
-
-    const netSum = specs.reduce((s, sp) => s + (Number(sp.volumeM3) || 0), 0);
-
-    const specRowsHtml = specs.map((sp, i) => {
-      const workTitle = resolveWorkLabel(sp, i);
-      const dimDetails = formatMeasurementDimensions(sp);
-      return `
-        <tr>
-          <td>${i + 1}</td>
-          <td><strong>${workTitle}</strong></td>
-          <td>${dimDetails}</td>
-          <td>${sp.mixGrade || q.mixGrade}</td>
-          <td class="right"><strong>${Number(sp.volumeM3 || 0).toFixed(2)} m³</strong></td>
-        </tr>
-      `;
-    }).join('');
-
     win.document.write(`
       <html>
         <head>
@@ -641,8 +526,7 @@ export const QuotationRMC: React.FC = () => {
               <strong>TO (CLIENT / BUYER):</strong><br/>
               <strong>${q.clientName}</strong><br/>
               ${q.clientAddress}<br/>
-              ${q.clientGstin ? `GSTIN: ${q.clientGstin}<br/>` : ''}
-              ${q.clientPhone ? `Phone: <strong>${q.clientPhone}</strong>` : ''}
+              ${q.clientGstin ? `GSTIN: ${q.clientGstin}<br/>` : ''} ${q.clientPhone ? `Phone: <strong>${q.clientPhone}</strong>` : ''}
             </div>
             <div>
               <strong>SITE / STRUCTURAL SCOPE:</strong><br/>
@@ -653,29 +537,7 @@ export const QuotationRMC: React.FC = () => {
             </div>
           </div>
 
-          ${specs.length > 0 ? `
-            <div class="sec-title">1. Site Inventory Measurements (Category & Dimension Breakdown)</div>
-            <table>
-              <thead>
-                <tr>
-                  <th style="width:5%;">#</th>
-                  <th style="width:26%;">Work Label / Reference</th>
-                  <th style="width:42%;">Category & Measured Dimensions</th>
-                  <th style="width:13%;">Grade</th>
-                  <th style="width:14%;" class="right">Net Volume</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${specRowsHtml}
-                <tr style="background:#f8fafc;font-weight:bold;">
-                  <td colspan="4" class="right">Total Net Measured Volume (+ ${q.wastagePercent ?? 5}% Wastage = ${q.estimatedQtyM3.toFixed(2)} m³ Gross):</td>
-                  <td class="right">${netSum.toFixed(2)} m³</td>
-                </tr>
-              </tbody>
-            </table>
-          ` : ''}
-
-          <div class="sec-title">${specs.length > 0 ? '2. Commercial Rate & Cost Estimate' : 'Commercial Rate & Cost Estimate'}</div>
+          <div class="sec-title">Commercial Rate & Cost Estimate</div>
           <table>
             <thead>
               <tr>
@@ -849,7 +711,7 @@ export const QuotationRMC: React.FC = () => {
                         <button
                           onClick={() => handlePrintQuotation(q)}
                           className="text-slate-400 hover:text-cyan-400 p-1 transition cursor-pointer"
-                          title="Print Commercial Quotation with Measurements"
+                          title="Print Commercial Quotation"
                         >
                           <Printer className="w-4 h-4" />
                         </button>
@@ -950,130 +812,4 @@ export const QuotationRMC: React.FC = () => {
                   <select
                     value={mixGrade}
                     onChange={(e) => handleGradeChange(e.target.value)}
-                    className="w-full px-3 py-2.5 bg-[#070d1a] border border-[#1b273d] rounded-xl text-cyan-400 font-bold outline-none cursor-pointer"
-                  >
-                    {Object.keys(STANDARD_RMC_RATES).map(g => (
-                      <option key={g} value={g}>{g}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-slate-300 font-bold uppercase text-[10px] block mb-1">Gross Qty (m³)</label>
-                  <input
-                    type="number"
-                    step="any"
-                    required
-                    value={estimatedQtyM3}
-                    onChange={(e) => setEstimatedQtyM3(e.target.value === '' ? '' : Number(e.target.value))}
-                    className="w-full px-3 py-2.5 bg-[#070d1a] border border-[#1b273d] rounded-xl text-cyan-300 font-bold outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="text-slate-300 font-bold uppercase text-[10px] block mb-1">Rate (₹ / m³)</label>
-                  <input
-                    type="number"
-                    required
-                    value={unitRate}
-                    onChange={(e) => setUnitRate(e.target.value === '' ? '' : Number(e.target.value))}
-                    className="w-full px-3 py-2.5 bg-[#070d1a] border border-[#1b273d] rounded-xl text-white font-bold outline-none"
-                  />
-                </div>
-              </div>
-
-              {/* Static Pump Rental Toggle */}
-              <div className="bg-[#070d1a] border border-[#1b273d] p-3 rounded-2xl space-y-2.5">
-                <label className="flex items-center gap-2 cursor-pointer text-slate-200 font-bold">
-                  <input
-                    type="checkbox"
-                    checked={includePump}
-                    onChange={(e) => setIncludePump(e.target.checked)}
-                    className="w-4 h-4 rounded text-blue-600"
-                  />
-                  <span>Include Static Concrete Pump Rental</span>
-                </label>
-
-                {includePump && (
-                  <div className="grid grid-cols-2 gap-3 pt-1">
-                    <div>
-                      <label className="text-slate-400 text-[10px] block mb-1">Pump Rent / Shift (₹)</label>
-                      <input
-                        type="number"
-                        value={pumpRentPerShift}
-                        onChange={(e) => setPumpRentPerShift(e.target.value === '' ? '' : Number(e.target.value))}
-                        className="w-full px-3 py-2 bg-[#0b1322] border border-[#1b273d] rounded-xl text-white font-bold outline-none"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-slate-400 text-[10px] block mb-1">No. of Shifts</label>
-                      <input
-                        type="number"
-                        value={pumpShifts}
-                        onChange={(e) => setPumpShifts(e.target.value === '' ? '' : Number(e.target.value))}
-                        className="w-full px-3 py-2 bg-[#0b1322] border border-[#1b273d] rounded-xl text-white font-bold outline-none"
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <label className="flex items-center gap-2 cursor-pointer text-slate-300 font-bold">
-                <input
-                  type="checkbox"
-                  checked={applyGst}
-                  onChange={(e) => setApplyGst(e.target.checked)}
-                  className="w-4 h-4 rounded text-blue-600"
-                />
-                <span>Include GST (18%) in Estimate</span>
-              </label>
-
-              <div>
-                <label className="text-slate-300 font-bold uppercase text-[10px] block mb-1">Commercial Terms / Remarks</label>
-                <input
-                  type="text"
-                  value={remarks}
-                  onChange={(e) => setRemarks(e.target.value)}
-                  className="w-full px-3 py-2.5 bg-[#070d1a] border border-[#1b273d] rounded-xl text-slate-200 outline-none font-sans"
-                />
-              </div>
-
-              <div className="bg-[#070d1a] border border-[#1b273d] p-4 rounded-2xl space-y-1.5">
-                <div className="flex justify-between text-slate-400">
-                  <span>Estimated Subtotal:</span>
-                  <span>₹{Math.round(subtotal).toLocaleString('en-IN')}</span>
-                </div>
-                {applyGst && (
-                  <div className="flex justify-between text-slate-400">
-                    <span>GST (18%):</span>
-                    <span>₹{Math.round(gstAmount).toLocaleString('en-IN')}</span>
-                  </div>
-                )}
-                <div className="flex justify-between items-center pt-2 border-t border-[#1b273d] text-sm font-black text-emerald-400">
-                  <span>Estimated Grand Total:</span>
-                  <span>₹{grandTotal.toLocaleString('en-IN')}</span>
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-3 pt-2 border-t border-[#1b273d]">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-5 py-2.5 bg-[#070d1a] text-slate-300 font-bold rounded-xl cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl shadow-lg shadow-blue-600/30 cursor-pointer"
-                >
-                  Save & Issue Quotation
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
-export default QuotationRMC;
+                    className="w-full px-3 py-2.5 bg-[#070d1a] border border-[#1b273d
