@@ -844,6 +844,43 @@ export const QuotationRMC: React.FC = () => {
     const win = window.open('', '_blank');
     if (!win) return;
 
+    let compProfile: Record<string, any> = {
+      name: 'BILGI BUILDCON RMC',
+      plantMake: 'CONMAT Batching Plant (0.75 m³)',
+      gstin: '29ABWFM2721J1ZA',
+      address: 'SY NO 118/13 AINAPUR GRAM BURNAPUR ROAD, VIJAYAPURA-586104',
+      division: 'Commercial Ready-Mix Concrete Supply',
+      phonePrimary: '',
+      phoneSecondary: ''
+    };
+
+    try {
+      const savedProf = localStorage.getItem('concrete360_company_profile');
+      const savedPhones = localStorage.getItem('concrete360_company_phones');
+      const parsedP = savedProf ? JSON.parse(savedProf) : {};
+      const parsedPhones = savedPhones ? JSON.parse(savedPhones) : {};
+
+      compProfile = {
+        ...compProfile,
+        ...parsedP,
+        phonePrimary:
+          parsedP.phonePrimary ||
+          parsedP.phone_primary ||
+          parsedPhones.phonePrimary ||
+          '',
+        phoneSecondary:
+          parsedP.phoneSecondary ||
+          parsedP.phone_secondary ||
+          parsedPhones.phoneSecondary ||
+          ''
+      };
+    } catch {}
+
+    const companyContactNumbers = [compProfile.phonePrimary, compProfile.phoneSecondary]
+      .map(n => String(n || '').trim())
+      .filter(Boolean)
+      .join(' / ');
+
     const concreteSub = q.estimatedQtyM3 * q.unitRate;
     const pumpSub = q.includePump ? q.pumpRentPerShift * q.pumpShifts : 0;
     const sub = concreteSub + pumpSub;
@@ -944,9 +981,9 @@ export const QuotationRMC: React.FC = () => {
         <body>
           <div class="header">
             <div>
-              <h1>BILGI BUILDCON RMC</h1>
-              <p style="margin:3px 0;color:#475569;">Commercial Ready-Mix Concrete Supply • CONMAT Batching Plant (0.75 m³)<br/>
-              SY NO 118/13 AINAPUR GRAM BURNAPUR ROAD, VIJAYAPURA-586104 | GSTIN: <strong>29ABWFM2721J1ZA</strong></p>
+              <h1>${compProfile.name}</h1>
+              <p style="margin:3px 0;color:#475569;">${compProfile.division} • ${compProfile.plantMake}<br/>
+              ${compProfile.address} | GSTIN: <strong>${compProfile.gstin}</strong>${companyContactNumbers ? `<br/>Contact: <strong>${companyContactNumbers}</strong>` : ''}</p>
             </div>
             <div style="text-align:right;">
               <span class="badge">ESTIMATE / QUOTATION</span><br/><br/>
@@ -1016,7 +1053,7 @@ export const QuotationRMC: React.FC = () => {
           <p style="margin-top:14px;font-size:10px;"><strong>Terms & Remarks:</strong> ${cleanPrintRemarks}</p>
           <div style="margin-top:30px;display:flex;justify-content:space-between;font-size:10px;">
             <div style="border-top:1px dashed #64748b;width:180px;text-align:center;padding-top:4px;">Client Acceptance Sign & Stamp</div>
-            <div style="border-top:1px dashed #64748b;width:180px;text-align:center;padding-top:4px;">For BILGI BUILDCON RMC</div>
+            <div style="border-top:1px dashed #64748b;width:180px;text-align:center;padding-top:4px;">For ${compProfile.name}</div>
           </div>
 
           ${bottomMeasurementTableHtml}
