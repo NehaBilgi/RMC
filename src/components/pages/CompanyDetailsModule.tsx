@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Building, Edit2, Save, X, Check, Landmark } from 'lucide-react';
+import { Building, Edit2, Save, X, Check, Landmark, Phone } from 'lucide-react';
 import { getSessionUser, isAdminUser, canCreateRecords } from '../../utils/accessControl';
 import { supabase } from '../../lib/supabase';
 import { cloudStorage } from '../../services/cloudStorage';
@@ -15,6 +15,8 @@ export const CompanyDetailsModule: React.FC = () => {
     gstin: '29AKMKMJNJN1',
     address: 'Plot 108, Industrial Expressway Corridor, Sector 62',
     division: 'Commercial Ready-Mix Concrete Batching & Supply Division',
+    phonePrimary: '',
+    phoneSecondary: '',
     bankName: 'Standard Chartered Commercial Banking',
     accountName: 'BILGI RMC INFRASTRUCTURE',
     accountNo: '9920 4481 0029 3841',
@@ -27,7 +29,12 @@ export const CompanyDetailsModule: React.FC = () => {
       const raw = localStorage.getItem('concrete360_company_profile');
       if (raw) {
         const parsed = JSON.parse(raw);
-        setCompanyData(prev => ({ ...prev, ...parsed }));
+        setCompanyData(prev => ({
+          ...prev,
+          ...parsed,
+          phonePrimary: parsed.phonePrimary ?? parsed.phone_primary ?? prev.phonePrimary,
+          phoneSecondary: parsed.phoneSecondary ?? parsed.phone_secondary ?? prev.phoneSecondary
+        }));
       }
     } catch {}
   };
@@ -50,25 +57,34 @@ export const CompanyDetailsModule: React.FC = () => {
     e.preventDefault();
     if (!canEditCompany) return;
     try {
-      localStorage.setItem('concrete360_company_profile', JSON.stringify(companyData));
+      const cleanedData = {
+        ...companyData,
+        phonePrimary: companyData.phonePrimary.trim(),
+        phoneSecondary: companyData.phoneSecondary.trim()
+      };
+
+      localStorage.setItem('concrete360_company_profile', JSON.stringify(cleanedData));
 
       if (supabase) {
         await (supabase as any).from('company_profile').upsert({
           id: 'primary_company',
-          name: companyData.name,
-          gstin: companyData.gstin,
-          address: companyData.address,
-          division: companyData.division,
-          bank_name: companyData.bankName,
-          account_name: companyData.accountName,
-          account_no: companyData.accountNo,
-          ifsc_swift: companyData.ifscSwift,
-          branch: companyData.branch,
+          name: cleanedData.name,
+          gstin: cleanedData.gstin,
+          address: cleanedData.address,
+          division: cleanedData.division,
+          phone_primary: cleanedData.phonePrimary || null,
+          phone_secondary: cleanedData.phoneSecondary || null,
+          bank_name: cleanedData.bankName,
+          account_name: cleanedData.accountName,
+          account_no: cleanedData.accountNo,
+          ifsc_swift: cleanedData.ifscSwift,
+          branch: cleanedData.branch,
           updated_at: new Date().toISOString()
         }, { onConflict: 'id' });
         await cloudStorage.pullFromCloud();
       }
 
+      setCompanyData(cleanedData);
       setSavedSuccess(true);
       setIsEditing(false);
       setTimeout(() => setSavedSuccess(false), 3000);
@@ -83,7 +99,7 @@ export const CompanyDetailsModule: React.FC = () => {
           <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-blue-400 bg-blue-500/10 border border-blue-500/30 px-2.5 py-0.5 rounded-full">
             CORPORATE PROFILE
           </span>
-          <h2 className="text-xl font-black text-white mt-1">Company Details &amp; Tax Identifiers</h2>
+          <h2 className="text-xl font-black text-white mt-1">Company Details & Tax Identifiers</h2>
         </div>
 
         {!isEditing && canEditCompany ? (
@@ -110,7 +126,7 @@ export const CompanyDetailsModule: React.FC = () => {
       {savedSuccess && (
         <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-4 py-3 rounded-2xl text-xs font-mono flex items-center gap-2">
           <Check className="w-4 h-4" />
-          <span>Company profile &amp; bank details successfully updated and synchronized!</span>
+          <span>Company profile & bank details successfully updated and synchronized!</span>
         </div>
       )}
 
@@ -133,6 +149,28 @@ export const CompanyDetailsModule: React.FC = () => {
                 <span className="text-slate-400 text-[10px] uppercase font-bold tracking-wider">Corporate GSTIN</span>
                 <div className="text-cyan-400 font-extrabold text-sm">{companyData.gstin}</div>
               </div>
+
+              <div className={`p-5 bg-[#070d1a] border border-[#1b273d] rounded-2xl space-y-1 ${!companyData.phoneSecondary ? 'sm:col-span-2' : ''}`}>
+                <span className="text-slate-400 text-[10px] uppercase font-bold tracking-wider flex items-center gap-1.5">
+                  <Phone className="w-3 h-3 text-blue-400" />
+                  <span>Company Contact Number {companyData.phoneSecondary ? '1' : ''}</span>
+                </span>
+                <div className="text-white font-bold text-sm">
+                  {companyData.phonePrimary || 'Not Added'}
+                </div>
+              </div>
+
+              {companyData.phoneSecondary && (
+                <div className="p-5 bg-[#070d1a] border border-[#1b273d] rounded-2xl space-y-1">
+                  <span className="text-slate-400 text-[10px] uppercase font-bold tracking-wider flex items-center gap-1.5">
+                    <Phone className="w-3 h-3 text-blue-400" />
+                    <span>Company Contact Number 2</span>
+                  </span>
+                  <div className="text-white font-bold text-sm">
+                    {companyData.phoneSecondary}
+                  </div>
+                </div>
+              )}
 
               <div className="sm:col-span-2 p-5 bg-[#070d1a] border border-[#1b273d] rounded-2xl space-y-1">
                 <span className="text-slate-400 text-[10px] uppercase font-bold tracking-wider">Corporate Office Address</span>
@@ -184,7 +222,7 @@ export const CompanyDetailsModule: React.FC = () => {
       ) : (
         <form onSubmit={handleSave} className="bg-[#0b1322] border border-[#1b273d] p-8 rounded-3xl shadow-2xl space-y-5 font-mono text-xs">
           <h3 className="text-sm font-black text-white uppercase tracking-wider font-sans border-b border-[#1b273d] pb-3">
-            Edit Corporate Organization Profile &amp; Bank Details
+            Edit Corporate Organization Profile & Bank Details
           </h3>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -207,6 +245,31 @@ export const CompanyDetailsModule: React.FC = () => {
                 onChange={(e) => setCompanyData({ ...companyData, gstin: e.target.value })}
                 className="w-full px-4 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-cyan-400 font-bold outline-none focus:border-blue-500"
                 required
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-slate-300 font-bold uppercase tracking-wider text-[10px]">Company Number 1 (Primary)</label>
+              <input
+                type="tel"
+                placeholder="+91 98765 43210"
+                value={companyData.phonePrimary}
+                onChange={(e) => setCompanyData({ ...companyData, phonePrimary: e.target.value })}
+                className="w-full px-4 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-white font-bold outline-none focus:border-blue-500"
+                required
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-slate-300 font-bold uppercase tracking-wider text-[10px]">
+                Company Number 2 <span className="text-slate-500 font-normal">(Optional)</span>
+              </label>
+              <input
+                type="tel"
+                placeholder="+91 98765 43211"
+                value={companyData.phoneSecondary}
+                onChange={(e) => setCompanyData({ ...companyData, phoneSecondary: e.target.value })}
+                className="w-full px-4 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-white font-bold outline-none focus:border-blue-500"
               />
             </div>
 
