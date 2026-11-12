@@ -82,6 +82,39 @@ const formatDateDDMMYYYY = (dateStr: string) => {
   return dateStr;
 };
 
+const readStoredMeasurements = (siteKey: string): ConcreteItem[] => {
+  try {
+    const cleanKey = extractCleanSiteName(siteKey);
+    const saved = localStorage.getItem(`concrete360_advanced_measurements_${cleanKey}`);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) {
+        return parsed.map((it: any) => ({
+          id: String(it.id || `RCC-${Math.floor(1000 + Math.random() * 9000)}`),
+          siteKey: cleanKey,
+          mixGrade: String(it.mixGrade || 'M25'),
+          date: String(it.date || new Date().toISOString().split('T')[0]),
+          categories: Array.isArray(it.categories) && it.categories.length > 0 ? it.categories : ['SLAB'],
+          label: String(it.label || it.name || 'Structural Work'),
+          breakdownText: String(it.breakdownText || ''),
+          volumeM3: Number(it.volumeM3) || 0,
+          volumeCft: Number(it.volumeCft) || (Number(it.volumeM3) || 0) * 35.3146667,
+          unitSystem: it.unitSystem === 'IMPERIAL' ? 'IMPERIAL' : 'METRIC',
+          dimensionsSnapshot: it.dimensionsSnapshot || {},
+          slabRows: Array.isArray(it.slabRows) ? it.slabRows : undefined,
+          columnRows: Array.isArray(it.columnRows) ? it.columnRows : undefined,
+          beamRows: Array.isArray(it.beamRows) ? it.beamRows : undefined,
+          wallRows: Array.isArray(it.wallRows) ? it.wallRows : undefined,
+          stairsRows: Array.isArray(it.stairsRows) ? it.stairsRows : undefined,
+          footingRows: Array.isArray(it.footingRows) ? it.footingRows : undefined,
+          roadRows: Array.isArray(it.roadRows) ? it.roadRows : undefined
+        }));
+      }
+    }
+  } catch {}
+  return [];
+};
+
 interface Props {
   session: SiteMeasurementSession;
   onUpdateSession: (session: SiteMeasurementSession) => void;
@@ -112,6 +145,9 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
 
   const getActiveSiteKey = () => {
     try {
+      const selected = sessionStorage.getItem('concrete360_selected_site') || localStorage.getItem('concrete360_selected_site');
+      if (selected) return extractCleanSiteName(selected);
+
       const activeRaw = localStorage.getItem('concrete360_active_site');
       if (activeRaw) {
         try {
@@ -123,14 +159,14 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
           return extractCleanSiteName(activeRaw);
         }
       }
-      const selected = sessionStorage.getItem('concrete360_selected_site') || localStorage.getItem('concrete360_selected_site');
-      if (selected) return extractCleanSiteName(selected);
     } catch {}
     return 'MBBILGI';
   };
 
-  const [currentSiteKey, setCurrentSiteKey] = useState<string>(getActiveSiteKey());
+  const [currentSiteKey, setCurrentSiteKey] = useState<string>(() => getActiveSiteKey());
   const [registeredSites, setRegisteredSites] = useState<any[]>([]);
+  // Initialize synchronously from localStorage so an empty initial state never overwrites saved data
+  const [items, setItems] = useState<ConcreteItem[]>(() => readStoredMeasurements(getActiveSiteKey()));
 
   const loadRegisteredSites = () => {
     try {
@@ -142,44 +178,10 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
     } catch {}
   };
 
-  const [items, setItems] = useState<ConcreteItem[]>([]);
-
   const loadSiteMeasurements = (siteKey: string) => {
-    try {
-      const saved = localStorage.getItem(`concrete360_advanced_measurements_${siteKey}`);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          const filtered = parsed
-            .filter((it: any) => extractCleanSiteName(it.siteKey || siteKey) === siteKey)
-            .map((it: any) => ({
-              id: String(it.id || `RCC-${Math.floor(1000 + Math.random() * 9000)}`),
-              siteKey: siteKey,
-              mixGrade: String(it.mixGrade || 'M25'),
-              date: String(it.date || new Date().toISOString().split('T')[0]),
-              categories: Array.isArray(it.categories) && it.categories.length > 0 ? it.categories : ['SLAB'],
-              label: String(it.label || it.name || 'Structural Work'),
-              breakdownText: String(it.breakdownText || ''),
-              volumeM3: Number(it.volumeM3) || 0,
-              volumeCft: Number(it.volumeCft) || (Number(it.volumeM3) || 0) * 35.3146667,
-              unitSystem: it.unitSystem === 'IMPERIAL' ? 'IMPERIAL' : 'METRIC',
-              dimensionsSnapshot: it.dimensionsSnapshot || {},
-              slabRows: Array.isArray(it.slabRows) ? it.slabRows : undefined,
-              columnRows: Array.isArray(it.columnRows) ? it.columnRows : undefined,
-              beamRows: Array.isArray(it.beamRows) ? it.beamRows : undefined,
-              wallRows: Array.isArray(it.wallRows) ? it.wallRows : undefined,
-              stairsRows: Array.isArray(it.stairsRows) ? it.stairsRows : undefined,
-              footingRows: Array.isArray(it.footingRows) ? it.footingRows : undefined,
-              roadRows: Array.isArray(it.roadRows) ? it.roadRows : undefined
-            }));
-          setItems(filtered);
-          return;
-        }
-      }
-      setItems([]);
-    } catch {
-      setItems([]);
-    }
+    const cleanKey = extractCleanSiteName(siteKey);
+    const loaded = readStoredMeasurements(cleanKey);
+    setItems(loaded);
   };
 
   const getSavedWastage = (siteKey: string): number => {
@@ -217,7 +219,6 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
     setWastagePercent(getSavedWastage(siteKey));
 
     const handleSiteSwitch = () => {
-      // Never overwrite local row edits while modal is open
       if (isModalOpen) return;
       const newKey = getActiveSiteKey();
       setCurrentSiteKey(newKey);
@@ -227,24 +228,12 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
     };
 
     window.addEventListener('concrete360_site_switched', handleSiteSwitch);
-    window.addEventListener('concrete360_cloud_synced', handleSiteSwitch);
     window.addEventListener('storage', handleSiteSwitch);
     return () => {
       window.removeEventListener('concrete360_site_switched', handleSiteSwitch);
-      window.removeEventListener('concrete360_cloud_synced', handleSiteSwitch);
       window.removeEventListener('storage', handleSiteSwitch);
     };
   }, [isModalOpen]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(`concrete360_advanced_measurements_${currentSiteKey}`, JSON.stringify(items));
-      if (items.length > 0 && items[0].mixGrade) {
-        localStorage.setItem(`concrete360_active_mix_grade_${currentSiteKey}`, items[0].mixGrade);
-      }
-      window.dispatchEvent(new CustomEvent('concrete360_measurement_updated', { detail: items }));
-    } catch {}
-  }, [items, currentSiteKey]);
 
   const [modalTargetSiteKey, setModalTargetSiteKey] = useState<string>(currentSiteKey);
   const [modalMixGrade, setModalMixGrade] = useState<string>('M25');
@@ -426,8 +415,10 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
       alert('Permission Denied: Read-Only accounts cannot add structural measurements.');
       return;
     }
+    const activeKey = getActiveSiteKey();
+    setCurrentSiteKey(activeKey);
     setEditingItem(null);
-    setModalTargetSiteKey(currentSiteKey);
+    setModalTargetSiteKey(activeKey);
     setModalMixGrade('M25');
     setSelectedCategories(['SLAB']);
     resetAllFields();
@@ -436,22 +427,13 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
   };
 
   const handleOpenEditModal = (item: ConcreteItem) => {
-    // Re-read fresh copy directly from localStorage to guarantee latest row arrays
-    let freshItem = item;
-    try {
-      const saved = localStorage.getItem(`concrete360_advanced_measurements_${currentSiteKey}`);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          const match = parsed.find((x: any) => x.id === item.id);
-          if (match) freshItem = match;
-        }
-      }
-    } catch {}
+    const activeKey = getActiveSiteKey();
+    const freshList = readStoredMeasurements(activeKey);
+    const freshItem = freshList.find(x => x.id === item.id) || item;
 
     const mode: UnitSystem = freshItem.unitSystem === 'IMPERIAL' ? 'IMPERIAL' : 'METRIC';
     setEditingItem(freshItem);
-    setModalTargetSiteKey(freshItem.siteKey || currentSiteKey);
+    setModalTargetSiteKey(extractCleanSiteName(freshItem.siteKey || activeKey));
     setModalMixGrade(freshItem.mixGrade || 'M25');
     setModalWorkDate(freshItem.date || new Date().toISOString().split('T')[0]);
     setSelectedCategories(Array.isArray(freshItem.categories) && freshItem.categories.length > 0 ? [...freshItem.categories] : ['SLAB']);
@@ -546,7 +528,7 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
     setIsModalOpen(true);
   };
 
-  const handleSaveItem = (e: React.FormEvent) => {
+  const handleSaveItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canCreate) return;
 
@@ -554,6 +536,9 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
       alert('Permission Denied: Only ADMIN accounts can modify records.');
       return;
     }
+
+    const activeKey = getActiveSiteKey();
+    const cleanTargetKey = extractCleanSiteName(modalTargetSiteKey || activeKey);
 
     const parts = selectedCategories.map((cat) => {
       const labelName = CATEGORY_DEFINITIONS.find((c) => c.id === cat)?.label.split('/')[0].trim();
@@ -580,85 +565,61 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
       roadRows: selectedCategories.includes('ROAD_WORK') ? roads.map(r => ({ ...r })) : []
     };
 
-    const cleanTargetKey = extractCleanSiteName(modalTargetSiteKey);
+    const itemToSave: ConcreteItem = {
+      id: editingItem ? editingItem.id : `RCC-${Math.floor(1000 + Math.random() * 9000)}`,
+      siteKey: cleanTargetKey,
+      mixGrade: modalMixGrade,
+      date: modalWorkDate,
+      categories: [...selectedCategories],
+      label: label.trim() || 'Structural Work',
+      breakdownText,
+      volumeM3: Number(grandTotalComputed.totalM3.toFixed(3)),
+      volumeCft: Number(grandTotalComputed.totalCft.toFixed(2)),
+      unitSystem: unitMode,
+      dimensionsSnapshot: snapshot,
+      ...savedRowsPayload
+    };
 
-    if (cleanTargetKey !== currentSiteKey) {
-      try {
-        const targetStorageKey = `concrete360_advanced_measurements_${cleanTargetKey}`;
-        const existingRaw = localStorage.getItem(targetStorageKey);
-        const existingParsed = existingRaw ? JSON.parse(existingRaw) : [];
-        const newItem: ConcreteItem = {
-          id: `RCC-${Math.floor(1000 + Math.random() * 9000)}`,
-          siteKey: cleanTargetKey,
-          mixGrade: modalMixGrade,
-          date: modalWorkDate,
-          categories: selectedCategories,
-          label: label.trim() || `Structural Work`,
-          breakdownText,
-          volumeM3: Number(grandTotalComputed.totalM3.toFixed(3)),
-          volumeCft: Number(grandTotalComputed.totalCft.toFixed(2)),
-          unitSystem: unitMode,
-          dimensionsSnapshot: snapshot,
-          ...savedRowsPayload
-        };
-        const updatedOther = [newItem, ...existingParsed];
-        localStorage.setItem(targetStorageKey, JSON.stringify(updatedOther));
-        
-        if (editingItem) {
-          const remainingCurrent = items.filter((it) => it.id !== editingItem.id);
-          setItems(remainingCurrent);
-          localStorage.setItem(`concrete360_advanced_measurements_${currentSiteKey}`, JSON.stringify(remainingCurrent));
-        }
-      } catch {}
+    // Always read latest list directly from localStorage to prevent overwriting existing rows
+    const targetStorageKey = `concrete360_advanced_measurements_${cleanTargetKey}`;
+    const existingTargetList = readStoredMeasurements(cleanTargetKey);
+
+    let updatedTargetList: ConcreteItem[];
+    if (editingItem && existingTargetList.some(it => it.id === editingItem.id)) {
+      updatedTargetList = existingTargetList.map(it => (it.id === editingItem.id ? itemToSave : it));
     } else {
-      let itemToSave: ConcreteItem;
-      let nextItems: ConcreteItem[];
+      updatedTargetList = [itemToSave, ...existingTargetList];
+    }
 
-      if (editingItem) {
-        itemToSave = {
-          ...editingItem,
-          siteKey: currentSiteKey,
-          mixGrade: modalMixGrade,
-          date: modalWorkDate,
-          categories: selectedCategories,
-          label: label.trim() || `Structural Work`,
-          breakdownText,
-          volumeM3: Number(grandTotalComputed.totalM3.toFixed(3)),
-          volumeCft: Number(grandTotalComputed.totalCft.toFixed(2)),
-          unitSystem: unitMode,
-          dimensionsSnapshot: snapshot,
-          ...savedRowsPayload
-        };
-        nextItems = items.map((it) => it.id === editingItem.id ? itemToSave : it);
-      } else {
-        itemToSave = {
-          id: `RCC-${Math.floor(1000 + Math.random() * 9000)}`,
-          siteKey: currentSiteKey,
-          mixGrade: modalMixGrade,
-          date: modalWorkDate,
-          categories: selectedCategories,
-          label: label.trim() || `Structural Work`,
-          breakdownText,
-          volumeM3: Number(grandTotalComputed.totalM3.toFixed(3)),
-          volumeCft: Number(grandTotalComputed.totalCft.toFixed(2)),
-          unitSystem: unitMode,
-          dimensionsSnapshot: snapshot,
-          ...savedRowsPayload
-        };
-        nextItems = [itemToSave, ...items];
+    try {
+      localStorage.setItem(targetStorageKey, JSON.stringify(updatedTargetList));
+      if (updatedTargetList.length > 0 && updatedTargetList[0].mixGrade) {
+        localStorage.setItem(`concrete360_active_mix_grade_${cleanTargetKey}`, updatedTargetList[0].mixGrade);
       }
+    } catch {}
 
-      // Persist immediately to localStorage before closing modal
-      setItems(nextItems);
+    if (cleanTargetKey !== activeKey) {
+      if (editingItem) {
+        const remainingCurrent = readStoredMeasurements(activeKey).filter(it => it.id !== editingItem.id);
+        setItems(remainingCurrent);
+        try {
+          localStorage.setItem(`concrete360_advanced_measurements_${activeKey}`, JSON.stringify(remainingCurrent));
+        } catch {}
+      }
+    } else {
+      setCurrentSiteKey(cleanTargetKey);
+      setItems(updatedTargetList);
+    }
+
+    window.dispatchEvent(new CustomEvent('concrete360_measurement_updated', { detail: updatedTargetList }));
+    setIsModalOpen(false);
+    setEditingItem(null);
+
+    if (supabase) {
       try {
-        localStorage.setItem(`concrete360_advanced_measurements_${currentSiteKey}`, JSON.stringify(nextItems));
-        window.dispatchEvent(new CustomEvent('concrete360_measurement_updated', { detail: nextItems }));
-      } catch {}
-
-      if (supabase) {
-        void (supabase as any).from('site_measurements').upsert({
+        await (supabase as any).from('site_measurements').upsert({
           id: itemToSave.id,
-          site_name: currentSiteKey,
+          site_name: cleanTargetKey,
           element_name: itemToSave.label,
           mix_grade: itemToSave.mixGrade,
           length_m: 0,
@@ -670,11 +631,9 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
           date: itemToSave.date,
           updated_at: new Date().toISOString()
         }, { onConflict: 'id' });
-      }
+        await cloudStorage.pushAllLocalToCloud();
+      } catch {}
     }
-
-    setIsModalOpen(false);
-    setEditingItem(null);
   };
 
   const handleDelete = async (id: string) => {
@@ -683,13 +642,17 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
       return;
     }
     if (window.confirm('Delete this structural work record?')) {
-      const nextItems = items.filter((it) => it.id !== id);
+      const activeKey = getActiveSiteKey();
+      const nextItems = readStoredMeasurements(activeKey).filter((it) => it.id !== id);
       setItems(nextItems);
       try {
-        localStorage.setItem(`concrete360_advanced_measurements_${currentSiteKey}`, JSON.stringify(nextItems));
+        localStorage.setItem(`concrete360_advanced_measurements_${activeKey}`, JSON.stringify(nextItems));
+        window.dispatchEvent(new CustomEvent('concrete360_measurement_updated', { detail: nextItems }));
       } catch {}
       if (supabase) {
-        await (supabase as any).from('site_measurements').delete().eq('id', id);
+        try {
+          await (supabase as any).from('site_measurements').delete().eq('id', id);
+        } catch {}
       }
     }
   };
@@ -795,6 +758,7 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
         <div className="flex items-center gap-2.5 shrink-0">
           {canCreate && (
             <button
+              type="button"
               onClick={handleOpenAddModal}
               className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-blue-600/30 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95"
             >
@@ -970,6 +934,7 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
                         {canEditOrDelete ? (
                           <>
                             <button
+                              type="button"
                               onClick={() => handleOpenEditModal(item)}
                               className="text-slate-400 hover:text-white cursor-pointer transition-colors p-1"
                               title="Edit"
@@ -977,6 +942,7 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
                               <Edit2 className="w-4 h-4" />
                             </button>
                             <button
+                              type="button"
                               onClick={() => handleDelete(item.id)}
                               className="text-slate-400 hover:text-rose-400 cursor-pointer transition-colors p-1"
                               title="Delete"
@@ -1041,7 +1007,7 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
                     <datalist id="ongoingSitesList">
                       <option value={currentSiteKey} />
                       {registeredSites.map(s => {
-                        const sName = s.name || s.siteName || s.id;
+                        const sName = extractCleanSiteName(s.name || s.siteName || s.id);
                         return <option key={s.id || sName} value={sName} />;
                       })}
                     </datalist>
