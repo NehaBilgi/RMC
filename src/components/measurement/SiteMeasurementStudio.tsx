@@ -82,37 +82,118 @@ const formatDateDDMMYYYY = (dateStr: string) => {
   return dateStr;
 };
 
+const inferCategoriesFromItem = (it: any): StructuralType[] => {
+  if (Array.isArray(it.categories) && it.categories.length > 0) {
+    return it.categories;
+  }
+
+  const inferred: StructuralType[] = [];
+  if (Array.isArray(it.slabRows) && it.slabRows.some((r: any) => Number(r.length) > 0 || Number(r.width) > 0)) inferred.push('SLAB');
+  if (Array.isArray(it.columnRows) && it.columnRows.some((r: any) => Number(r.count) > 0 || Number(r.height) > 0)) inferred.push('COLUMN');
+  if (Array.isArray(it.beamRows) && it.beamRows.some((r: any) => Number(r.count) > 0 || Number(r.length) > 0)) inferred.push('BEAM');
+  if (Array.isArray(it.wallRows) && it.wallRows.some((r: any) => Number(r.count) > 0 || Number(r.length) > 0)) inferred.push('RCC_WALL');
+  if (Array.isArray(it.stairsRows) && it.stairsRows.some((r: any) => Number(r.flights) > 0 || Number(r.steps) > 0)) inferred.push('STAIRS');
+  if (Array.isArray(it.footingRows) && it.footingRows.some((r: any) => Number(r.count) > 0 || Number(r.length) > 0)) inferred.push('FOOTING');
+  if (Array.isArray(it.roadRows) && it.roadRows.some((r: any) => Number(r.lengthKm) > 0 || Number(r.width) > 0)) inferred.push('ROAD_WORK');
+
+  if (inferred.length > 0) return inferred;
+
+  const bd = String(it.breakdownText || it.remarks || '').toUpperCase();
+  if (bd.includes('SLAB')) inferred.push('SLAB');
+  if (bd.includes('COLUMN')) inferred.push('COLUMN');
+  if (bd.includes('BEAM')) inferred.push('BEAM');
+  if (bd.includes('WALL')) inferred.push('RCC_WALL');
+  if (bd.includes('STAIR')) inferred.push('STAIRS');
+  if (bd.includes('FOOTING')) inferred.push('FOOTING');
+  if (bd.includes('ROAD')) inferred.push('ROAD_WORK');
+
+  return inferred.length > 0 ? inferred : ['SLAB'];
+};
+
 const readStoredMeasurements = (siteKey: string): ConcreteItem[] => {
   try {
     const cleanKey = extractCleanSiteName(siteKey);
     const saved = localStorage.getItem(`concrete360_advanced_measurements_${cleanKey}`);
+    // Also read backup store so cloud syncs never erase dimensions or categories
+    const backupRaw = localStorage.getItem(`concrete360_dimensions_backup_${cleanKey}`);
+    const backupMap: Record<string, Partial<ConcreteItem>> = backupRaw ? JSON.parse(backupRaw) : {};
+
     if (saved) {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed)) {
-        return parsed.map((it: any) => ({
-          id: String(it.id || `RCC-${Math.floor(1000 + Math.random() * 9000)}`),
-          siteKey: cleanKey,
-          mixGrade: String(it.mixGrade || 'M25'),
-          date: String(it.date || new Date().toISOString().split('T')[0]),
-          categories: Array.isArray(it.categories) && it.categories.length > 0 ? it.categories : ['SLAB'],
-          label: String(it.label || it.name || 'Structural Work'),
-          breakdownText: String(it.breakdownText || ''),
-          volumeM3: Number(it.volumeM3) || 0,
-          volumeCft: Number(it.volumeCft) || (Number(it.volumeM3) || 0) * 35.3146667,
-          unitSystem: it.unitSystem === 'IMPERIAL' ? 'IMPERIAL' : 'METRIC',
-          dimensionsSnapshot: it.dimensionsSnapshot || {},
-          slabRows: Array.isArray(it.slabRows) ? it.slabRows : undefined,
-          columnRows: Array.isArray(it.columnRows) ? it.columnRows : undefined,
-          beamRows: Array.isArray(it.beamRows) ? it.beamRows : undefined,
-          wallRows: Array.isArray(it.wallRows) ? it.wallRows : undefined,
-          stairsRows: Array.isArray(it.stairsRows) ? it.stairsRows : undefined,
-          footingRows: Array.isArray(it.footingRows) ? it.footingRows : undefined,
-          roadRows: Array.isArray(it.roadRows) ? it.roadRows : undefined
-        }));
+        return parsed.map((rawIt: any) => {
+          const id = String(rawIt.id || `RCC-${Math.floor(1000 + Math.random() * 9000)}`);
+          const backup = backupMap[id] || {};
+          const it = {
+            ...backup,
+            ...rawIt,
+            categories:
+              Array.isArray(rawIt.categories) && rawIt.categories.length > 0
+                ? rawIt.categories
+                : Array.isArray(backup.categories) && backup.categories.length > 0
+                  ? backup.categories
+                  : inferCategoriesFromItem(rawIt),
+            slabRows: Array.isArray(rawIt.slabRows) && rawIt.slabRows.length > 0 ? rawIt.slabRows : backup.slabRows,
+            columnRows: Array.isArray(rawIt.columnRows) && rawIt.columnRows.length > 0 ? rawIt.columnRows : backup.columnRows,
+            beamRows: Array.isArray(rawIt.beamRows) && rawIt.beamRows.length > 0 ? rawIt.beamRows : backup.beamRows,
+            wallRows: Array.isArray(rawIt.wallRows) && rawIt.wallRows.length > 0 ? rawIt.wallRows : backup.wallRows,
+            stairsRows: Array.isArray(rawIt.stairsRows) && rawIt.stairsRows.length > 0 ? rawIt.stairsRows : backup.stairsRows,
+            footingRows: Array.isArray(rawIt.footingRows) && rawIt.footingRows.length > 0 ? rawIt.footingRows : backup.footingRows,
+            roadRows: Array.isArray(rawIt.roadRows) && rawIt.roadRows.length > 0 ? rawIt.roadRows : backup.roadRows,
+            dimensionsSnapshot:
+              rawIt.dimensionsSnapshot && Object.keys(rawIt.dimensionsSnapshot).length > 0
+                ? rawIt.dimensionsSnapshot
+                : backup.dimensionsSnapshot || {}
+          };
+
+          return {
+            id,
+            siteKey: cleanKey,
+            mixGrade: String(it.mixGrade || 'M25'),
+            date: String(it.date || new Date().toISOString().split('T')[0]),
+            categories: inferCategoriesFromItem(it),
+            label: String(it.label || it.name || 'Structural Work'),
+            breakdownText: String(it.breakdownText || ''),
+            volumeM3: Number(it.volumeM3) || 0,
+            volumeCft: Number(it.volumeCft) || (Number(it.volumeM3) || 0) * 35.3146667,
+            unitSystem: (it.unitSystem || backup.unitSystem) === 'IMPERIAL' ? 'IMPERIAL' : 'METRIC',
+            dimensionsSnapshot: it.dimensionsSnapshot || {},
+            slabRows: it.slabRows,
+            columnRows: it.columnRows,
+            beamRows: it.beamRows,
+            wallRows: it.wallRows,
+            stairsRows: it.stairsRows,
+            footingRows: it.footingRows,
+            roadRows: it.roadRows
+          };
+        });
       }
     }
   } catch {}
   return [];
+};
+
+const saveDimensionsBackup = (siteKey: string, list: ConcreteItem[]) => {
+  try {
+    const cleanKey = extractCleanSiteName(siteKey);
+    const existingRaw = localStorage.getItem(`concrete360_dimensions_backup_${cleanKey}`);
+    const existingMap: Record<string, Partial<ConcreteItem>> = existingRaw ? JSON.parse(existingRaw) : {};
+    list.forEach((item) => {
+      existingMap[item.id] = {
+        categories: item.categories,
+        unitSystem: item.unitSystem,
+        dimensionsSnapshot: item.dimensionsSnapshot,
+        slabRows: item.slabRows,
+        columnRows: item.columnRows,
+        beamRows: item.beamRows,
+        wallRows: item.wallRows,
+        stairsRows: item.stairsRows,
+        footingRows: item.footingRows,
+        roadRows: item.roadRows
+      };
+    });
+    localStorage.setItem(`concrete360_dimensions_backup_${cleanKey}`, JSON.stringify(existingMap));
+  } catch {}
 };
 
 interface Props {
@@ -165,7 +246,6 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
 
   const [currentSiteKey, setCurrentSiteKey] = useState<string>(() => getActiveSiteKey());
   const [registeredSites, setRegisteredSites] = useState<any[]>([]);
-  // Initialize synchronously from localStorage so an empty initial state never overwrites saved data
   const [items, setItems] = useState<ConcreteItem[]>(() => readStoredMeasurements(getActiveSiteKey()));
 
   const loadRegisteredSites = () => {
@@ -253,12 +333,19 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
   const [footings, setFootings] = useState<{ count: number | ''; length: number | ''; width: number | ''; depth: number | '' }[]>([{ count: '', length: '', width: '', depth: '' }]);
   const [roads, setRoads] = useState<{ lengthKm: number | ''; width: number | ''; thickness: number | '' }[]>([{ lengthKm: '', width: '', thickness: '' }]);
 
+  const isSlabEmpty = slabs.every((s) => s.length === '' && s.width === '' && s.thickness === '');
+
   const handleToggleCategory = (catId: StructuralType) => {
     if (selectedCategories.includes(catId)) {
       if (selectedCategories.length === 1) return;
       setSelectedCategories(selectedCategories.filter((id) => id !== catId));
     } else {
-      setSelectedCategories([...selectedCategories, catId]);
+      // If adding a new entry and default SLAB has zero dimensions entered yet, replace SLAB cleanly
+      if (!editingItem && selectedCategories.length === 1 && selectedCategories[0] === 'SLAB' && catId !== 'SLAB' && isSlabEmpty) {
+        setSelectedCategories([catId]);
+      } else {
+        setSelectedCategories([...selectedCategories, catId]);
+      }
     }
   };
 
@@ -432,14 +519,17 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
     const freshItem = freshList.find(x => x.id === item.id) || item;
 
     const mode: UnitSystem = freshItem.unitSystem === 'IMPERIAL' ? 'IMPERIAL' : 'METRIC';
+    const resolvedCategories = inferCategoriesFromItem(freshItem);
+
     setEditingItem(freshItem);
     setModalTargetSiteKey(extractCleanSiteName(freshItem.siteKey || activeKey));
     setModalMixGrade(freshItem.mixGrade || 'M25');
     setModalWorkDate(freshItem.date || new Date().toISOString().split('T')[0]);
-    setSelectedCategories(Array.isArray(freshItem.categories) && freshItem.categories.length > 0 ? [...freshItem.categories] : ['SLAB']);
+    setSelectedCategories([...resolvedCategories]);
     setLabel(freshItem.label || '');
     setUnitMode(mode);
 
+    // 1. SLAB
     if (Array.isArray(freshItem.slabRows) && freshItem.slabRows.length > 0) {
       setSlabs(freshItem.slabRows.map(r => ({
         length: r.length ?? '',
@@ -448,82 +538,136 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
       })));
     } else if (freshItem.dimensionsSnapshot?.slab) {
       const s = freshItem.dimensionsSnapshot.slab;
-      const factor = mode === 'IMPERIAL' ? 1 / 0.3048 : 1;
       setSlabs([{
-        length: Number((s.length * factor).toFixed(2)) || '',
-        width: Number((s.width * factor).toFixed(2)) || '',
-        thickness: Number((s.thickness * factor).toFixed(2)) || ''
+        length: s.length || '',
+        width: s.width || '',
+        thickness: s.thickness || ''
       }]);
     } else {
       setSlabs([{ length: '', width: '', thickness: '' }]);
     }
 
-    setColumns(
-      Array.isArray(freshItem.columnRows) && freshItem.columnRows.length > 0
-        ? freshItem.columnRows.map(r => ({
-            count: r.count ?? '',
-            height: r.height ?? '',
-            dim1: r.dim1 ?? '',
-            dim2: r.dim2 ?? ''
-          }))
-        : [{ count: '', height: '', dim1: '', dim2: '' }]
-    );
+    // 2. COLUMN
+    if (Array.isArray(freshItem.columnRows) && freshItem.columnRows.length > 0) {
+      setColumns(freshItem.columnRows.map(r => ({
+        count: r.count ?? '',
+        height: r.height ?? '',
+        dim1: r.dim1 ?? '',
+        dim2: r.dim2 ?? ''
+      })));
+    } else if (freshItem.dimensionsSnapshot?.column) {
+      const c = freshItem.dimensionsSnapshot.column;
+      setColumns([{
+        count: c.count || '',
+        height: c.height || '',
+        dim1: c.dim1 || '',
+        dim2: c.dim2 || ''
+      }]);
+    } else {
+      setColumns([{ count: '', height: '', dim1: '', dim2: '' }]);
+    }
 
-    setBeams(
-      Array.isArray(freshItem.beamRows) && freshItem.beamRows.length > 0
-        ? freshItem.beamRows.map(r => ({
-            count: r.count ?? '',
-            length: r.length ?? '',
-            width: r.width ?? '',
-            depth: r.depth ?? ''
-          }))
-        : [{ count: '', length: '', width: '', depth: '' }]
-    );
+    // 3. BEAM
+    if (Array.isArray(freshItem.beamRows) && freshItem.beamRows.length > 0) {
+      setBeams(freshItem.beamRows.map(r => ({
+        count: r.count ?? '',
+        length: r.length ?? '',
+        width: r.width ?? '',
+        depth: r.depth ?? ''
+      })));
+    } else if (freshItem.dimensionsSnapshot?.beam) {
+      const b = freshItem.dimensionsSnapshot.beam;
+      setBeams([{
+        count: b.count || '',
+        length: b.length || '',
+        width: b.width || '',
+        depth: b.depth || ''
+      }]);
+    } else {
+      setBeams([{ count: '', length: '', width: '', depth: '' }]);
+    }
 
-    setWalls(
-      Array.isArray(freshItem.wallRows) && freshItem.wallRows.length > 0
-        ? freshItem.wallRows.map(r => ({
-            count: r.count ?? '',
-            length: r.length ?? '',
-            height: r.height ?? '',
-            thickness: r.thickness ?? ''
-          }))
-        : [{ count: '', length: '', height: '', thickness: '' }]
-    );
+    // 4. WALL
+    if (Array.isArray(freshItem.wallRows) && freshItem.wallRows.length > 0) {
+      setWalls(freshItem.wallRows.map(r => ({
+        count: r.count ?? '',
+        length: r.length ?? '',
+        height: r.height ?? '',
+        thickness: r.thickness ?? ''
+      })));
+    } else if (freshItem.dimensionsSnapshot?.wall) {
+      const w = freshItem.dimensionsSnapshot.wall;
+      setWalls([{
+        count: w.count || '',
+        length: w.length || '',
+        height: w.height || '',
+        thickness: w.thickness || ''
+      }]);
+    } else {
+      setWalls([{ count: '', length: '', height: '', thickness: '' }]);
+    }
 
-    setStairsList(
-      Array.isArray(freshItem.stairsRows) && freshItem.stairsRows.length > 0
-        ? freshItem.stairsRows.map(r => ({
-            flights: r.flights ?? '',
-            width: r.width ?? '',
-            steps: r.steps ?? '',
-            tread: r.tread ?? '',
-            riser: r.riser ?? '',
-            waist: r.waist ?? ''
-          }))
-        : [{ flights: '', width: '', steps: '', tread: '', riser: '', waist: '' }]
-    );
+    // 5. STAIRS
+    if (Array.isArray(freshItem.stairsRows) && freshItem.stairsRows.length > 0) {
+      setStairsList(freshItem.stairsRows.map(r => ({
+        flights: r.flights ?? '',
+        width: r.width ?? '',
+        steps: r.steps ?? '',
+        tread: r.tread ?? '',
+        riser: r.riser ?? '',
+        waist: r.waist ?? ''
+      })));
+    } else if (freshItem.dimensionsSnapshot?.stairs) {
+      const st = freshItem.dimensionsSnapshot.stairs;
+      setStairsList([{
+        flights: st.flights || '',
+        width: st.width || '',
+        steps: st.steps || '',
+        tread: st.tread || '',
+        riser: st.riser || '',
+        waist: st.waist || ''
+      }]);
+    } else {
+      setStairsList([{ flights: '', width: '', steps: '', tread: '', riser: '', waist: '' }]);
+    }
 
-    setFootings(
-      Array.isArray(freshItem.footingRows) && freshItem.footingRows.length > 0
-        ? freshItem.footingRows.map(r => ({
-            count: r.count ?? '',
-            length: r.length ?? '',
-            width: r.width ?? '',
-            depth: r.depth ?? ''
-          }))
-        : [{ count: '', length: '', width: '', depth: '' }]
-    );
+    // 6. FOOTING
+    if (Array.isArray(freshItem.footingRows) && freshItem.footingRows.length > 0) {
+      setFootings(freshItem.footingRows.map(r => ({
+        count: r.count ?? '',
+        length: r.length ?? '',
+        width: r.width ?? '',
+        depth: r.depth ?? ''
+      })));
+    } else if (freshItem.dimensionsSnapshot?.footing) {
+      const ft = freshItem.dimensionsSnapshot.footing;
+      setFootings([{
+        count: ft.count || '',
+        length: ft.length || '',
+        width: ft.width || '',
+        depth: ft.depth || ''
+      }]);
+    } else {
+      setFootings([{ count: '', length: '', width: '', depth: '' }]);
+    }
 
-    setRoads(
-      Array.isArray(freshItem.roadRows) && freshItem.roadRows.length > 0
-        ? freshItem.roadRows.map(r => ({
-            lengthKm: r.lengthKm ?? '',
-            width: r.width ?? '',
-            thickness: r.thickness ?? ''
-          }))
-        : [{ lengthKm: '', width: '', thickness: '' }]
-    );
+    // 7. ROAD
+    if (Array.isArray(freshItem.roadRows) && freshItem.roadRows.length > 0) {
+      setRoads(freshItem.roadRows.map(r => ({
+        lengthKm: r.lengthKm ?? '',
+        width: r.width ?? '',
+        thickness: r.thickness ?? ''
+      })));
+    } else if (freshItem.dimensionsSnapshot?.road) {
+      const rd = freshItem.dimensionsSnapshot.road;
+      setRoads([{
+        lengthKm: rd.lengthKm || '',
+        width: rd.width || '',
+        thickness: rd.thickness || ''
+      }]);
+    } else {
+      setRoads([{ lengthKm: '', width: '', thickness: '' }]);
+    }
 
     setIsModalOpen(true);
   };
@@ -547,12 +691,63 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
 
     const breakdownText = parts.join(' + ');
 
-    const isMetric = unitMode === 'METRIC';
-    const toM = (val: number | '') => (Number(val) || 0) * (isMetric ? 1 : 0.3048);
-
     const snapshot: StructuralDimensionsSnapshot = {};
     if (selectedCategories.includes('SLAB') && slabs.length > 0) {
-      snapshot.slab = { length: toM(slabs[0].length), width: toM(slabs[0].width), thickness: toM(slabs[0].thickness) };
+      snapshot.slab = {
+        length: Number(slabs[0].length) || 0,
+        width: Number(slabs[0].width) || 0,
+        thickness: Number(slabs[0].thickness) || 0
+      };
+    }
+    if (selectedCategories.includes('COLUMN') && columns.length > 0) {
+      snapshot.column = {
+        count: Number(columns[0].count) || 0,
+        height: Number(columns[0].height) || 0,
+        dim1: Number(columns[0].dim1) || 0,
+        dim2: Number(columns[0].dim2) || 0
+      };
+    }
+    if (selectedCategories.includes('BEAM') && beams.length > 0) {
+      snapshot.beam = {
+        count: Number(beams[0].count) || 0,
+        length: Number(beams[0].length) || 0,
+        width: Number(beams[0].width) || 0,
+        depth: Number(beams[0].depth) || 0
+      };
+    }
+    if (selectedCategories.includes('RCC_WALL') && walls.length > 0) {
+      snapshot.wall = {
+        count: Number(walls[0].count) || 0,
+        length: Number(walls[0].length) || 0,
+        height: Number(walls[0].height) || 0,
+        thickness: Number(walls[0].thickness) || 0
+      };
+    }
+    if (selectedCategories.includes('STAIRS') && stairsList.length > 0) {
+      snapshot.stairs = {
+        flights: Number(stairsList[0].flights) || 0,
+        width: Number(stairsList[0].width) || 0,
+        steps: Number(stairsList[0].steps) || 0,
+        tread: Number(stairsList[0].tread) || 0,
+        riser: Number(stairsList[0].riser) || 0,
+        waist: Number(stairsList[0].waist) || 0
+      };
+    }
+    if (selectedCategories.includes('FOOTING') && footings.length > 0) {
+      snapshot.footing = {
+        count: Number(footings[0].count) || 0,
+        length: Number(footings[0].length) || 0,
+        width: Number(footings[0].width) || 0,
+        depth: Number(footings[0].depth) || 0
+      };
+    }
+    if (selectedCategories.includes('ROAD_WORK') && roads.length > 0) {
+      snapshot.road = {
+        lengthKm: Number(roads[0].lengthKm) || 0,
+        lengthMeters: (Number(roads[0].lengthKm) || 0) * 1000,
+        width: Number(roads[0].width) || 0,
+        thickness: Number(roads[0].thickness) || 0
+      };
     }
 
     const savedRowsPayload = {
@@ -580,7 +775,6 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
       ...savedRowsPayload
     };
 
-    // Always read latest list directly from localStorage to prevent overwriting existing rows
     const targetStorageKey = `concrete360_advanced_measurements_${cleanTargetKey}`;
     const existingTargetList = readStoredMeasurements(cleanTargetKey);
 
@@ -593,6 +787,7 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
 
     try {
       localStorage.setItem(targetStorageKey, JSON.stringify(updatedTargetList));
+      saveDimensionsBackup(cleanTargetKey, updatedTargetList);
       if (updatedTargetList.length > 0 && updatedTargetList[0].mixGrade) {
         localStorage.setItem(`concrete360_active_mix_grade_${cleanTargetKey}`, updatedTargetList[0].mixGrade);
       }
@@ -622,16 +817,18 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
           site_name: cleanTargetKey,
           element_name: itemToSave.label,
           mix_grade: itemToSave.mixGrade,
-          length_m: 0,
-          width_m: 0,
-          depth_m: 0,
-          quantity: 1,
+          length_m: Number(slabs[0]?.length || beams[0]?.length || footings[0]?.length || 0),
+          width_m: Number(slabs[0]?.width || beams[0]?.width || footings[0]?.width || 0),
+          depth_m: Number(slabs[0]?.thickness || beams[0]?.depth || footings[0]?.depth || 0),
+          quantity: Number(columns[0]?.count || beams[0]?.count || footings[0]?.count || 1),
           volume_m3: itemToSave.volumeM3,
           remarks: itemToSave.breakdownText,
           date: itemToSave.date,
           updated_at: new Date().toISOString()
         }, { onConflict: 'id' });
         await cloudStorage.pushAllLocalToCloud();
+        // Re-assert dimensions backup after cloud push so local dimensions stay intact
+        saveDimensionsBackup(cleanTargetKey, updatedTargetList);
       } catch {}
     }
   };
@@ -647,6 +844,12 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
       setItems(nextItems);
       try {
         localStorage.setItem(`concrete360_advanced_measurements_${activeKey}`, JSON.stringify(nextItems));
+        const backupRaw = localStorage.getItem(`concrete360_dimensions_backup_${activeKey}`);
+        if (backupRaw) {
+          const backupMap = JSON.parse(backupRaw);
+          delete backupMap[id];
+          localStorage.setItem(`concrete360_dimensions_backup_${activeKey}`, JSON.stringify(backupMap));
+        }
         window.dispatchEvent(new CustomEvent('concrete360_measurement_updated', { detail: nextItems }));
       } catch {}
       if (supabase) {
@@ -664,7 +867,8 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
       (it) =>
         (it.id || '').toLowerCase().includes(q) ||
         (it.label || '').toLowerCase().includes(q) ||
-        (it.breakdownText || '').toLowerCase().includes(q)
+        (it.breakdownText || '').toLowerCase().includes(q) ||
+        (it.categories || []).some((c) => c.toLowerCase().includes(q))
     );
   }, [items, searchQuery]);
 
@@ -889,76 +1093,79 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
                   </td>
                 </tr>
               ) : (
-                filteredItems.map((item) => (
-                  <tr key={item.id} className="hover:bg-[#0E1626] transition-colors">
-                    <td className="py-4 px-6 truncate">
-                      <span className="font-bold text-slate-300 block">{item.id}</span>
-                      <span className="px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400 text-[10px] font-bold border border-cyan-500/20 mt-1 inline-block">
-                        {item.mixGrade || 'M25'}
-                      </span>
-                    </td>
+                filteredItems.map((item) => {
+                  const displayCategories = inferCategoriesFromItem(item);
+                  return (
+                    <tr key={item.id} className="hover:bg-[#0E1626] transition-colors">
+                      <td className="py-4 px-6 truncate">
+                        <span className="font-bold text-slate-300 block">{item.id}</span>
+                        <span className="px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400 text-[10px] font-bold border border-cyan-500/20 mt-1 inline-block">
+                          {item.mixGrade || 'M25'}
+                        </span>
+                      </td>
 
-                    <td className="py-4 px-6 text-slate-300">
-                      {formatDateDDMMYYYY(item.date || '') || '-'}
-                    </td>
+                      <td className="py-4 px-6 text-slate-300">
+                        {formatDateDDMMYYYY(item.date || '') || '-'}
+                      </td>
 
-                    <td className="py-4 px-6">
-                      <div className="flex flex-wrap gap-1">
-                        {(item.categories || []).map((c) => (
-                          <span
-                            key={c}
-                            className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#111C33] border border-[#1C2C4E] text-blue-300 font-sans truncate max-w-full"
-                          >
-                            {String(c).replace('_', ' ')}
-                          </span>
-                        ))}
-                      </div>
-                    </td>
-
-                    <td className="py-4 px-6 font-sans">
-                      <div className="font-bold text-white text-sm truncate" title={item.label}>{item.label || 'Structural Work'}</div>
-                      <div className="text-[11px] text-slate-400 font-mono mt-0.5 truncate" title={item.breakdownText}>{item.breakdownText}</div>
-                    </td>
-
-                    <td className="py-4 px-6 text-center">
-                      <div className="font-bold text-cyan-400 text-sm truncate">
-                        {(Number(item.volumeM3) || 0).toFixed(2)} <span className="text-xs text-cyan-500 font-sans">m³</span>
-                      </div>
-                      <div className="text-[10px] text-slate-400 truncate">
-                        {((Number(item.volumeCft) || (Number(item.volumeM3) || 0) * 35.3146667)).toFixed(1)} CFT
-                      </div>
-                    </td>
-
-                    <td className="py-4 px-6 text-right">
-                      <div className="inline-flex items-center justify-end gap-2">
-                        {canEditOrDelete ? (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => handleOpenEditModal(item)}
-                              className="text-slate-400 hover:text-white cursor-pointer transition-colors p-1"
-                              title="Edit"
+                      <td className="py-4 px-6">
+                        <div className="flex flex-wrap gap-1">
+                          {displayCategories.map((c) => (
+                            <span
+                              key={c}
+                              className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#111C33] border border-[#1C2C4E] text-blue-300 font-sans truncate max-w-full"
                             >
-                              <Edit2 className="w-4 h-4" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDelete(item.id)}
-                              className="text-slate-400 hover:text-rose-400 cursor-pointer transition-colors p-1"
-                              title="Delete"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </>
-                        ) : (
-                          <span title="Edit/Delete restricted for this account">
-                            <Lock className="w-3.5 h-3.5 text-slate-600 inline ml-1" />
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                              {String(c).replace('_', ' ')}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+
+                      <td className="py-4 px-6 font-sans">
+                        <div className="font-bold text-white text-sm truncate" title={item.label}>{item.label || 'Structural Work'}</div>
+                        <div className="text-[11px] text-slate-400 font-mono mt-0.5 truncate" title={item.breakdownText}>{item.breakdownText}</div>
+                      </td>
+
+                      <td className="py-4 px-6 text-center">
+                        <div className="font-bold text-cyan-400 text-sm truncate">
+                          {(Number(item.volumeM3) || 0).toFixed(2)} <span className="text-xs text-cyan-500 font-sans">m³</span>
+                        </div>
+                        <div className="text-[10px] text-slate-400 truncate">
+                          {((Number(item.volumeCft) || (Number(item.volumeM3) || 0) * 35.3146667)).toFixed(1)} CFT
+                        </div>
+                      </td>
+
+                      <td className="py-4 px-6 text-right">
+                        <div className="inline-flex items-center justify-end gap-2">
+                          {canEditOrDelete ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditModal(item)}
+                                className="text-slate-400 hover:text-white cursor-pointer transition-colors p-1"
+                                title="Edit"
+                              >
+                                <Edit2 className="w-4 h-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDelete(item.id)}
+                                className="text-slate-400 hover:text-rose-400 cursor-pointer transition-colors p-1"
+                                title="Delete"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </>
+                          ) : (
+                            <span title="Edit/Delete restricted for this account">
+                              <Lock className="w-3.5 h-3.5 text-slate-600 inline ml-1" />
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -1138,7 +1345,10 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
                             step="any" 
                             placeholder="0" 
                             value={slab.length} 
-                            onChange={(e) => { const n = [...slabs]; n[idx].length = e.target.value === '' ? '' : Number(e.target.value); setSlabs(n); }} 
+                            onChange={(e) => {
+                              const val = e.target.value === '' ? '' : Number(e.target.value);
+                              setSlabs(slabs.map((row, i) => (i === idx ? { ...row, length: val } : row)));
+                            }} 
                             className="w-full px-3 py-2 bg-[#0F172B] border border-[#1C2C4E] rounded-xl text-white font-mono text-xs outline-none focus:border-blue-500" 
                           />
                         </div>
@@ -1151,7 +1361,10 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
                             step="any" 
                             placeholder="0" 
                             value={slab.width} 
-                            onChange={(e) => { const n = [...slabs]; n[idx].width = e.target.value === '' ? '' : Number(e.target.value); setSlabs(n); }} 
+                            onChange={(e) => {
+                              const val = e.target.value === '' ? '' : Number(e.target.value);
+                              setSlabs(slabs.map((row, i) => (i === idx ? { ...row, width: val } : row)));
+                            }} 
                             className="w-full px-3 py-2 bg-[#0F172B] border border-[#1C2C4E] rounded-xl text-white font-mono text-xs outline-none focus:border-blue-500" 
                           />
                         </div>
@@ -1164,7 +1377,10 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
                             step="any" 
                             placeholder="0" 
                             value={slab.thickness} 
-                            onChange={(e) => { const n = [...slabs]; n[idx].thickness = e.target.value === '' ? '' : Number(e.target.value); setSlabs(n); }} 
+                            onChange={(e) => {
+                              const val = e.target.value === '' ? '' : Number(e.target.value);
+                              setSlabs(slabs.map((row, i) => (i === idx ? { ...row, thickness: val } : row)));
+                            }} 
                             className="w-full px-3 py-2 bg-[#0F172B] border border-[#1C2C4E] rounded-xl text-cyan-400 font-mono font-bold text-xs outline-none focus:border-cyan-500" 
                           />
                         </div>
@@ -1207,7 +1423,10 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
                             type="number" 
                             placeholder="0" 
                             value={col.count} 
-                            onChange={(e) => { const n = [...columns]; n[idx].count = e.target.value === '' ? '' : Number(e.target.value); setColumns(n); }} 
+                            onChange={(e) => {
+                              const val = e.target.value === '' ? '' : Number(e.target.value);
+                              setColumns(columns.map((row, i) => (i === idx ? { ...row, count: val } : row)));
+                            }} 
                             className="w-full px-3 py-2 bg-[#0F172B] border border-[#1C2C4E] rounded-xl text-white font-mono text-xs outline-none focus:border-blue-500" 
                           />
                         </div>
@@ -1220,7 +1439,10 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
                             step="any" 
                             placeholder="0" 
                             value={col.height} 
-                            onChange={(e) => { const n = [...columns]; n[idx].height = e.target.value === '' ? '' : Number(e.target.value); setColumns(n); }} 
+                            onChange={(e) => {
+                              const val = e.target.value === '' ? '' : Number(e.target.value);
+                              setColumns(columns.map((row, i) => (i === idx ? { ...row, height: val } : row)));
+                            }} 
                             className="w-full px-3 py-2 bg-[#0F172B] border border-[#1C2C4E] rounded-xl text-white font-mono text-xs outline-none focus:border-blue-500" 
                           />
                         </div>
@@ -1233,7 +1455,10 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
                             step="any" 
                             placeholder="0" 
                             value={col.dim1} 
-                            onChange={(e) => { const n = [...columns]; n[idx].dim1 = e.target.value === '' ? '' : Number(e.target.value); setColumns(n); }} 
+                            onChange={(e) => {
+                              const val = e.target.value === '' ? '' : Number(e.target.value);
+                              setColumns(columns.map((row, i) => (i === idx ? { ...row, dim1: val } : row)));
+                            }} 
                             className="w-full px-3 py-2 bg-[#0F172B] border border-[#1C2C4E] rounded-xl text-cyan-400 font-mono font-bold text-xs outline-none focus:border-cyan-500" 
                           />
                         </div>
@@ -1246,7 +1471,10 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
                             step="any" 
                             placeholder="0" 
                             value={col.dim2} 
-                            onChange={(e) => { const n = [...columns]; n[idx].dim2 = e.target.value === '' ? '' : Number(e.target.value); setColumns(n); }} 
+                            onChange={(e) => {
+                              const val = e.target.value === '' ? '' : Number(e.target.value);
+                              setColumns(columns.map((row, i) => (i === idx ? { ...row, dim2: val } : row)));
+                            }} 
                             className="w-full px-3 py-2 bg-[#0F172B] border border-[#1C2C4E] rounded-xl text-cyan-400 font-mono font-bold text-xs outline-none focus:border-cyan-500" 
                           />
                         </div>
@@ -1289,7 +1517,10 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
                             type="number" 
                             placeholder="0" 
                             value={beam.count} 
-                            onChange={(e) => { const n = [...beams]; n[idx].count = e.target.value === '' ? '' : Number(e.target.value); setBeams(n); }} 
+                            onChange={(e) => {
+                              const val = e.target.value === '' ? '' : Number(e.target.value);
+                              setBeams(beams.map((row, i) => (i === idx ? { ...row, count: val } : row)));
+                            }} 
                             className="w-full px-3 py-2 bg-[#0F172B] border border-[#1C2C4E] rounded-xl text-white font-mono text-xs outline-none focus:border-blue-500" 
                           />
                         </div>
@@ -1302,7 +1533,10 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
                             step="any" 
                             placeholder="0" 
                             value={beam.length} 
-                            onChange={(e) => { const n = [...beams]; n[idx].length = e.target.value === '' ? '' : Number(e.target.value); setBeams(n); }} 
+                            onChange={(e) => {
+                              const val = e.target.value === '' ? '' : Number(e.target.value);
+                              setBeams(beams.map((row, i) => (i === idx ? { ...row, length: val } : row)));
+                            }} 
                             className="w-full px-3 py-2 bg-[#0F172B] border border-[#1C2C4E] rounded-xl text-white font-mono text-xs outline-none focus:border-blue-500" 
                           />
                         </div>
@@ -1315,7 +1549,10 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
                             step="any" 
                             placeholder="0" 
                             value={beam.width} 
-                            onChange={(e) => { const n = [...beams]; n[idx].width = e.target.value === '' ? '' : Number(e.target.value); setBeams(n); }} 
+                            onChange={(e) => {
+                              const val = e.target.value === '' ? '' : Number(e.target.value);
+                              setBeams(beams.map((row, i) => (i === idx ? { ...row, width: val } : row)));
+                            }} 
                             className="w-full px-3 py-2 bg-[#0F172B] border border-[#1C2C4E] rounded-xl text-cyan-400 font-mono font-bold text-xs outline-none focus:border-cyan-500" 
                           />
                         </div>
@@ -1328,7 +1565,10 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
                             step="any" 
                             placeholder="0" 
                             value={beam.depth} 
-                            onChange={(e) => { const n = [...beams]; n[idx].depth = e.target.value === '' ? '' : Number(e.target.value); setBeams(n); }} 
+                            onChange={(e) => {
+                              const val = e.target.value === '' ? '' : Number(e.target.value);
+                              setBeams(beams.map((row, i) => (i === idx ? { ...row, depth: val } : row)));
+                            }} 
                             className="w-full px-3 py-2 bg-[#0F172B] border border-[#1C2C4E] rounded-xl text-cyan-400 font-mono font-bold text-xs outline-none focus:border-cyan-500" 
                           />
                         </div>
@@ -1371,7 +1611,10 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
                             type="number" 
                             placeholder="0" 
                             value={wall.count} 
-                            onChange={(e) => { const n = [...walls]; n[idx].count = e.target.value === '' ? '' : Number(e.target.value); setWalls(n); }} 
+                            onChange={(e) => {
+                              const val = e.target.value === '' ? '' : Number(e.target.value);
+                              setWalls(walls.map((row, i) => (i === idx ? { ...row, count: val } : row)));
+                            }} 
                             className="w-full px-3 py-2 bg-[#0F172B] border border-[#1C2C4E] rounded-xl text-white font-mono text-xs outline-none focus:border-blue-500" 
                           />
                         </div>
@@ -1384,7 +1627,10 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
                             step="any" 
                             placeholder="0" 
                             value={wall.length} 
-                            onChange={(e) => { const n = [...walls]; n[idx].length = e.target.value === '' ? '' : Number(e.target.value); setWalls(n); }} 
+                            onChange={(e) => {
+                              const val = e.target.value === '' ? '' : Number(e.target.value);
+                              setWalls(walls.map((row, i) => (i === idx ? { ...row, length: val } : row)));
+                            }} 
                             className="w-full px-3 py-2 bg-[#0F172B] border border-[#1C2C4E] rounded-xl text-white font-mono text-xs outline-none focus:border-blue-500" 
                           />
                         </div>
@@ -1397,7 +1643,10 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
                             step="any" 
                             placeholder="0" 
                             value={wall.height} 
-                            onChange={(e) => { const n = [...walls]; n[idx].height = e.target.value === '' ? '' : Number(e.target.value); setWalls(n); }} 
+                            onChange={(e) => {
+                              const val = e.target.value === '' ? '' : Number(e.target.value);
+                              setWalls(walls.map((row, i) => (i === idx ? { ...row, height: val } : row)));
+                            }} 
                             className="w-full px-3 py-2 bg-[#0F172B] border border-[#1C2C4E] rounded-xl text-white font-mono text-xs outline-none focus:border-blue-500" 
                           />
                         </div>
@@ -1410,7 +1659,10 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
                             step="any" 
                             placeholder="0" 
                             value={wall.thickness} 
-                            onChange={(e) => { const n = [...walls]; n[idx].thickness = e.target.value === '' ? '' : Number(e.target.value); setWalls(n); }} 
+                            onChange={(e) => {
+                              const val = e.target.value === '' ? '' : Number(e.target.value);
+                              setWalls(walls.map((row, i) => (i === idx ? { ...row, thickness: val } : row)));
+                            }} 
                             className="w-full px-3 py-2 bg-[#0F172B] border border-[#1C2C4E] rounded-xl text-cyan-400 font-mono font-bold text-xs outline-none focus:border-cyan-500" 
                           />
                         </div>
@@ -1453,7 +1705,10 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
                             type="number" 
                             placeholder="0" 
                             value={st.flights} 
-                            onChange={(e) => { const n = [...stairsList]; n[idx].flights = e.target.value === '' ? '' : Number(e.target.value); setStairsList(n); }} 
+                            onChange={(e) => {
+                              const val = e.target.value === '' ? '' : Number(e.target.value);
+                              setStairsList(stairsList.map((row, i) => (i === idx ? { ...row, flights: val } : row)));
+                            }} 
                             className="w-full px-2 py-2 bg-[#0F172B] border border-[#1C2C4E] rounded-xl text-white font-mono text-xs outline-none focus:border-blue-500" 
                           />
                         </div>
@@ -1466,7 +1721,10 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
                             step="any" 
                             placeholder="0" 
                             value={st.width} 
-                            onChange={(e) => { const n = [...stairsList]; n[idx].width = e.target.value === '' ? '' : Number(e.target.value); setStairsList(n); }} 
+                            onChange={(e) => {
+                              const val = e.target.value === '' ? '' : Number(e.target.value);
+                              setStairsList(stairsList.map((row, i) => (i === idx ? { ...row, width: val } : row)));
+                            }} 
                             className="w-full px-2 py-2 bg-[#0F172B] border border-[#1C2C4E] rounded-xl text-white font-mono text-xs outline-none focus:border-blue-500" 
                           />
                         </div>
@@ -1476,7 +1734,10 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
                             type="number" 
                             placeholder="0" 
                             value={st.steps} 
-                            onChange={(e) => { const n = [...stairsList]; n[idx].steps = e.target.value === '' ? '' : Number(e.target.value); setStairsList(n); }} 
+                            onChange={(e) => {
+                              const val = e.target.value === '' ? '' : Number(e.target.value);
+                              setStairsList(stairsList.map((row, i) => (i === idx ? { ...row, steps: val } : row)));
+                            }} 
                             className="w-full px-2 py-2 bg-[#0F172B] border border-[#1C2C4E] rounded-xl text-white font-mono text-xs outline-none focus:border-blue-500" 
                           />
                         </div>
@@ -1489,7 +1750,10 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
                             step="any" 
                             placeholder="0" 
                             value={st.tread} 
-                            onChange={(e) => { const n = [...stairsList]; n[idx].tread = e.target.value === '' ? '' : Number(e.target.value); setStairsList(n); }} 
+                            onChange={(e) => {
+                              const val = e.target.value === '' ? '' : Number(e.target.value);
+                              setStairsList(stairsList.map((row, i) => (i === idx ? { ...row, tread: val } : row)));
+                            }} 
                             className="w-full px-2 py-2 bg-[#0F172B] border border-[#1C2C4E] rounded-xl text-cyan-400 font-mono font-bold text-xs outline-none focus:border-cyan-500" 
                           />
                         </div>
@@ -1502,7 +1766,10 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
                             step="any" 
                             placeholder="0" 
                             value={st.riser} 
-                            onChange={(e) => { const n = [...stairsList]; n[idx].riser = e.target.value === '' ? '' : Number(e.target.value); setStairsList(n); }} 
+                            onChange={(e) => {
+                              const val = e.target.value === '' ? '' : Number(e.target.value);
+                              setStairsList(stairsList.map((row, i) => (i === idx ? { ...row, riser: val } : row)));
+                            }} 
                             className="w-full px-2 py-2 bg-[#0F172B] border border-[#1C2C4E] rounded-xl text-cyan-400 font-mono font-bold text-xs outline-none focus:border-cyan-500" 
                           />
                         </div>
@@ -1515,7 +1782,10 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
                             step="any" 
                             placeholder="0" 
                             value={st.waist} 
-                            onChange={(e) => { const n = [...stairsList]; n[idx].waist = e.target.value === '' ? '' : Number(e.target.value); setStairsList(n); }} 
+                            onChange={(e) => {
+                              const val = e.target.value === '' ? '' : Number(e.target.value);
+                              setStairsList(stairsList.map((row, i) => (i === idx ? { ...row, waist: val } : row)));
+                            }} 
                             className="w-full px-2 py-2 bg-[#0F172B] border border-[#1C2C4E] rounded-xl text-cyan-400 font-mono font-bold text-xs outline-none focus:border-cyan-500" 
                           />
                         </div>
@@ -1558,7 +1828,10 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
                             type="number" 
                             placeholder="0" 
                             value={ft.count} 
-                            onChange={(e) => { const n = [...footings]; n[idx].count = e.target.value === '' ? '' : Number(e.target.value); setFootings(n); }} 
+                            onChange={(e) => {
+                              const val = e.target.value === '' ? '' : Number(e.target.value);
+                              setFootings(footings.map((row, i) => (i === idx ? { ...row, count: val } : row)));
+                            }} 
                             className="w-full px-3 py-2 bg-[#0F172B] border border-[#1C2C4E] rounded-xl text-white font-mono text-xs outline-none focus:border-blue-500" 
                           />
                         </div>
@@ -1571,7 +1844,10 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
                             step="any" 
                             placeholder="0" 
                             value={ft.length} 
-                            onChange={(e) => { const n = [...footings]; n[idx].length = e.target.value === '' ? '' : Number(e.target.value); setFootings(n); }} 
+                            onChange={(e) => {
+                              const val = e.target.value === '' ? '' : Number(e.target.value);
+                              setFootings(footings.map((row, i) => (i === idx ? { ...row, length: val } : row)));
+                            }} 
                             className="w-full px-3 py-2 bg-[#0F172B] border border-[#1C2C4E] rounded-xl text-white font-mono text-xs outline-none focus:border-blue-500" 
                           />
                         </div>
@@ -1584,7 +1860,10 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
                             step="any" 
                             placeholder="0" 
                             value={ft.width} 
-                            onChange={(e) => { const n = [...footings]; n[idx].width = e.target.value === '' ? '' : Number(e.target.value); setFootings(n); }} 
+                            onChange={(e) => {
+                              const val = e.target.value === '' ? '' : Number(e.target.value);
+                              setFootings(footings.map((row, i) => (i === idx ? { ...row, width: val } : row)));
+                            }} 
                             className="w-full px-3 py-2 bg-[#0F172B] border border-[#1C2C4E] rounded-xl text-white font-mono text-xs outline-none focus:border-blue-500" 
                           />
                         </div>
@@ -1597,7 +1876,10 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
                             step="any" 
                             placeholder="0" 
                             value={ft.depth} 
-                            onChange={(e) => { const n = [...footings]; n[idx].depth = e.target.value === '' ? '' : Number(e.target.value); setFootings(n); }} 
+                            onChange={(e) => {
+                              const val = e.target.value === '' ? '' : Number(e.target.value);
+                              setFootings(footings.map((row, i) => (i === idx ? { ...row, depth: val } : row)));
+                            }} 
                             className="w-full px-3 py-2 bg-[#0F172B] border border-[#1C2C4E] rounded-xl text-cyan-400 font-mono font-bold text-xs outline-none focus:border-cyan-500" 
                           />
                         </div>
@@ -1643,7 +1925,10 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
                             step="any" 
                             placeholder="0" 
                             value={rd.lengthKm} 
-                            onChange={(e) => { const n = [...roads]; n[idx].lengthKm = e.target.value === '' ? '' : Number(e.target.value); setRoads(n); }} 
+                            onChange={(e) => {
+                              const val = e.target.value === '' ? '' : Number(e.target.value);
+                              setRoads(roads.map((row, i) => (i === idx ? { ...row, lengthKm: val } : row)));
+                            }} 
                             className="w-full px-3 py-2 bg-[#0F172B] border border-blue-500/50 rounded-xl text-cyan-300 font-bold font-mono text-xs outline-none focus:border-cyan-400" 
                           />
                         </div>
@@ -1656,7 +1941,10 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
                             step="any" 
                             placeholder="0" 
                             value={rd.width} 
-                            onChange={(e) => { const n = [...roads]; n[idx].width = e.target.value === '' ? '' : Number(e.target.value); setRoads(n); }} 
+                            onChange={(e) => {
+                              const val = e.target.value === '' ? '' : Number(e.target.value);
+                              setRoads(roads.map((row, i) => (i === idx ? { ...row, width: val } : row)));
+                            }} 
                             className="w-full px-3 py-2 bg-[#0F172B] border border-[#1C2C4E] rounded-xl text-white font-mono text-xs outline-none focus:border-blue-500" 
                           />
                         </div>
@@ -1669,7 +1957,10 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
                             step="any" 
                             placeholder="0" 
                             value={rd.thickness} 
-                            onChange={(e) => { const n = [...roads]; n[idx].thickness = e.target.value === '' ? '' : Number(e.target.value); setRoads(n); }} 
+                            onChange={(e) => {
+                              const val = e.target.value === '' ? '' : Number(e.target.value);
+                              setRoads(roads.map((row, i) => (i === idx ? { ...row, thickness: val } : row)));
+                            }} 
                             className="w-full px-3 py-2 bg-[#0F172B] border border-[#1C2C4E] rounded-xl text-cyan-400 font-mono font-bold text-xs outline-none focus:border-cyan-500" 
                           />
                         </div>
