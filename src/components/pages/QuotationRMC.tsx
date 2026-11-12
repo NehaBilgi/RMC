@@ -60,7 +60,6 @@ interface RMCQuotation {
   workElementLabel?: string;
   mixGrade: string;
   netVolumeM3?: number;
-  wastagePercent?: number;
   estimatedQtyM3: number;
   unitRate: number;
   includePump: boolean;
@@ -98,6 +97,18 @@ const formatDateDDMMYYYY = (dateStr: string) => {
   return parts.length === 3 ? `${parts[2]}-${parts[1]}-${parts[0]}` : dateStr;
 };
 
+// Rounds concrete quantity up to nearest 0.5 m³ (e.g., 8.38 -> 8.5, 8.79 -> 9, 9.6 -> 10)
+const roundToHalfM3 = (val: number): number => {
+  if (!val || val <= 0) return 0;
+  return Math.ceil(val * 2 - 1e-9) / 2;
+};
+
+// Formats round m³ cleanly (e.g., 8.5 -> "8.5", 9 -> "9", 10 -> "10")
+const formatRoundM3 = (val: number): string => {
+  const num = Number(val) || 0;
+  return Number.isInteger(num) ? String(num) : Number(num.toFixed(2)).toString();
+};
+
 const normalizeCategoryName = (raw: string): { key: string; shortName: string } => {
   const s = String(raw || '').toUpperCase();
   if (s.includes('SLAB') || s.includes('DECK')) return { key: 'SLAB', shortName: 'Slab' };
@@ -110,7 +121,7 @@ const normalizeCategoryName = (raw: string): { key: string; shortName: string } 
   return { key: s || 'CUSTOM', shortName: raw || 'Concrete Work' };
 };
 
-// Converts SiteMeasurementStudio rows into clean compact lines: e.g. "Slab | 12m × 12m × 150mm | 21.60 m³"
+// Converts SiteMeasurementStudio rows into clean compact lines: e.g. "Beam | 4 Nos × 4m × 230mm × 450mm | 1.66 m³"
 const extractCompactMeasurementLines = (entry: StudioWorkEntry, idx = 0): MeasurementPrintLine[] => {
   const unitRaw = String(entry.unitSystem || entry.unit || '').toUpperCase();
   const isImp = unitRaw.includes('IMPERIAL') || unitRaw.includes('FT');
@@ -121,34 +132,54 @@ const extractCompactMeasurementLines = (entry: StudioWorkEntry, idx = 0): Measur
     const count = Number(r.count ?? r.nos ?? r.qty ?? 1) || 1;
     const l = Number(r.length ?? r.l) || 0;
     const w = Number(r.width ?? r.breadth ?? r.w ?? r.b) || 0;
+    const h = Number(r.height ?? r.h) || 0;
+    const d1 = Number(r.dim1) || 0;
+    const d2 = Number(r.dim2) || 0;
     const t = Number(r.thickness ?? r.depth ?? r.height ?? r.t ?? r.d ?? r.h) || 0;
 
     if (catKey === 'SLAB') {
-      return isImp ? (l * w * (t / 12)) * 0.0283168 : l * w * (t / 1000);
+      return isImp ? (count * l * w * (t / 12)) / 35.3146667 : count * l * w * (t / 1000);
     }
-    if (catKey === 'COLUMN' || catKey === 'BEAM' || catKey === 'FOOTING') {
-      return isImp ? count * l * (w / 12) * (t / 12) * 0.0283168 : count * l * (w / 1000) * (t / 1000);
+    if (catKey === 'COLUMN') {
+      const colH = h || l;
+      const colW = d1 || w;
+      const colD = d2 || t;
+      return isImp
+        ? (count * (colW / 12) * (colD / 12) * colH) / 35.3146667
+        : count * (colW / 1000) * (colD / 1000) * colH;
+    }
+    if (catKey === 'BEAM') {
+      return isImp ? (count * l * (w / 12) * (t / 12)) / 35.3146667 : count * l * (w / 1000) * (t / 1000);
+    }
+    if (catKey === 'FOOTING') {
+      return isImp ? (count * l * w * (t / 12)) / 35.3146667 : count * l * w * (t / 1000);
     }
     if (catKey === 'WALL') {
-      return isImp ? count * l * w * (t / 12) * 0.0283168 : count * l * w * (t / 1000);
+      const wallH = h || w;
+      const wallT = Number(r.thickness ?? r.t) || t;
+      return isImp ? (count * l * wallH * (wallT / 12)) / 35.3146667 : count * l * wallH * (wallT / 1000);
     }
     if (catKey === 'STAIRS') {
-      const steps = Number(r.steps ?? count) || 1;
+      const flights = Number(r.flights ?? count) || 1;
+      const width = Number(r.width ?? l) || 0;
+      const steps = Number(r.steps) || 1;
       const riser = Number(r.riser ?? t) || 0;
       const tread = Number(r.tread ?? w) || 0;
       const waist = Number(r.waist ?? r.thickness) || 0;
       if (isImp) {
-        const stepVol = steps * 0.5 * (riser / 12) * (tread / 12) * l;
+        const stepVol = steps * 0.5 * (riser / 12) * (tread / 12) * width;
         const waistLen = steps * Math.sqrt(Math.pow(riser / 12, 2) + Math.pow(tread / 12, 2));
-        return (stepVol + waistLen * l * (waist / 12)) * 0.0283168;
+        return (flights * (stepVol + waistLen * width * (waist / 12))) / 35.3146667;
       }
-      const stepVol = steps * 0.5 * (riser / 1000) * (tread / 1000) * l;
+      const stepVol = steps * 0.5 * (riser / 1000) * (tread / 1000) * width;
       const waistLen = steps * Math.sqrt(Math.pow(riser / 1000, 2) + Math.pow(tread / 1000, 2));
-      return stepVol + waistLen * l * (waist / 1000);
+      return flights * (stepVol + waistLen * width * (waist / 1000));
     }
     if (catKey === 'ROAD') {
-      const lenM = isImp ? l : l * 1000;
-      return isImp ? lenM * w * (t / 12) * 0.0283168 : lenM * w * (t / 1000);
+      const lenKm = Number(r.lengthKm ?? l) || 0;
+      return isImp
+        ? ((lenKm * 5280) * w * (t / 12)) / 35.3146667
+        : (lenKm * 1000) * w * (t / 1000);
     }
     return 0;
   };
@@ -157,28 +188,58 @@ const extractCompactMeasurementLines = (entry: StudioWorkEntry, idx = 0): Measur
     const count = Number(r.count ?? r.nos ?? r.qty ?? 1) || 1;
     const l = Number(r.length ?? r.l) || 0;
     const w = Number(r.width ?? r.breadth ?? r.w ?? r.b) || 0;
+    const h = Number(r.height ?? r.h) || 0;
+    const d1 = Number(r.dim1) || 0;
+    const d2 = Number(r.dim2) || 0;
     const t = Number(r.thickness ?? r.depth ?? r.height ?? r.t ?? r.d ?? r.h) || 0;
-    const countPrefix = count > 1 ? `${count} Nos × ` : '';
+    const countLabel = `${count} ${count === 1 ? 'No.' : 'Nos'} × `;
 
     if (catKey === 'SLAB') {
-      return isImp ? `${countPrefix}${l}' × ${w}' × ${t}"` : `${countPrefix}${l}m × ${w}m × ${t}mm`;
+      return isImp ? `${countLabel}${l}' × ${w}' × ${t}"` : `${countLabel}${l}m × ${w}m × ${t}mm`;
     }
-    if (catKey === 'COLUMN' || catKey === 'BEAM' || catKey === 'FOOTING') {
-      return isImp ? `${countPrefix}${l}' × ${w}" × ${t}"` : `${countPrefix}${l}m × ${w}mm × ${t}mm`;
+    if (catKey === 'COLUMN') {
+      const colH = h || l;
+      const colW = d1 || w;
+      const colD = d2 || t;
+      return isImp
+        ? `${countLabel}${colW}" × ${colD}" × H ${colH}'`
+        : `${countLabel}${colW}mm × ${colD}mm × H ${colH}m`;
+    }
+    if (catKey === 'BEAM') {
+      return isImp ? `${countLabel}${l}' × ${w}" × ${t}"` : `${countLabel}${l}m × ${w}mm × ${t}mm`;
+    }
+    if (catKey === 'FOOTING') {
+      return isImp ? `${countLabel}${l}' × ${w}' × ${t}"` : `${countLabel}${l}m × ${w}m × ${t}mm`;
     }
     if (catKey === 'WALL') {
-      return isImp ? `${countPrefix}${l}' × ${w}' × ${t}"` : `${countPrefix}${l}m × ${w}m × ${t}mm`;
+      const wallH = h || w;
+      const wallT = Number(r.thickness ?? r.t) || t;
+      return isImp
+        ? `${countLabel}${l}' × H ${wallH}' × ${wallT}"`
+        : `${countLabel}${l}m × H ${wallH}m × ${wallT}mm`;
     }
     if (catKey === 'STAIRS') {
-      const steps = Number(r.steps ?? count) || 1;
+      const flights = Number(r.flights ?? count) || 1;
+      const width = Number(r.width ?? l) || 0;
+      const steps = Number(r.steps) || 1;
+      const waist = Number(r.waist ?? r.thickness) || 0;
       return isImp
-        ? `${steps} Steps × ${l}' × ${r.riser ?? t}" × ${r.tread ?? w}"`
-        : `${steps} Steps × ${l}m × ${r.riser ?? t}mm × ${r.tread ?? w}mm`;
+        ? `${flights} Flight(s), ${steps} Steps × W ${width}' × Waist ${waist}"`
+        : `${flights} Flight(s), ${steps} Steps × W ${width}m × Waist ${waist}mm`;
     }
     if (catKey === 'ROAD') {
-      return isImp ? `${l}' × ${w}' × ${t}"` : `${l}km × ${w}m × ${t}mm`;
+      const lenKm = Number(r.lengthKm ?? l) || 0;
+      return isImp ? `${lenKm} mi × ${w}' × ${t}"` : `${lenKm} km × ${w}m × ${t}mm`;
     }
-    return `${countPrefix}${l} × ${w} × ${t}`;
+    return `${countLabel}${l} × ${w} × ${t}`;
+  };
+
+  const hasValidDimensions = (catKey: string, r: any): boolean => {
+    if ((Number(r.volumeM3) || 0) > 0) return true;
+    if (catKey === 'ROAD') return (Number(r.lengthKm ?? r.length) || 0) > 0 && (Number(r.width) || 0) > 0;
+    if (catKey === 'COLUMN') return (Number(r.height ?? r.length) || 0) > 0 && (Number(r.dim1 ?? r.width) || 0) > 0;
+    if (catKey === 'STAIRS') return (Number(r.steps) || 0) > 0 && (Number(r.width ?? r.length) || 0) > 0;
+    return (Number(r.length ?? r.l) || 0) > 0 || (Number(r.width ?? r.w) || 0) > 0;
   };
 
   const explicitDefs: { key: string; shortName: string; rows?: any[] }[] = [
@@ -193,10 +254,11 @@ const extractCompactMeasurementLines = (entry: StudioWorkEntry, idx = 0): Measur
 
   explicitDefs.forEach(def => {
     if (Array.isArray(def.rows)) {
-      def.rows.forEach(r => {
-        if ((Number(r.length ?? r.l) || 0) > 0 || (Number(r.width ?? r.w) || 0) > 0 || (Number(r.volumeM3) || 0) > 0) {
+      def.rows.forEach((r, rIdx) => {
+        if (hasValidDimensions(def.key, r)) {
+          const itemTitle = def.rows!.length > 1 ? `${def.shortName} #${rIdx + 1}` : def.shortName;
           lines.push({
-            element: def.shortName,
+            element: itemTitle,
             dimensionText: formatCompactDim(def.key, r),
             quantityM3: Number(calcRowVolM3(def.key, r).toFixed(2))
           });
@@ -209,10 +271,11 @@ const extractCompactMeasurementLines = (entry: StudioWorkEntry, idx = 0): Measur
     Object.entries(entry.categoryRows).forEach(([rawCat, rows]) => {
       if (Array.isArray(rows)) {
         const norm = normalizeCategoryName(rawCat);
-        rows.forEach(r => {
-          if ((Number(r.length ?? r.l) || 0) > 0 || (Number(r.width ?? r.w) || 0) > 0 || (Number(r.volumeM3) || 0) > 0) {
+        rows.forEach((r, rIdx) => {
+          if (hasValidDimensions(norm.key, r)) {
+            const itemTitle = rows.length > 1 ? `${norm.shortName} #${rIdx + 1}` : norm.shortName;
             lines.push({
-              element: norm.shortName,
+              element: itemTitle,
               dimensionText: formatCompactDim(norm.key, r),
               quantityM3: Number(calcRowVolM3(norm.key, r).toFixed(2))
             });
@@ -226,7 +289,7 @@ const extractCompactMeasurementLines = (entry: StudioWorkEntry, idx = 0): Measur
   if (lines.length === 0 && Array.isArray(mixedRows)) {
     mixedRows.forEach(r => {
       const norm = normalizeCategoryName(r.category || r.elementType || r.type || (entry.selectedCategories?.[0] ?? 'SLAB'));
-      if ((Number(r.length ?? r.l) || 0) > 0 || (Number(r.width ?? r.w) || 0) > 0 || (Number(r.volumeM3) || 0) > 0) {
+      if (hasValidDimensions(norm.key, r)) {
         lines.push({
           element: norm.shortName,
           dimensionText: formatCompactDim(norm.key, r),
@@ -253,6 +316,12 @@ const loadStudioWorksForSite = (siteKey: string): StudioWorkEntry[] => {
   const results: StudioWorkEntry[] = [];
   const seen = new Set<string>();
 
+  let backupMap: Record<string, any> = {};
+  try {
+    const backupRaw = localStorage.getItem(`concrete360_dimensions_backup_${siteKey}`);
+    if (backupRaw) backupMap = JSON.parse(backupRaw);
+  } catch {}
+
   const candidateKeys = [
     `concrete360_advanced_measurements_${siteKey}`,
     `concrete360_site_inventory_${siteKey}`,
@@ -269,39 +338,33 @@ const loadStudioWorksForSite = (siteKey: string): StudioWorkEntry[] => {
         if (Array.isArray(arr)) {
           arr.forEach((item: any, i: number) => {
             const id = String(item.id || `${key}-${i + 1}`);
+            const backup = backupMap[id] || {};
+            const merged = {
+              ...backup,
+              ...item,
+              slabRows: Array.isArray(item.slabRows) && item.slabRows.length > 0 ? item.slabRows : backup.slabRows,
+              columnRows: Array.isArray(item.columnRows) && item.columnRows.length > 0 ? item.columnRows : backup.columnRows,
+              beamRows: Array.isArray(item.beamRows) && item.beamRows.length > 0 ? item.beamRows : backup.beamRows,
+              wallRows: Array.isArray(item.wallRows) && item.wallRows.length > 0 ? item.wallRows : backup.wallRows,
+              stairsRows: Array.isArray(item.stairsRows) && item.stairsRows.length > 0 ? item.stairsRows : backup.stairsRows,
+              footingRows: Array.isArray(item.footingRows) && item.footingRows.length > 0 ? item.footingRows : backup.footingRows,
+              roadRows: Array.isArray(item.roadRows) && item.roadRows.length > 0 ? item.roadRows : backup.roadRows,
+              categories: Array.isArray(item.categories) && item.categories.length > 0 ? item.categories : backup.categories,
+              unitSystem: item.unitSystem || backup.unitSystem
+            };
+
             if (!seen.has(id)) {
               seen.add(id);
-              results.push({ ...item, id });
+              results.push({ ...merged, id });
             } else {
               const idx = results.findIndex(r => r.id === id);
-              if (idx >= 0) results[idx] = { ...item, ...results[idx] };
+              if (idx >= 0) results[idx] = { ...merged, ...results[idx] };
             }
           });
         }
       }
     } catch {}
   }
-
-  try {
-    const sessRaw = localStorage.getItem('concrete360_measurement');
-    if (sessRaw) {
-      const sess = JSON.parse(sessRaw);
-      const sessSite = extractCleanSiteName(sess.siteName || sess.projectName || sess.site || siteKey);
-      const list = sess.elements || sess.items || sess.works || sess.entries || [];
-      if (Array.isArray(list) && (sessSite === siteKey || results.length === 0)) {
-        list.forEach((item: any, i: number) => {
-          const id = String(item.id || `SESS-${i + 1}`);
-          if (!seen.has(id)) {
-            seen.add(id);
-            results.push({ ...item, id });
-          } else {
-            const idx = results.findIndex(r => r.id === id);
-            if (idx >= 0) results[idx] = { ...item, ...results[idx] };
-          }
-        });
-      }
-    }
-  } catch {}
 
   return results;
 };
@@ -318,40 +381,21 @@ const resolveWorkLabel = (it: StudioWorkEntry, idx = 0): string => {
 export const QuotationRMC: React.FC = () => {
   const getActiveSiteKey = () => {
     try {
+      const selected = sessionStorage.getItem('concrete360_selected_site') || localStorage.getItem('concrete360_selected_site');
+      if (selected) return extractCleanSiteName(selected);
+
       const activeRaw = localStorage.getItem('concrete360_active_site');
       if (activeRaw) {
         const parsed = JSON.parse(activeRaw);
         return extractCleanSiteName(parsed.name || parsed.siteName || parsed.id);
       }
-      const selected = sessionStorage.getItem('concrete360_selected_site') || localStorage.getItem('concrete360_selected_site');
-      if (selected) return extractCleanSiteName(selected);
     } catch {}
     return 'BASVARAJ';
-  };
-
-  const getPersistedWastage = (siteKey: string): number => {
-    try {
-      const saved = localStorage.getItem(`concrete360_wastage_percent_${siteKey}`);
-      if (saved !== null && saved !== '') {
-        const parsed = parseFloat(saved);
-        if (!isNaN(parsed)) return Math.max(0, parsed);
-      }
-      const measurementSession = localStorage.getItem('concrete360_measurement');
-      if (measurementSession) {
-        const parsedS = JSON.parse(measurementSession);
-        if (parsedS.safetyWastagePercent !== undefined && parsedS.safetyWastagePercent !== null && parsedS.safetyWastagePercent !== '') {
-          const parsed = parseFloat(parsedS.safetyWastagePercent);
-          if (!isNaN(parsed)) return Math.max(0, parsed);
-        }
-      }
-    } catch {}
-    return 5;
   };
 
   const [currentSiteKey, setCurrentSiteKey] = useState<string>(getActiveSiteKey());
   const [quotations, setQuotations] = useState<RMCQuotation[]>([]);
   const [measurementItems, setMeasurementItems] = useState<StudioWorkEntry[]>([]);
-  const [wastagePercent, setWastagePercent] = useState<number>(5);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
@@ -403,14 +447,13 @@ export const QuotationRMC: React.FC = () => {
   const applyMeasurementToForm = (
     items: StudioWorkEntry[],
     workId: string,
-    wastage: number,
     siteKey: string
   ) => {
     if (!Array.isArray(items) || items.length === 0) return;
 
     if (workId === 'ALL') {
       const netVol = items.reduce((sum, it) => sum + (Number(it.volumeM3) || 0), 0);
-      const grossVol = Number((netVol * (1 + wastage / 100)).toFixed(2));
+      const roundedVol = roundToHalfM3(netVol);
       const explicitGrade =
         localStorage.getItem(`concrete360_active_mix_grade_${siteKey}`) ||
         items.find(it => it.mixGrade || it.grade)?.mixGrade ||
@@ -420,25 +463,25 @@ export const QuotationRMC: React.FC = () => {
 
       setMixGrade(cleanG);
       setUnitRate(resolveGradeCatalogRate(cleanG));
-      if (grossVol > 0) setEstimatedQtyM3(grossVol);
+      if (roundedVol > 0) setEstimatedQtyM3(roundedVol);
 
       const elementNames = items.map((it, idx) => resolveWorkLabel(it, idx)).filter(Boolean).join(', ');
       if (elementNames) {
-        setRemarks(`Scope: ${elementNames} (Incl. ${wastage}% wastage allowance). Valid for 15 days.`);
+        setRemarks(`Scope: ${elementNames} (${formatRoundM3(roundedVol)} m³ total). Valid for 15 days.`);
       }
     } else {
       const idx = items.findIndex(it => it.id === workId);
       const found = idx >= 0 ? items[idx] : undefined;
       if (found) {
         const netVol = Number(found.volumeM3) || 0;
-        const grossVol = Number((netVol * (1 + wastage / 100)).toFixed(2));
+        const roundedVol = roundToHalfM3(netVol);
         const cleanG = (found.mixGrade || found.grade || 'M25').substring(0, 3).toUpperCase();
         const label = resolveWorkLabel(found, idx);
 
         setMixGrade(cleanG);
         setUnitRate(resolveGradeCatalogRate(cleanG));
-        setEstimatedQtyM3(grossVol);
-        setRemarks(`Work Scope: ${label} (${netVol.toFixed(2)} m³ net + ${wastage}% wastage).`);
+        setEstimatedQtyM3(roundedVol);
+        setRemarks(`Work Scope: ${label} (${formatRoundM3(roundedVol)} m³ total). Valid for 15 days.`);
       }
     }
   };
@@ -477,9 +520,6 @@ export const QuotationRMC: React.FC = () => {
       const loadedMeasurements = loadStudioWorksForSite(siteKey);
       setMeasurementItems(loadedMeasurements);
 
-      const currentWastage = getPersistedWastage(siteKey);
-      setWastagePercent(currentWastage);
-
       const savedQuotes = localStorage.getItem(`concrete360_site_quotations_${siteKey}`);
       if (savedQuotes) {
         const parsed = JSON.parse(savedQuotes);
@@ -507,10 +547,9 @@ export const QuotationRMC: React.FC = () => {
     setSelectedWorkId('ALL');
     const siteKey = getActiveSiteKey();
     const parsedM = loadStudioWorksForSite(siteKey);
-    const currentWastage = getPersistedWastage(siteKey);
 
     if (parsedM.length > 0) {
-      applyMeasurementToForm(parsedM, 'ALL', currentWastage, siteKey);
+      applyMeasurementToForm(parsedM, 'ALL', siteKey);
     } else {
       setMixGrade('M25');
       setUnitRate(resolveGradeCatalogRate('M25'));
@@ -522,7 +561,7 @@ export const QuotationRMC: React.FC = () => {
 
   const handleWorkSelectionChange = (wId: string) => {
     setSelectedWorkId(wId);
-    applyMeasurementToForm(measurementItems, wId, wastagePercent, currentSiteKey);
+    applyMeasurementToForm(measurementItems, wId, currentSiteKey);
   };
 
   const handleGradeChange = (g: string) => {
@@ -547,6 +586,8 @@ export const QuotationRMC: React.FC = () => {
   );
 
   const selectedNetTotal = activeSpecsForSelection.reduce((sum, it) => sum + (Number(it.volumeM3) || 0), 0);
+  const allNetVolume = measurementItems.reduce((s, it) => s + (Number(it.volumeM3) || 0), 0);
+  const allRoundedVolume = roundToHalfM3(allNetVolume);
 
   const handleCreateQuotation = (e: React.FormEvent) => {
     e.preventDefault();
@@ -568,7 +609,6 @@ export const QuotationRMC: React.FC = () => {
       workElementLabel: selectedItemObj ? resolveWorkLabel(selectedItemObj, idx) : 'All Site Structural Works',
       mixGrade,
       netVolumeM3: Number(selectedNetTotal.toFixed(2)),
-      wastagePercent,
       estimatedQtyM3: qtyNum,
       unitRate: rateNum,
       includePump,
@@ -662,7 +702,7 @@ export const QuotationRMC: React.FC = () => {
     const sub = concreteSub + pumpSub;
     const gst = q.applyGst ? sub * 0.18 : 0;
 
-    // Resolve live compact lines from SiteMeasurementStudio (e.g., Slab | 12m × 12m × 150mm | 21.60 m³)
+    // Resolve live compact lines from SiteMeasurementStudio (e.g., Slab | 1 No. × 12m × 12m × 150mm | 21.60 m³)
     const liveWorks = loadStudioWorksForSite(currentSiteKey);
     const targetWorks = q.workElementId && q.workElementId !== 'ALL'
       ? liveWorks.filter(w => w.id === q.workElementId)
@@ -674,8 +714,7 @@ export const QuotationRMC: React.FC = () => {
     }
 
     const totalNetQty = lines.reduce((sum, l) => sum + l.quantityM3, 0);
-    const appliedWastage = q.wastagePercent ?? wastagePercent;
-    const totalGrossQty = Number((totalNetQty * (1 + appliedWastage / 100)).toFixed(2));
+    const totalRoundQty = roundToHalfM3(totalNetQty);
 
     const bottomMeasurementTableHtml = lines.length > 0 ? `
       <div style="margin-top:26px; page-break-inside:avoid;">
@@ -701,14 +740,14 @@ export const QuotationRMC: React.FC = () => {
               </tr>
             `).join('')}
             <tr style="background:#f8fafc;">
-              <td colspan="3" class="right" style="font-weight:bold;">Total Net Quantity:</td>
+              <td colspan="3" class="right" style="font-weight:bold;">Calculated Net Total:</td>
               <td class="right" style="font-weight:bold;">${totalNetQty.toFixed(2)} m³</td>
             </tr>
             <tr style="background:#f1f5f9;">
               <td colspan="3" class="right" style="font-weight:bold; color:#0f172a;">
-                Total Quantity (Incl. ${appliedWastage}% Wastage):
+                Total Quantity (Round Figure):
               </td>
-              <td class="right" style="font-weight:900; color:#0f172a;">${totalGrossQty.toFixed(2)} m³</td>
+              <td class="right" style="font-weight:900; color:#0f172a;">${formatRoundM3(totalRoundQty)} m³</td>
             </tr>
           </tbody>
         </table>
@@ -772,7 +811,7 @@ export const QuotationRMC: React.FC = () => {
               <tr>
                 <th>#</th>
                 <th>Item Description</th>
-                <th>Gross Est. Qty</th>
+                <th>Total Qty</th>
                 <th>Unit Rate</th>
                 <th class="right">Amount (₹)</th>
               </tr>
@@ -781,7 +820,7 @@ export const QuotationRMC: React.FC = () => {
               <tr>
                 <td>1</td>
                 <td><strong>Ready-Mix Concrete (${q.mixGrade} Grade)</strong><br/><span style="color:#64748b;font-size:9px;">Supply & Transit Mixer Delivery as per IS 456 / IS 4926</span></td>
-                <td>${q.estimatedQtyM3.toFixed(2)} m³</td>
+                <td>${formatRoundM3(q.estimatedQtyM3)} m³</td>
                 <td>₹${q.unitRate.toLocaleString('en-IN')} / m³</td>
                 <td class="right">₹${Math.round(concreteSub).toLocaleString('en-IN')}</td>
               </tr>
@@ -858,15 +897,15 @@ export const QuotationRMC: React.FC = () => {
           <div>
             <span className="text-slate-400 uppercase text-[10px] font-bold block">Net Measured Vol</span>
             <strong className="text-cyan-300 text-sm">
-              {measurementItems.reduce((s, it) => s + (Number(it.volumeM3) || 0), 0).toFixed(2)} m³
+              {allNetVolume.toFixed(2)} m³
             </strong>
           </div>
           <div className="border-l border-[#1b273d] pl-4">
             <span className="text-emerald-400 uppercase text-[10px] font-bold block">
-              Gross Est. Vol (+{wastagePercent}% Wastage)
+              Total Quotation Vol (Round)
             </span>
             <strong className="text-emerald-300 text-sm">
-              {(measurementItems.reduce((s, it) => s + (Number(it.volumeM3) || 0), 0) * (1 + wastagePercent / 100)).toFixed(2)} m³
+              {formatRoundM3(allRoundedVolume)} m³
             </strong>
           </div>
         </div>
@@ -888,7 +927,7 @@ export const QuotationRMC: React.FC = () => {
                 <th className="py-4 px-5">Quote No / Date</th>
                 <th className="py-4 px-5">Client & Scope</th>
                 <th className="py-4 px-5">Mix Grade</th>
-                <th className="py-4 px-5">Est. Volume</th>
+                <th className="py-4 px-5">Total Volume</th>
                 <th className="py-4 px-5">Rate / m³</th>
                 <th className="py-4 px-5">Est. Total</th>
                 <th className="py-4 px-5">Status</th>
@@ -916,7 +955,7 @@ export const QuotationRMC: React.FC = () => {
                       )}
                     </td>
                     <td className="py-4 px-5 text-cyan-400 font-bold">{q.mixGrade}</td>
-                    <td className="py-4 px-5 font-bold">{q.estimatedQtyM3} m³</td>
+                    <td className="py-4 px-5 font-bold">{formatRoundM3(q.estimatedQtyM3)} m³</td>
                     <td className="py-4 px-5">₹{q.unitRate.toLocaleString('en-IN')}</td>
                     <td className="py-4 px-5 text-emerald-400 font-extrabold">₹{q.grandTotal.toLocaleString('en-IN')}</td>
                     <td className="py-4 px-5">
@@ -999,7 +1038,7 @@ export const QuotationRMC: React.FC = () => {
                     <Filter className="w-3.5 h-3.5 text-cyan-400" />
                     <span>Import from Site Measurements:</span>
                   </label>
-                  <span className="text-[10px] text-emerald-400 font-bold">+{wastagePercent}% Wastage</span>
+                  <span className="text-[10px] text-emerald-400 font-bold">Round Fig. (0.5 m³)</span>
                 </div>
                 <select
                   value={selectedWorkId}
@@ -1007,11 +1046,11 @@ export const QuotationRMC: React.FC = () => {
                   className="w-full px-3 py-2.5 bg-[#0b1322] border border-[#1b273d] rounded-xl text-white font-bold outline-none cursor-pointer text-xs"
                 >
                   <option value="ALL">
-                    All Site Elements ({collectedMeasurementLines.length} rows • {measurementItems.reduce((s, it) => s + (Number(it.volumeM3) || 0), 0).toFixed(2)} m³ net)
+                    All Site Elements ({collectedMeasurementLines.length} rows • {allNetVolume.toFixed(2)} m³ → {formatRoundM3(allRoundedVolume)} m³)
                   </option>
                   {measurementItems.map((it, idx) => (
                     <option key={it.id} value={it.id}>
-                      {resolveWorkLabel(it, idx)} ({Number(it.volumeM3 || 0).toFixed(2)} m³) {it.mixGrade ? `[${it.mixGrade}]` : ''}
+                      {resolveWorkLabel(it, idx)} ({Number(it.volumeM3 || 0).toFixed(2)} m³ → {formatRoundM3(roundToHalfM3(Number(it.volumeM3 || 0)))} m³) {it.mixGrade ? `[${it.mixGrade}]` : ''}
                     </option>
                   ))}
                 </select>
@@ -1066,10 +1105,10 @@ export const QuotationRMC: React.FC = () => {
                   </select>
                 </div>
                 <div>
-                  <label className="text-slate-300 font-bold uppercase text-[10px] block mb-1">Gross Qty (m³)</label>
+                  <label className="text-slate-300 font-bold uppercase text-[10px] block mb-1">Total Qty (m³)</label>
                   <input
                     type="number"
-                    step="any"
+                    step="0.5"
                     required
                     value={estimatedQtyM3}
                     onChange={(e) => setEstimatedQtyM3(e.target.value === '' ? '' : Number(e.target.value))}
