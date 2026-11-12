@@ -44,6 +44,16 @@ export interface StudioWorkEntry {
   rows?: any[];
   elements?: any[];
   volumeM3: number;
+  netVolumeM3?: number;
+  wastagePercent?: number;
+  wastage?: number;
+  wastagePct?: number;
+  wastageM3?: number;
+  wastageVolume?: number;
+  wastageVolumeM3?: number;
+  grossVolumeM3?: number;
+  totalVolumeM3?: number;
+  finalVolumeM3?: number;
 }
 
 interface RMCQuotation {
@@ -109,6 +119,103 @@ const roundToHalfM3 = (val: number): number => {
 const formatRoundM3 = (val: number): string => {
   const num = Number(val) || 0;
   return Number.isInteger(num) ? String(num) : Number(num.toFixed(2)).toString();
+};
+
+// Extracts Net Volume, Wastage %, Wastage Volume, and Gross Volume directly from Site Measurement entry
+const extractEntryWastage = (entry: StudioWorkEntry): {
+  netVol: number;
+  wastagePct: number;
+  wastageVol: number;
+  grossVol: number;
+} => {
+  const netVol = Number(entry.netVolumeM3 ?? entry.volumeM3) || 0;
+
+  // 1. Check explicit wastage percentage fields from SiteMeasurementStudio
+  const rawPct = entry.wastagePercent ?? entry.wastagePct ?? entry.wastage;
+  // 2. Check explicit wastage volume fields
+  const rawWastageVol = entry.wastageVolumeM3 ?? entry.wastageVolume ?? entry.wastageM3;
+  // 3. Check explicit gross/total volume fields (if volumeM3 was net and grossVolumeM3 holds net+wastage)
+  const rawGross = entry.grossVolumeM3 ?? entry.totalVolumeM3 ?? entry.finalVolumeM3;
+
+  if (rawWastageVol !== undefined && Number(rawWastageVol) > 0) {
+    const wVol = Number(rawWastageVol);
+    const pct = rawPct !== undefined ? Number(rawPct) : (netVol > 0 ? Number(((wVol / netVol) * 100).toFixed(2)) : 0);
+    return {
+      netVol,
+      wastagePct: pct,
+      wastageVol: Number(wVol.toFixed(2)),
+      grossVol: Number((netVol + wVol).toFixed(2))
+    };
+  }
+
+  if (rawPct !== undefined && Number(rawPct) > 0) {
+    const pct = Number(rawPct);
+    const wVol = Number((netVol * (pct / 100)).toFixed(2));
+    return {
+      netVol,
+      wastagePct: pct,
+      wastageVol: wVol,
+      grossVol: Number((netVol + wVol).toFixed(2))
+    };
+  }
+
+  if (rawGross !== undefined && Number(rawGross) > netVol + 1e-4) {
+    const gVol = Number(rawGross);
+    const wVol = Number((gVol - netVol).toFixed(2));
+    const pct = netVol > 0 ? Number(((wVol / netVol) * 100).toFixed(2)) : 0;
+    return {
+      netVol,
+      wastagePct: pct,
+      wastageVol: wVol,
+      grossVol: gVol
+    };
+  }
+
+  return {
+    netVol,
+    wastagePct: 0,
+    wastageVol: 0,
+    grossVol: netVol
+  };
+};
+
+// Aggregates Net, Wastage %, Wastage Vol, and Gross Vol across multiple Site Measurement entries
+const summarizeEntriesWastage = (entries: StudioWorkEntry[], siteKey?: string) => {
+  let totalNet = 0;
+  let totalWastage = 0;
+  let totalGross = 0;
+
+  entries.forEach(entry => {
+    const stats = extractEntryWastage(entry);
+    totalNet += stats.netVol;
+    totalWastage += stats.wastageVol;
+    totalGross += stats.grossVol;
+  });
+
+  // Fallback: check if SiteMeasurementStudio saved a site-level wastage % key in localStorage
+  if (totalWastage === 0 && totalNet > 0 && siteKey) {
+    try {
+      const siteWastageRaw =
+        localStorage.getItem(`concrete360_site_wastage_${siteKey}`) ||
+        localStorage.getItem(`concrete360_wastage_${siteKey}`);
+      if (siteWastageRaw) {
+        const parsedPct = Number(JSON.parse(siteWastageRaw));
+        if (parsedPct > 0) {
+          totalWastage = Number((totalNet * (parsedPct / 100)).toFixed(2));
+          totalGross = Number((totalNet + totalWastage).toFixed(2));
+        }
+      }
+    } catch {}
+  }
+
+  const effectivePct = totalNet > 0 ? Number(((totalWastage / totalNet) * 100).toFixed(2)) : 0;
+
+  return {
+    netVol: Number(totalNet.toFixed(2)),
+    wastagePct: effectivePct,
+    wastageVol: Number(totalWastage.toFixed(2)),
+    grossVol: Number(totalGross.toFixed(2))
+  };
 };
 
 const normalizeCategoryName = (raw: string): { key: string; shortName: string } => {
@@ -352,7 +459,10 @@ const loadStudioWorksForSite = (siteKey: string): StudioWorkEntry[] => {
               footingRows: Array.isArray(item.footingRows) && item.footingRows.length > 0 ? item.footingRows : backup.footingRows,
               roadRows: Array.isArray(item.roadRows) && item.roadRows.length > 0 ? item.roadRows : backup.roadRows,
               categories: Array.isArray(item.categories) && item.categories.length > 0 ? item.categories : backup.categories,
-              unitSystem: item.unitSystem || backup.unitSystem
+              unitSystem: item.unitSystem || backup.unitSystem,
+              wastagePercent: item.wastagePercent ?? item.wastagePct ?? item.wastage ?? backup.wastagePercent ?? backup.wastagePct ?? backup.wastage,
+              wastageM3: item.wastageM3 ?? item.wastageVolume ?? item.wastageVolumeM3 ?? backup.wastageM3 ?? backup.wastageVolume ?? backup.wastageVolumeM3,
+              grossVolumeM3: item.grossVolumeM3 ?? item.totalVolumeM3 ?? backup.grossVolumeM3 ?? backup.totalVolumeM3
             };
 
             if (!seen.has(id)) {
@@ -418,7 +528,7 @@ export const QuotationRMC: React.FC = () => {
     return d.toISOString().split('T')[0];
   });
   const [mixGrade, setMixGrade] = useState<string>('M25');
-  const [wastagePercent, setWastagePercent] = useState<number | string>(3);
+  const [wastagePercent, setWastagePercent] = useState<number | string>(0);
   const [estimatedQtyM3, setEstimatedQtyM3] = useState<number | string>(30);
   const [unitRate, setUnitRate] = useState<number | string>(4500);
   const [includePump, setIncludePump] = useState<boolean>(false);
@@ -455,13 +565,18 @@ export const QuotationRMC: React.FC = () => {
   ) => {
     if (!Array.isArray(items) || items.length === 0) return;
 
-    const wPct = overrideWastagePct !== undefined ? overrideWastagePct : (Number(wastagePercent) || 0);
-    const wastageText = wPct > 0 ? ` incl. ${wPct}% wastage` : '';
-
     if (workId === 'ALL') {
-      const netVol = items.reduce((sum, it) => sum + (Number(it.volumeM3) || 0), 0);
-      const grossVol = netVol * (1 + wPct / 100);
+      const siteSummary = summarizeEntriesWastage(items, siteKey);
+      const wPct = overrideWastagePct !== undefined ? overrideWastagePct : siteSummary.wastagePct;
+      if (overrideWastagePct === undefined) {
+        setWastagePercent(wPct);
+      }
+
+      const grossVol = overrideWastagePct !== undefined
+        ? siteSummary.netVol * (1 + wPct / 100)
+        : siteSummary.grossVol;
       const roundedVol = roundToHalfM3(grossVol);
+      const wastageText = wPct > 0 ? ` incl. ${wPct}% wastage` : '';
 
       const explicitGrade =
         localStorage.getItem(`concrete360_active_mix_grade_${siteKey}`) ||
@@ -482,9 +597,18 @@ export const QuotationRMC: React.FC = () => {
       const idx = items.findIndex(it => it.id === workId);
       const found = idx >= 0 ? items[idx] : undefined;
       if (found) {
-        const netVol = Number(found.volumeM3) || 0;
-        const grossVol = netVol * (1 + wPct / 100);
+        const entryStats = extractEntryWastage(found);
+        const wPct = overrideWastagePct !== undefined ? overrideWastagePct : entryStats.wastagePct;
+        if (overrideWastagePct === undefined) {
+          setWastagePercent(wPct);
+        }
+
+        const grossVol = overrideWastagePct !== undefined
+          ? entryStats.netVol * (1 + wPct / 100)
+          : entryStats.grossVol;
         const roundedVol = roundToHalfM3(grossVol);
+        const wastageText = wPct > 0 ? ` incl. ${wPct}% wastage` : '';
+
         const cleanG = (found.mixGrade || found.grade || 'M25').substring(0, 3).toUpperCase();
         const label = resolveWorkLabel(found, idx);
 
@@ -555,14 +679,13 @@ export const QuotationRMC: React.FC = () => {
   const handleOpenCreateModal = () => {
     loadSiteAndQuotes();
     setSelectedWorkId('ALL');
-    const defaultWastage = 3;
-    setWastagePercent(defaultWastage);
     const siteKey = getActiveSiteKey();
     const parsedM = loadStudioWorksForSite(siteKey);
 
     if (parsedM.length > 0) {
-      applyMeasurementToForm(parsedM, 'ALL', siteKey, defaultWastage);
+      applyMeasurementToForm(parsedM, 'ALL', siteKey);
     } else {
+      setWastagePercent(0);
       setMixGrade('M25');
       setUnitRate(resolveGradeCatalogRate('M25'));
       setEstimatedQtyM3(10);
@@ -607,13 +730,15 @@ export const QuotationRMC: React.FC = () => {
     (entry, idx) => extractCompactMeasurementLines(entry, idx)
   );
 
-  const selectedNetTotal = activeSpecsForSelection.reduce((sum, it) => sum + (Number(it.volumeM3) || 0), 0);
+  const selectedStats = summarizeEntriesWastage(activeSpecsForSelection, currentSiteKey);
+  const selectedNetTotal = selectedStats.netVol;
   const selectedWastageVol = Number((selectedNetTotal * (wastagePctNum / 100)).toFixed(2));
   const selectedGrossTotal = Number((selectedNetTotal + selectedWastageVol).toFixed(2));
 
-  const allNetVolume = measurementItems.reduce((s, it) => s + (Number(it.volumeM3) || 0), 0);
-  const allGrossVolume = allNetVolume * (1 + wastagePctNum / 100);
-  const allRoundedVolume = roundToHalfM3(allGrossVolume);
+  const allSiteSummary = summarizeEntriesWastage(measurementItems, currentSiteKey);
+  const allNetVolume = allSiteSummary.netVol;
+  const allWastageVolume = allSiteSummary.wastageVol;
+  const allRoundedVolume = roundToHalfM3(allSiteSummary.grossVol);
 
   const handleCreateQuotation = (e: React.FormEvent) => {
     e.preventDefault();
@@ -634,7 +759,7 @@ export const QuotationRMC: React.FC = () => {
       workElementId: selectedWorkId,
       workElementLabel: selectedItemObj ? resolveWorkLabel(selectedItemObj, idx) : 'All Site Structural Works',
       mixGrade,
-      netVolumeM3: Number(selectedNetTotal.toFixed(2)),
+      netVolumeM3: selectedNetTotal,
       wastagePercent: wastagePctNum,
       wastageVolumeM3: selectedWastageVol,
       estimatedQtyM3: qtyNum,
@@ -730,7 +855,7 @@ export const QuotationRMC: React.FC = () => {
     const sub = concreteSub + pumpSub;
     const gst = q.applyGst ? sub * 0.18 : 0;
 
-    // Resolve live compact lines from SiteMeasurementStudio
+    // Resolve live compact lines & wastage from SiteMeasurementStudio
     const liveWorks = loadStudioWorksForSite(currentSiteKey);
     const targetWorks = q.workElementId && q.workElementId !== 'ALL'
       ? liveWorks.filter(w => w.id === q.workElementId)
@@ -741,11 +866,20 @@ export const QuotationRMC: React.FC = () => {
       lines = q.measurementLines;
     }
 
+    const liveWastageSummary = summarizeEntriesWastage(targetWorks, currentSiteKey);
     const totalNetQty = lines.reduce((sum, l) => sum + l.quantityM3, 0);
-    const wPct = Number(q.wastagePercent) || 0;
-    const wastageQty = q.wastageVolumeM3 !== undefined
+
+    // Prefer saved quote wastage if set, else pull live from Site Measurement
+    const wPct = (q.wastagePercent !== undefined && q.wastagePercent > 0)
+      ? Number(q.wastagePercent)
+      : liveWastageSummary.wastagePct;
+
+    const wastageQty = (q.wastageVolumeM3 !== undefined && q.wastageVolumeM3 > 0)
       ? Number(q.wastageVolumeM3)
-      : Number((totalNetQty * (wPct / 100)).toFixed(2));
+      : (liveWastageSummary.wastageVol > 0
+          ? liveWastageSummary.wastageVol
+          : Number((totalNetQty * (wPct / 100)).toFixed(2)));
+
     const totalGrossQty = Number((totalNetQty + wastageQty).toFixed(2));
     const totalRoundQty = roundToHalfM3(totalGrossQty);
 
@@ -779,7 +913,7 @@ export const QuotationRMC: React.FC = () => {
             ${wPct > 0 || wastageQty > 0 ? `
             <tr style="background:#fffbeb;">
               <td colspan="3" class="right" style="font-weight:bold; color:#92400e;">
-                Add: Site Pouring & Transit Wastage (${wPct}%):
+                Add: Site Measurement Wastage (${wPct}%):
               </td>
               <td class="right" style="font-weight:bold; color:#92400e;">+${wastageQty.toFixed(2)} m³</td>
             </tr>
@@ -867,7 +1001,7 @@ export const QuotationRMC: React.FC = () => {
                   <strong>Ready-Mix Concrete (${q.mixGrade} Grade)</strong><br/>
                   <span style="color:#64748b;font-size:9px;">
                     Supply & Transit Mixer Delivery as per IS 456 / IS 4926
-                    ${wPct > 0 && totalNetQty > 0 ? `<br/>(Net: ${totalNetQty.toFixed(2)} m³ + ${wPct}% Wastage: ${wastageQty.toFixed(2)} m³ = ${totalGrossQty.toFixed(2)} m³ → Rounded)` : ''}
+                    ${(wPct > 0 || wastageQty > 0) && totalNetQty > 0 ? `<br/>(Net: ${totalNetQty.toFixed(2)} m³ + ${wPct}% Site Wastage: ${wastageQty.toFixed(2)} m³ = ${totalGrossQty.toFixed(2)} m³ → Rounded)` : ''}
                   </span>
                 </td>
                 <td><strong>${formatRoundM3(q.estimatedQtyM3)} m³</strong></td>
@@ -950,12 +1084,22 @@ export const QuotationRMC: React.FC = () => {
               {allNetVolume.toFixed(2)} m³
             </strong>
           </div>
+          {allWastageVolume > 0 && (
+            <div className="border-l border-[#1b273d] pl-4">
+              <span className="text-amber-400 uppercase text-[10px] font-bold block">
+                Site Wastage ({allSiteSummary.wastagePct}%)
+              </span>
+              <strong className="text-amber-300 text-sm">
+                +{allWastageVolume.toFixed(2)} m³
+              </strong>
+            </div>
+          )}
           <div className="border-l border-[#1b273d] pl-4">
             <span className="text-emerald-400 uppercase text-[10px] font-bold block">
               Total Quotation Vol (Round)
             </span>
             <strong className="text-emerald-300 text-sm">
-              {formatRoundM3(roundToHalfM3(allNetVolume))} m³
+              {formatRoundM3(allRoundedVolume)} m³
             </strong>
           </div>
         </div>
@@ -1104,11 +1248,11 @@ export const QuotationRMC: React.FC = () => {
                     All Site Elements ({collectedMeasurementLines.length} rows • {allNetVolume.toFixed(2)} m³ → {formatRoundM3(allRoundedVolume)} m³)
                   </option>
                   {measurementItems.map((it, idx) => {
-                    const netV = Number(it.volumeM3 || 0);
-                    const rndV = roundToHalfM3(netV * (1 + wastagePctNum / 100));
+                    const st = extractEntryWastage(it);
+                    const rndV = roundToHalfM3(st.grossVol);
                     return (
                       <option key={it.id} value={it.id}>
-                        {resolveWorkLabel(it, idx)} ({netV.toFixed(2)} m³ → {formatRoundM3(rndV)} m³) {it.mixGrade ? `[${it.mixGrade}]` : ''}
+                        {resolveWorkLabel(it, idx)} ({st.netVol.toFixed(2)} m³{st.wastagePct > 0 ? ` + ${st.wastagePct}%` : ''} → {formatRoundM3(rndV)} m³) {it.mixGrade ? `[${it.mixGrade}]` : ''}
                       </option>
                     );
                   })}
@@ -1128,11 +1272,11 @@ export const QuotationRMC: React.FC = () => {
                   </div>
                 )}
 
-                {/* Wastage Allowance Controls */}
+                {/* Wastage Imported from Site Measurement (Editable Override) */}
                 <div className="pt-1.5 border-t border-[#142033] flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
                     <label className="text-amber-400 font-bold uppercase text-[10px] whitespace-nowrap">
-                      Wastage (%):
+                      Site Wastage (%):
                     </label>
                     <input
                       type="number"
