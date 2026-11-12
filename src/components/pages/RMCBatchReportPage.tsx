@@ -98,7 +98,7 @@ export const RMCBatchReportPage: React.FC = () => {
         const parsed = JSON.parse(activeRaw);
         return extractCleanSiteName(parsed.name || parsed.siteName || parsed.id);
       }
-      const selected = sessionStorage.getItem('concrete360_selected_site');
+      const selected = sessionStorage.getItem('concrete360_selected_site') || localStorage.getItem('concrete360_selected_site');
       if (selected) return extractCleanSiteName(selected);
     } catch {}
     return 'BASVARAJ';
@@ -124,7 +124,7 @@ export const RMCBatchReportPage: React.FC = () => {
 
   const [batches, setBatches] = useState<BatchRecord[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState<string>('');
 
   // Read linked mix design dynamically from MixDesignModule / localStorage
   const getLinkedMixDesign = (siteKey: string, gradeStr: string, mode: 'FLY_ASH' | 'GGBS') => {
@@ -270,6 +270,15 @@ export const RMCBatchReportPage: React.FC = () => {
       });
 
       setBatches(generatedBatches);
+
+      // Auto-expand newly linked invoice from Billing or default to latest batch
+      const highlightedId = sessionStorage.getItem('concrete360_highlight_invoice_id');
+      if (highlightedId && generatedBatches.some(b => b.id === highlightedId)) {
+        setExpandedBatchId(highlightedId);
+        sessionStorage.removeItem('concrete360_highlight_invoice_id');
+      } else if (generatedBatches.length > 0 && !expandedBatchId) {
+        setExpandedBatchId(generatedBatches[0].id);
+      }
     } catch {}
   };
 
@@ -280,11 +289,17 @@ export const RMCBatchReportPage: React.FC = () => {
     const handleSync = () => loadBatchReports();
     window.addEventListener('concrete360_site_switched', handleSync);
     window.addEventListener('concrete360_mix_designs_updated', handleSync);
+    window.addEventListener('concrete360_invoices_updated', handleSync);
+    window.addEventListener('concrete360_cloud_synced', handleSync);
     window.addEventListener('storage', handleSync);
+    window.addEventListener('focus', handleSync);
     return () => {
       window.removeEventListener('concrete360_site_switched', handleSync);
       window.removeEventListener('concrete360_mix_designs_updated', handleSync);
+      window.removeEventListener('concrete360_invoices_updated', handleSync);
+      window.removeEventListener('concrete360_cloud_synced', handleSync);
       window.removeEventListener('storage', handleSync);
+      window.removeEventListener('focus', handleSync);
     };
   }, [plantMixerCapacity]);
 
@@ -304,6 +319,7 @@ export const RMCBatchReportPage: React.FC = () => {
       const matchSearch = 
         b.vehicleNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
         b.indentNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        b.invoiceNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
         b.mixGrade.toLowerCase().includes(searchTerm.toLowerCase());
       const matchDate = selectedDate ? b.date === selectedDate : true;
       return matchSearch && matchDate;
@@ -361,6 +377,7 @@ export const RMCBatchReportPage: React.FC = () => {
 
           <div class="meta-grid">
             <div><strong>Indent No:</strong> ${b.indentNo}</div>
+            <div><strong>Invoice No:</strong> ${b.invoiceNo}</div>
             <div><strong>Date & Time:</strong> ${b.date} | ${b.time}</div>
             <div><strong>Project Site:</strong> ${b.siteName}</div>
             <div><strong>Client Name:</strong> ${b.clientName}</div>
@@ -369,8 +386,7 @@ export const RMCBatchReportPage: React.FC = () => {
             <div><strong>Mix Grade:</strong> ${b.mixGrade}</div>
             <div><strong>Transit Mixer:</strong> ${b.vehicleNo}</div>
             <div><strong>Total TM Load:</strong> ${b.batchQtyM3} m³</div>
-            <div><strong>Plant Mixer Size:</strong> ${b.mixerCapacityM3} m³</div>
-            <div><strong>Total Drops:</strong> ${b.totalBatchesCount} Batches</div>
+            <div><strong>Plant Mixer Size:</strong> ${b.mixerCapacityM3} m³ (${b.totalBatchesCount} Drops)</div>
             <div><strong>Batch Operator:</strong> ${b.operator}</div>
           </div>
 
@@ -490,7 +506,7 @@ export const RMCBatchReportPage: React.FC = () => {
           </span>
           <h2 className="text-xl font-black text-white mt-1 flex items-center gap-2">
             <Factory className="w-6 h-6 text-emerald-400" />
-            <span>CONMAT RMC Batch Report (Plant Level)</span>
+            <span>CONMAT RMC Batch Report (Linked to Billing)</span>
           </h2>
         </div>
 
@@ -518,10 +534,10 @@ export const RMCBatchReportPage: React.FC = () => {
             <Search className="w-3.5 h-3.5 text-slate-400" />
             <input
               type="text"
-              placeholder="Search Mixer No, Indent No..."
+              placeholder="Search Mixer No, Indent, Invoice..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="bg-transparent text-white outline-none placeholder-slate-500 text-xs w-48"
+              className="bg-transparent text-white outline-none placeholder-slate-500 text-xs w-52"
             />
           </div>
 
@@ -547,7 +563,7 @@ export const RMCBatchReportPage: React.FC = () => {
         </div>
 
         <div className="text-slate-400 text-right">
-          Total TM Dispatches: <strong className="text-white">{filteredBatches.length}</strong>
+          Billed TM Dispatches: <strong className="text-white">{filteredBatches.length}</strong>
         </div>
       </div>
 
@@ -557,7 +573,7 @@ export const RMCBatchReportPage: React.FC = () => {
           <table className="w-full text-left text-xs border-collapse">
             <thead>
               <tr className="border-b border-[#1b273d] text-[10px] font-bold uppercase tracking-wider text-slate-400 bg-[#070d1a]">
-                <th className="py-4 px-4">Indent No</th>
+                <th className="py-4 px-4">Indent / Invoice</th>
                 <th className="py-4 px-4">Mixer No</th>
                 <th className="py-4 px-4">Grade</th>
                 <th className="py-4 px-4">TM Load Qty</th>
@@ -573,7 +589,7 @@ export const RMCBatchReportPage: React.FC = () => {
               {filteredBatches.length === 0 ? (
                 <tr>
                   <td colSpan={10} className="py-16 text-center text-slate-500 font-sans">
-                    No plant batch records found matching the criteria.
+                    No billed batches found for {currentSite}. Generate an invoice in Billing to view its batch report here.
                   </td>
                 </tr>
               ) : (
@@ -582,7 +598,10 @@ export const RMCBatchReportPage: React.FC = () => {
                   return (
                     <React.Fragment key={b.id}>
                       <tr className="hover:bg-[#0e1728] transition-colors">
-                        <td className="py-4 px-4 text-emerald-400 font-bold">{b.indentNo}</td>
+                        <td className="py-4 px-4">
+                          <div className="text-emerald-400 font-bold">{b.indentNo}</div>
+                          <div className="text-[10px] text-slate-400">{b.invoiceNo} • {b.date}</div>
+                        </td>
                         <td className="py-4 px-4 text-amber-400 font-black">{b.vehicleNo}</td>
                         <td className="py-4 px-4 text-cyan-300 font-bold">{b.mixGrade}</td>
                         <td className="py-4 px-4 font-bold text-white text-sm">{b.batchQtyM3} m³</td>
