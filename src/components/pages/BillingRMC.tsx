@@ -603,14 +603,11 @@ export const BillingRMC: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const handlePrintInvoice = (inv: RMCInvoice) => {
+  const handlePrintInvoice = async (inv: RMCInvoice) => {
     if (!canPrint) {
       alert('Permission Denied: Read-Only accounts cannot print invoice documents.');
       return;
     }
-
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) return;
 
     let compProfile: Record<string, any> = {
       name: 'BILGI BUILDCON RMC',
@@ -638,7 +635,36 @@ export const BillingRMC: React.FC = () => {
           phoneSecondary: parsedP.phoneSecondary ?? parsedP.phone_secondary ?? ''
         };
       }
+
+      if (!compProfile.phonePrimary && supabase) {
+        const { data } = await (supabase as any)
+          .from('company_profile')
+          .select('*')
+          .eq('id', 'primary_company')
+          .maybeSingle();
+
+        if (data) {
+          compProfile = {
+            ...compProfile,
+            name: data.name || compProfile.name,
+            gstin: data.gstin || compProfile.gstin,
+            address: data.address || compProfile.address,
+            division: data.division || compProfile.division,
+            phonePrimary: data.phone_primary || '',
+            phoneSecondary: data.phone_secondary || '',
+            bankName: data.bank_name || compProfile.bankName,
+            accountName: data.account_name || compProfile.accountName,
+            accountNo: data.account_no || compProfile.accountNo,
+            ifscSwift: data.ifsc_swift || compProfile.ifscSwift,
+            branch: data.branch || compProfile.branch
+          };
+          localStorage.setItem('concrete360_company_profile', JSON.stringify(compProfile));
+        }
+      }
     } catch {}
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
 
     const companyContactNumbers = [compProfile.phonePrimary, compProfile.phoneSecondary]
       .map(n => String(n || '').trim())
@@ -1074,7 +1100,7 @@ export const BillingRMC: React.FC = () => {
                       <div className="inline-flex items-center justify-end gap-2">
                         {canPrint && (
                           <button
-                            onClick={() => handlePrintInvoice(inv)}
+                            onClick={() => void handlePrintInvoice(inv)}
                             className="text-slate-400 hover:text-cyan-400 p-1 transition cursor-pointer"
                             title="Print Professional Tax Invoice"
                           >
