@@ -430,10 +430,6 @@ export const TotalBillPage: React.FC = () => {
             .totals-box { width: 42%; border: 1px solid #cbd5e1; }
             .totals-row { display: flex; justify-content: space-between; padding: 6px 10px; border-bottom: 1px solid #cbd5e1; font-size: 10px; }
             .totals-row:last-child { border-bottom: none; font-weight: bold; background: #f1f5f9; font-size: 11px; color: #0f172a; }
-            .section-header { background: #e2e8f0; font-weight: bold; font-size: 10px; padding: 6px 8px; text-transform: uppercase; border: 1px solid #cbd5e1; margin-top: 15px; border-bottom: none; }
-            .badge { display: inline-block; padding: 2px 6px; font-size: 9px; font-weight: bold; border-radius: 4px; }
-            .badge-passed { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
-            .badge-pending { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
           </style>
         </head>
         <body>
@@ -502,52 +498,6 @@ export const TotalBillPage: React.FC = () => {
             <div class="totals-box">
               <div class="totals-row"><span>Total Concrete Volume:</span><span>${totalVolDelivered.toFixed(2)} m³</span></div>
               <div class="totals-row" style="font-weight: bold; background: #f1f5f9; color: #0f172a; font-size: 11px;"><span>TOTAL SITE FINANCIAL LEDGER:</span><span>₹${totalBillSum.toLocaleString('en-IN')}</span></div>
-            </div>
-          </div>
-
-          <!-- AT-SITE QUALITY ASSURANCE & CONCRETE TESTS REPORT -->
-          <div class="section-header">At-Site Concrete Sampling & Slump Test Verification (IS 456 / IS 1199 Standard)</div>
-          <table>
-            <thead>
-              <tr>
-                <th style="width: 12%;">Test ID</th>
-                <th style="width: 12%;">Date</th>
-                <th style="width: 14%;">TM Truck #</th>
-                <th style="width: 10%;">Grade</th>
-                <th style="width: 14%;">Slump (mm)</th>
-                <th style="width: 10%;">Temp (°C)</th>
-                <th style="width: 14%;">7d Strength</th>
-                <th style="width: 14%;">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${filteredTests.length === 0 ? `
-                <tr><td colspan="8" style="text-align: center; padding: 12px;">No concrete quality test logs found for this site.</td></tr>
-              ` : filteredTests.map(test => `
-                <tr>
-                  <td><strong>${test.id}</strong></td>
-                  <td>${formatDateDDMMYYYY(test.testDate)}</td>
-                  <td>${test.batchVehicleNo}</td>
-                  <td><strong>${test.mixGrade}</strong></td>
-                  <td>${test.slumpMm} mm</td>
-                  <td>${test.concreteTempC} °C</td>
-                  <td>${test.cube7DayMpa ? `${test.cube7DayMpa} MPa` : '—'}</td>
-                  <td class="text-center">
-                    <span class="badge ${test.testStatus === 'PASSED' ? 'badge-passed' : 'badge-pending'}">
-                      ${test.testStatus}
-                    </span>
-                  </td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-
-          <div style="margin-top: 25px; display: flex; justify-content: space-between; font-size: 10px; color: #334155;">
-            <div>
-              QC Remarks: At-site concrete sampled strictly in compliance with IS 456 sampling specifications.
-            </div>
-            <div style="text-align: center; border-top: 1px solid #475569; width: 180px; padding-top: 4px;">
-              Authorized QC Signatory
             </div>
           </div>
 
