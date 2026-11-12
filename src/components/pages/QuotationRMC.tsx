@@ -211,14 +211,44 @@ const parseStudioCategories = (entry: StudioWorkEntry): StudioCategoryBreakdown[
 };
 
 const loadStudioWorksForSite = (siteKey: string): StudioWorkEntry[] => {
+  const results: StudioWorkEntry[] = [];
+  const seen = new Set<string>();
+
   try {
     const raw = localStorage.getItem(`concrete360_advanced_measurements_${siteKey}`);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed)) {
+        parsed.forEach((item: any, i: number) => {
+          const id = String(item.id || `WORK-${i + 1}`);
+          seen.add(id);
+          results.push({ ...item, id });
+        });
+      }
     }
   } catch {}
-  return [];
+
+  try {
+    const sessRaw = localStorage.getItem('concrete360_measurement');
+    if (sessRaw) {
+      const sess = JSON.parse(sessRaw);
+      const list = sess.elements || sess.items || sess.works || sess.entries || [];
+      if (Array.isArray(list)) {
+        list.forEach((item: any, i: number) => {
+          const id = String(item.id || `SESS-${i + 1}`);
+          if (!seen.has(id)) {
+            seen.add(id);
+            results.push({ ...item, id });
+          } else {
+            const idx = results.findIndex(r => r.id === id);
+            if (idx >= 0) results[idx] = { ...item, ...results[idx] };
+          }
+        });
+      }
+    }
+  } catch {}
+
+  return results;
 };
 
 const resolveWorkLabel = (it: StudioWorkEntry, idx = 0): string => {
@@ -576,7 +606,7 @@ export const QuotationRMC: React.FC = () => {
     const sub = concreteSub + pumpSub;
     const gst = q.applyGst ? sub * 0.18 : 0;
 
-    // Resolve live category breakdowns from SiteMeasurementStudio if not already on quote
+    // Resolve live category breakdowns from SiteMeasurementStudio so they print at the bottom
     let breakdowns: StudioCategoryBreakdown[] =
       q.categoryBreakdowns && q.categoryBreakdowns.length > 0 ? q.categoryBreakdowns : [];
 
@@ -588,20 +618,34 @@ export const QuotationRMC: React.FC = () => {
       breakdowns = targetWorks.flatMap(w => parseStudioCategories(w));
     }
 
-    const categoryCardsHtml = breakdowns.map(cat => `
-      <div style="border:1px solid #cbd5e1; border-radius:6px; padding:8px 10px; margin-bottom:8px; background:#f8fafc;">
-        <div style="display:flex; justify-content:space-between; font-weight:bold; color:#0f172a; border-bottom:1px solid #e2e8f0; padding-bottom:4px; margin-bottom:5px; font-size:10px;">
-          <span>${cat.categoryTitle}</span>
-          <span style="color:#0369a1;">${cat.volumeM3.toFixed(2)} m³</span>
+    const totalNetFromCategories = breakdowns.reduce((sum, c) => sum + c.volumeM3, 0);
+
+    const categoryCardsBottomHtml = breakdowns.length > 0 ? `
+      <div style="margin-top:26px; border-top:2px solid #cbd5e1; padding-top:12px; page-break-inside:avoid;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <span style="font-size:10px; font-weight:bold; text-transform:uppercase; color:#0f172a; letter-spacing:0.5px;">
+            Appendix: Site Measurement & Dimension Breakdown
+          </span>
+          <span style="font-size:10px; font-weight:bold; color:#0369a1;">
+            Total Calculated Volume: ${totalNetFromCategories.toFixed(2)} m³ (+ ${q.wastagePercent ?? 5}% Wastage = ${q.estimatedQtyM3.toFixed(2)} m³ Gross)
+          </span>
         </div>
-        ${cat.rows.map((r, idx) => `
-          <div style="display:flex; justify-content:space-between; font-size:9.5px; color:#334155; padding:2px 0;">
-            <span>${idx + 1}. ${r.label}</span>
-            ${r.volumeM3 !== undefined ? `<span style="font-weight:bold;">${r.volumeM3.toFixed(2)} m³</span>` : ''}
+        ${breakdowns.map(cat => `
+          <div style="border:1px solid #cbd5e1; border-radius:6px; padding:7px 10px; margin-bottom:7px; background:#f8fafc;">
+            <div style="display:flex; justify-content:space-between; font-weight:bold; color:#0f172a; border-bottom:1px solid #e2e8f0; padding-bottom:3px; margin-bottom:4px; font-size:10px;">
+              <span>${cat.categoryTitle}</span>
+              <span style="color:#0369a1;">${cat.volumeM3.toFixed(2)} m³</span>
+            </div>
+            ${cat.rows.map((r, idx) => `
+              <div style="display:flex; justify-content:space-between; font-size:9.5px; color:#334155; padding:1.5px 0;">
+                <span>${idx + 1}. ${r.label}</span>
+                ${r.volumeM3 !== undefined ? `<span style="font-weight:bold;">${r.volumeM3.toFixed(2)} m³</span>` : ''}
+              </div>
+            `).join('')}
           </div>
         `).join('')}
       </div>
-    `).join('');
+    ` : '';
 
     win.document.write(`
       <html>
@@ -613,7 +657,7 @@ export const QuotationRMC: React.FC = () => {
             .header { display: flex; justify-content: space-between; border-bottom: 2px solid #2563eb; padding-bottom: 10px; margin-bottom: 12px; }
             .header h1 { margin: 0; font-size: 20px; font-weight: 900; }
             .badge { display: inline-block; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; padding: 3px 8px; font-weight: bold; font-size: 10px; border-radius: 4px; }
-            .grid { display: flex; justify-content: space-between; border: 1px solid #cbd5e1; background: #f8fafc; padding: 10px; margin-bottom: 12px; }
+            .grid { display: flex; justify-content: space-between; border: 1px solid #cbd5e1; background: #f8fafc; padding: 10px; margin-bottom: 14px; }
             table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
             th { background: #0f172a; color: #fff; padding: 6px 8px; text-align: left; font-size: 9px; text-transform: uppercase; }
             td { border: 1px solid #cbd5e1; padding: 6px 8px; font-size: 10px; vertical-align: top; }
@@ -655,8 +699,6 @@ export const QuotationRMC: React.FC = () => {
             </div>
           </div>
 
-          ${categoryCardsHtml}
-
           <table>
             <thead>
               <tr>
@@ -693,10 +735,13 @@ export const QuotationRMC: React.FC = () => {
           </div>
 
           <p style="margin-top:14px;font-size:10px;"><strong>Terms & Remarks:</strong> ${q.remarks}</p>
-          <div style="margin-top:36px;display:flex;justify-content:space-between;font-size:10px;">
+          <div style="margin-top:32px;display:flex;justify-content:space-between;font-size:10px;">
             <div style="border-top:1px dashed #64748b;width:180px;text-align:center;padding-top:4px;">Client Acceptance Sign & Stamp</div>
             <div style="border-top:1px dashed #64748b;width:180px;text-align:center;padding-top:4px;">For BILGI BUILDCON RMC</div>
           </div>
+
+          ${categoryCardsBottomHtml}
+
           <script>window.print();</script>
         </body>
       </html>
@@ -830,7 +875,7 @@ export const QuotationRMC: React.FC = () => {
                         <button
                           onClick={() => handlePrintQuotation(q)}
                           className="text-slate-400 hover:text-cyan-400 p-1 transition cursor-pointer"
-                          title="Print Commercial Quotation with Category Dimensions"
+                          title="Print Commercial Quotation with Category Dimensions at Bottom"
                         >
                           <Printer className="w-4 h-4" />
                         </button>
