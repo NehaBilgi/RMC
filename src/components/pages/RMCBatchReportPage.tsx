@@ -13,6 +13,11 @@ import {
   Layers 
 } from 'lucide-react';
 import { cloudStorage } from '../../services/cloudStorage';
+import { 
+  BILGI_QA_REV2_GGBS, 
+  BILGI_QA_REV2_FLY_ASH, 
+  AdmixtureMode 
+} from './MixDesignModule';
 
 interface SubBatchDrop {
   batchIndex: number;
@@ -51,7 +56,7 @@ interface BatchRecord {
   batchQtyM3: number;
   mixerCapacityM3: number;
   totalBatchesCount: number;
-  admixtureMode: 'FLY_ASH' | 'GGBS';
+  admixtureMode: AdmixtureMode;
   unitRecipe: UnitRecipePerM3;
   drops: SubBatchDrop[];
   silo1TargetKg: number;
@@ -69,19 +74,6 @@ interface BatchRecord {
   slumpMm: number;
   operator: string;
 }
-
-// Bilgi Buildcon RMC 1 m³ Standard Batch Cards (Rev. 2, Target Yield: 2,400.0 kg/m³)
-const DEFAULT_RECIPES: Record<string, any> = {
-  'M10': { cement: 168, flyAsh: 42, ggbs: 42, water: 136, mSand: 1057, agg20: 597, agg10: 398 },
-  'M15': { cement: 200, flyAsh: 50, ggbs: 50, water: 140, mSand: 1034, agg20: 584, agg10: 390 },
-  'M20': { cement: 240, flyAsh: 60, ggbs: 60, water: 147, mSand: 1005, agg20: 567, agg10: 379 },
-  'M25': { cement: 280, flyAsh: 70, ggbs: 70, water: 158, mSand: 973, agg20: 550, agg10: 366 },
-  'M30': { cement: 304, flyAsh: 76, ggbs: 76, water: 160, mSand: 956, agg20: 541, agg10: 360 },
-  'M35': { cement: 320, flyAsh: 80, ggbs: 80, water: 160, mSand: 946, agg20: 535, agg10: 356 },
-  'M40': { cement: 336, flyAsh: 84, ggbs: 84, water: 160, mSand: 936, agg20: 529, agg10: 352 },
-  'M45': { cement: 352, flyAsh: 88, ggbs: 88, water: 158, mSand: 928, agg20: 524, agg10: 349 },
-  'M50': { cement: 368, flyAsh: 92, ggbs: 92, water: 156, mSand: 921, agg20: 520, agg10: 346 }
-};
 
 const extractCleanSiteName = (name: string): string => {
   if (!name) return 'BASVARAJ';
@@ -106,7 +98,6 @@ export const RMCBatchReportPage: React.FC = () => {
 
   const [currentSite, setCurrentSite] = useState<string>(getActiveSite());
   
-  // Plant batch mixer capacity state (default 0.75 m3 per batch)
   const [plantMixerCapacity, setPlantMixerCapacity] = useState<number>(() => {
     try {
       const saved = localStorage.getItem(`concrete360_plant_mixer_cap_${getActiveSite()}`);
@@ -126,54 +117,67 @@ export const RMCBatchReportPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDate, setSelectedDate] = useState<string>('');
 
-  // Read linked mix design dynamically from MixDesignModule / localStorage
-  const getLinkedMixDesign = (siteKey: string, gradeStr: string, mode: 'FLY_ASH' | 'GGBS') => {
+  // Pulls mix proportions directly from MixDesignModule storage & Rev. 2 QA constants
+  const getLinkedMixDesign = (siteKey: string, gradeStr: string, mode: AdmixtureMode) => {
     const gradeKey = (gradeStr || 'M30').substring(0, 3).toUpperCase();
-    const fallback = DEFAULT_RECIPES[gradeKey] || DEFAULT_RECIPES['M30'];
+    const qaSource = mode === 'GGBS' ? BILGI_QA_REV2_GGBS : BILGI_QA_REV2_FLY_ASH;
+    const fallback = qaSource[gradeKey] || qaSource['M30'];
 
     try {
-      const directMixesRaw = localStorage.getItem(`concrete360_mixes_${siteKey}_${mode}`) || localStorage.getItem(`concrete360_mixes_${siteKey}`);
+      // 1. Primary source: MixDesignModule's site + mode storage (`concrete360_mixes_${siteKey}_${mode}`)
+      const directMixesRaw = localStorage.getItem(`concrete360_mixes_${siteKey}_${mode}`);
       if (directMixesRaw) {
         const parsed = JSON.parse(directMixesRaw);
         if (parsed && parsed[gradeKey]) {
           const m = parsed[gradeKey];
+          const silo2Val = Number(m.mineralAdmixtureKg);
           return {
-            cement: Number(m.cementKg ?? fallback.cement),
-            admix: Number(m.mineralAdmixtureKg ?? (mode === 'GGBS' ? fallback.ggbs : fallback.flyAsh)),
-            water: Number(m.waterLitres ?? fallback.water),
-            mSand: Number(m.mSandKg ?? fallback.mSand),
-            agg20: Number(m.agg20mmKg ?? fallback.agg20),
-            agg10: Number(m.agg10mmKg ?? fallback.agg10)
+            cement: Number(m.cementKg ?? fallback.cementKg),
+            admix: !isNaN(silo2Val) && silo2Val > 0 ? silo2Val : fallback.mineralAdmixtureKg,
+            water: Number(m.waterLitres ?? fallback.waterLitres),
+            mSand: Number(m.mSandKg ?? fallback.mSandKg),
+            agg20: Number(m.agg20mmKg ?? fallback.agg20mmKg),
+            agg10: Number(m.agg10mmKg ?? fallback.agg10mmKg)
           };
         }
       }
 
+      // 2. Secondary source: MixDesignModule's serialized array (`concrete360_mix_designs_${siteKey}`)
       const globalListRaw = localStorage.getItem(`concrete360_mix_designs_${siteKey}`) || localStorage.getItem('concrete360_mix_designs');
       if (globalListRaw) {
         const list = JSON.parse(globalListRaw);
         if (Array.isArray(list)) {
           const match = list.find((it: any) => String(it.grade || it.code || '').toUpperCase().includes(gradeKey));
           if (match) {
+            const modeSpecificVal = mode === 'GGBS' ? Number(match.ggbsKgPerM3) : Number(match.flyAshKgPerM3);
+            const genericVal = Number(match.mineralAdmixtureKg);
+            const resolvedSilo2 = (!isNaN(modeSpecificVal) && modeSpecificVal > 0)
+              ? modeSpecificVal
+              : (!isNaN(genericVal) && genericVal > 0)
+                ? genericVal
+                : fallback.mineralAdmixtureKg;
+
             return {
-              cement: Number(match.cementKgPerM3 ?? fallback.cement),
-              admix: Number((mode === 'GGBS' ? match.ggbsKgPerM3 : match.flyAshKgPerM3) ?? fallback.ggbs),
-              water: Number(match.waterLitresPerM3 ?? fallback.water),
-              mSand: Number(match.mSandKgPerM3 ?? fallback.mSand),
-              agg20: Number(match.agg20mmKgPerM3 ?? fallback.agg20),
-              agg10: Number(match.agg10mmKgPerM3 ?? fallback.agg10)
+              cement: Number(match.cementKgPerM3 ?? fallback.cementKg),
+              admix: resolvedSilo2,
+              water: Number(match.waterLitresPerM3 ?? fallback.waterLitres),
+              mSand: Number(match.mSandKgPerM3 ?? fallback.mSandKg),
+              agg20: Number(match.agg20mmKgPerM3 ?? fallback.agg20mmKg),
+              agg10: Number(match.agg10mmKgPerM3 ?? fallback.agg10mmKg)
             };
           }
         }
       }
     } catch {}
 
+    // 3. Default directly to MixDesignModule's BILGI_QA_REV2 constants
     return {
-      cement: fallback.cement,
-      admix: mode === 'GGBS' ? fallback.ggbs : fallback.flyAsh,
-      water: fallback.water,
-      mSand: fallback.mSand,
-      agg20: fallback.agg20,
-      agg10: fallback.agg10
+      cement: fallback.cementKg,
+      admix: fallback.mineralAdmixtureKg,
+      water: fallback.waterLitres,
+      mSand: fallback.mSandKg,
+      agg20: fallback.agg20mmKg,
+      agg10: fallback.agg10mmKg
     };
   };
 
@@ -187,7 +191,7 @@ export const RMCBatchReportPage: React.FC = () => {
       const savedInvoicesRaw = localStorage.getItem(`concrete360_site_invoices_${siteKey}`);
       const invoices = savedInvoicesRaw ? JSON.parse(savedInvoicesRaw) : [];
 
-      let activeAdmixtureMode: 'FLY_ASH' | 'GGBS' = 'GGBS';
+      let activeAdmixtureMode: AdmixtureMode = 'GGBS';
       const savedMode = localStorage.getItem(`concrete360_admixture_mode_${siteKey}`) || localStorage.getItem('concrete360_admixture_mode');
       if (savedMode === 'GGBS' || savedMode === 'FLY_ASH') activeAdmixtureMode = savedMode;
 
@@ -271,7 +275,6 @@ export const RMCBatchReportPage: React.FC = () => {
 
       setBatches(generatedBatches);
 
-      // Auto-expand newly linked invoice from Billing or default to latest batch
       const highlightedId = sessionStorage.getItem('concrete360_highlight_invoice_id');
       if (highlightedId && generatedBatches.some(b => b.id === highlightedId)) {
         setExpandedBatchId(highlightedId);
@@ -390,7 +393,6 @@ export const RMCBatchReportPage: React.FC = () => {
             <div><strong>Batch Operator:</strong> ${b.operator}</div>
           </div>
 
-          <!-- Section 1: Standard Proportions for 1 m3 directly from Mix Design -->
           <div class="section-label">1. Standard Mix Proportion (Per 1 m³ SSD Condition - Linked Mix Design)</div>
           <table>
             <thead>
@@ -417,7 +419,6 @@ export const RMCBatchReportPage: React.FC = () => {
             </tbody>
           </table>
 
-          <!-- Section 2: Total TM Load Target vs. Actual Summary -->
           <div class="section-label">2. Total TM Load Target vs. Actual Summary (${b.batchQtyM3} m³ Total)</div>
           <table>
             <thead>
@@ -462,7 +463,6 @@ export const RMCBatchReportPage: React.FC = () => {
             </tbody>
           </table>
 
-          <!-- Section 3: Individual Plant Drop Cycles -->
           <div class="section-label">3. Individual Plant Drop Cycles Into TM (${b.mixerCapacityM3} m³ per Batch Cycle)</div>
           <table>
             <thead>
@@ -643,7 +643,6 @@ export const RMCBatchReportPage: React.FC = () => {
                         <tr className="bg-[#070d1a]">
                           <td colSpan={10} className="p-4 border-t border-[#1b273d]">
                             <div className="bg-[#0b1322] border border-[#1e2d44] rounded-2xl p-4 space-y-4">
-                              {/* 1 m3 Base Recipe Banner */}
                               <div className="bg-[#070d1a] border border-[#1b273d] p-3 rounded-xl flex flex-wrap items-center justify-between text-xs font-mono gap-2">
                                 <div className="flex items-center gap-2">
                                   <Layers className="w-4 h-4 text-cyan-400" />
