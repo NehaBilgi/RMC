@@ -382,25 +382,51 @@ export const TotalBillPage: React.FC = () => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
 
-    let compProfile = {
-      name: 'BILGI RMC',
-      gstin: '29AKMKMJNJN1',
-      address: 'AINAPUR',
+    let compProfile: Record<string, any> = {
+      name: 'BILGI BUILDCON RMC',
+      gstin: '29ABWFM2721J1ZA',
+      address: 'SY NO 118/13 AINAPUR GRAM BURNAPUR ROAD, VIJAYAPURA-586104',
       division: 'Commercial Ready-Mix Concrete Batching & Supply Division',
+      phonePrimary: '',
+      phoneSecondary: '',
       bankName: 'KOTAK MAHINDRA BANK',
       accountName: 'M/s MOHAMMED JAFAR BASHEER AHMED BILGI',
+      accountNo: '9449817122',
       accountNumber: '9449817122',
+      ifscSwift: 'KKBK0008324',
       ifsc: 'KKBK0008324',
-      branch: 'JALANAGAR, HUDCO'
+      branch: 'KOTAK MAHINDRA BANK LTD GROUND FLOOR, JALNAGAR, VIJAYAPURA-586101'
     };
 
     try {
       const savedProf = localStorage.getItem('concrete360_company_profile');
-      if (savedProf) {
-        const parsedP = JSON.parse(savedProf);
-        compProfile = { ...compProfile, ...parsedP };
-      }
+      const savedPhones = localStorage.getItem('concrete360_company_phones');
+      const parsedP = savedProf ? JSON.parse(savedProf) : {};
+      const parsedPhones = savedPhones ? JSON.parse(savedPhones) : {};
+
+      compProfile = {
+        ...compProfile,
+        ...parsedP,
+        phonePrimary:
+          parsedP.phonePrimary ||
+          parsedP.phone_primary ||
+          parsedPhones.phonePrimary ||
+          '',
+        phoneSecondary:
+          parsedP.phoneSecondary ||
+          parsedP.phone_secondary ||
+          parsedPhones.phoneSecondary ||
+          ''
+      };
     } catch {}
+
+    const companyContactNumbers = [compProfile.phonePrimary, compProfile.phoneSecondary]
+      .map(n => String(n || '').trim())
+      .filter(Boolean)
+      .join(' / ');
+
+    const resolvedAccountNo = compProfile.accountNo || compProfile.accountNumber || '9449817122';
+    const resolvedIfsc = compProfile.ifscSwift || compProfile.ifsc || 'KKBK0008324';
 
     printWindow.document.write(`
       <html>
@@ -436,7 +462,9 @@ export const TotalBillPage: React.FC = () => {
           <div class="top-header">
             <div class="brand">
               <h1>${compProfile.name}</h1>
-              <p>${compProfile.division}<br/>Corporate Office: ${compProfile.address}<br/>Company GSTIN: <strong>${compProfile.gstin}</strong></p>
+              <p>${compProfile.division}<br/>
+              Corporate Office: ${compProfile.address}<br/>
+              Company GSTIN: <strong>${compProfile.gstin}</strong>${companyContactNumbers ? `  |  Contact: <strong>${companyContactNumbers}</strong>` : ''}</p>
             </div>
             <div style="text-align: right; font-size: 10px;">
               Date: <strong>${formatDateDDMMYYYY(new Date().toISOString().split('T')[0])}</strong>
@@ -491,8 +519,8 @@ export const TotalBillPage: React.FC = () => {
               <div style="font-weight: bold; font-size: 10px; color: #0f172a; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; padding-bottom: 3px; margin-bottom: 5px;">COMPANY REMITTANCE BANK ACCOUNT:</div>
               <div>Bank Name: <strong>${compProfile.bankName}</strong></div>
               <div>Account Name: <strong>${compProfile.accountName}</strong></div>
-              <div>Account Number: <strong>${compProfile.accountNumber}</strong></div>
-              <div>IFSC / Swift: <strong>${compProfile.ifsc}</strong> | Branch: ${compProfile.branch}</div>
+              <div>Account Number: <strong>${resolvedAccountNo}</strong></div>
+              <div>IFSC / Swift: <strong>${resolvedIfsc}</strong> | Branch: ${compProfile.branch}</div>
             </div>
 
             <div class="totals-box">
