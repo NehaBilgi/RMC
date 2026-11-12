@@ -109,7 +109,7 @@ const formatDateDDMMYYYY = (dateStr: string) => {
   return parts.length === 3 ? `${parts[2]}-${parts[1]}-${parts[0]}` : dateStr;
 };
 
-// Rounds concrete quantity up to nearest 0.5 m³ (e.g., 8.38 -> 8.5, 8.63 -> 9, 9.6 -> 10)
+// Rounds concrete quantity up to nearest 0.5 m³ (e.g., 8.38 -> 8.5, 9.02 -> 9.5)
 const roundToHalfM3 = (val: number): number => {
   if (!val || val <= 0) return 0;
   return Math.ceil(val * 2 - 1e-9) / 2;
@@ -130,11 +130,8 @@ const extractEntryWastage = (entry: StudioWorkEntry): {
 } => {
   const netVol = Number(entry.netVolumeM3 ?? entry.volumeM3) || 0;
 
-  // 1. Check explicit wastage percentage fields from SiteMeasurementStudio
   const rawPct = entry.wastagePercent ?? entry.wastagePct ?? entry.wastage;
-  // 2. Check explicit wastage volume fields
   const rawWastageVol = entry.wastageVolumeM3 ?? entry.wastageVolume ?? entry.wastageM3;
-  // 3. Check explicit gross/total volume fields (if volumeM3 was net and grossVolumeM3 holds net+wastage)
   const rawGross = entry.grossVolumeM3 ?? entry.totalVolumeM3 ?? entry.finalVolumeM3;
 
   if (rawWastageVol !== undefined && Number(rawWastageVol) > 0) {
@@ -192,7 +189,6 @@ const summarizeEntriesWastage = (entries: StudioWorkEntry[], siteKey?: string) =
     totalGross += stats.grossVol;
   });
 
-  // Fallback: check if SiteMeasurementStudio saved a site-level wastage % key in localStorage
   if (totalWastage === 0 && totalNet > 0 && siteKey) {
     try {
       const siteWastageRaw =
@@ -576,7 +572,6 @@ export const QuotationRMC: React.FC = () => {
         ? siteSummary.netVol * (1 + wPct / 100)
         : siteSummary.grossVol;
       const roundedVol = roundToHalfM3(grossVol);
-      const wastageText = wPct > 0 ? ` incl. ${wPct}% wastage` : '';
 
       const explicitGrade =
         localStorage.getItem(`concrete360_active_mix_grade_${siteKey}`) ||
@@ -591,7 +586,7 @@ export const QuotationRMC: React.FC = () => {
 
       const elementNames = items.map((it, idx) => resolveWorkLabel(it, idx)).filter(Boolean).join(', ');
       if (elementNames) {
-        setRemarks(`Scope: ${elementNames} (${formatRoundM3(roundedVol)} m³ total${wastageText}). Valid for 15 days.`);
+        setRemarks(`Scope: ${elementNames} (${formatRoundM3(roundedVol)} m³ total). Valid for 15 days.`);
       }
     } else {
       const idx = items.findIndex(it => it.id === workId);
@@ -607,7 +602,6 @@ export const QuotationRMC: React.FC = () => {
           ? entryStats.netVol * (1 + wPct / 100)
           : entryStats.grossVol;
         const roundedVol = roundToHalfM3(grossVol);
-        const wastageText = wPct > 0 ? ` incl. ${wPct}% wastage` : '';
 
         const cleanG = (found.mixGrade || found.grade || 'M25').substring(0, 3).toUpperCase();
         const label = resolveWorkLabel(found, idx);
@@ -615,7 +609,7 @@ export const QuotationRMC: React.FC = () => {
         setMixGrade(cleanG);
         setUnitRate(resolveGradeCatalogRate(cleanG));
         setEstimatedQtyM3(roundedVol);
-        setRemarks(`Work Scope: ${label} (${formatRoundM3(roundedVol)} m³ total${wastageText}). Valid for 15 days.`);
+        setRemarks(`Work Scope: ${label} (${formatRoundM3(roundedVol)} m³ total). Valid for 15 days.`);
       }
     }
   };
@@ -855,7 +849,7 @@ export const QuotationRMC: React.FC = () => {
     const sub = concreteSub + pumpSub;
     const gst = q.applyGst ? sub * 0.18 : 0;
 
-    // Resolve live compact lines & wastage from SiteMeasurementStudio
+    // Resolve live compact lines from SiteMeasurementStudio
     const liveWorks = loadStudioWorksForSite(currentSiteKey);
     const targetWorks = q.workElementId && q.workElementId !== 'ALL'
       ? liveWorks.filter(w => w.id === q.workElementId)
@@ -866,27 +860,14 @@ export const QuotationRMC: React.FC = () => {
       lines = q.measurementLines;
     }
 
-    const liveWastageSummary = summarizeEntriesWastage(targetWorks, currentSiteKey);
     const totalNetQty = lines.reduce((sum, l) => sum + l.quantityM3, 0);
-
-    // Prefer saved quote wastage if set, else pull live from Site Measurement
-    const wPct = (q.wastagePercent !== undefined && q.wastagePercent > 0)
-      ? Number(q.wastagePercent)
-      : liveWastageSummary.wastagePct;
-
-    const wastageQty = (q.wastageVolumeM3 !== undefined && q.wastageVolumeM3 > 0)
-      ? Number(q.wastageVolumeM3)
-      : (liveWastageSummary.wastageVol > 0
-          ? liveWastageSummary.wastageVol
-          : Number((totalNetQty * (wPct / 100)).toFixed(2)));
-
-    const totalGrossQty = Number((totalNetQty + wastageQty).toFixed(2));
-    const totalRoundQty = roundToHalfM3(totalGrossQty);
+    // Clean any accidental wastage mention from remarks before printing
+    const cleanPrintRemarks = (q.remarks || '').replace(/\s*incl\.\s*[\d.]+%\s*wastage/gi, '');
 
     const bottomMeasurementTableHtml = lines.length > 0 ? `
       <div style="margin-top:26px; page-break-inside:avoid;">
         <div style="font-size:10px; font-weight:bold; text-transform:uppercase; color:#0f172a; margin-bottom:6px; letter-spacing:0.4px;">
-          Measurement & Wastage Details
+          Measurement Details
         </div>
         <table class="commercial" style="margin-bottom:0;">
           <thead>
@@ -907,25 +888,14 @@ export const QuotationRMC: React.FC = () => {
               </tr>
             `).join('')}
             <tr style="background:#f8fafc;">
-              <td colspan="3" class="right" style="font-weight:bold;">Calculated Net Volume:</td>
+              <td colspan="3" class="right" style="font-weight:bold;">Calculated Net Total:</td>
               <td class="right" style="font-weight:bold;">${totalNetQty.toFixed(2)} m³</td>
             </tr>
-            ${wPct > 0 || wastageQty > 0 ? `
-            <tr style="background:#fffbeb;">
-              <td colspan="3" class="right" style="font-weight:bold; color:#92400e;">
-                Add: Site Measurement Wastage (${wPct}%):
-              </td>
-              <td class="right" style="font-weight:bold; color:#92400e;">+${wastageQty.toFixed(2)} m³</td>
-            </tr>
-            <tr style="background:#f8fafc;">
-              <td colspan="3" class="right" style="font-weight:bold;">Gross Volume (Net + Wastage):</td>
-              <td class="right" style="font-weight:bold;">${totalGrossQty.toFixed(2)} m³</td>
-            </tr>` : ''}
             <tr style="background:#f1f5f9;">
               <td colspan="3" class="right" style="font-weight:bold; color:#0f172a;">
-                Total Quoted Quantity (Round Figure 0.5 m³):
+                Total Quoted Quantity (Round Figure):
               </td>
-              <td class="right" style="font-weight:900; color:#0f172a;">${formatRoundM3(totalRoundQty)} m³</td>
+              <td class="right" style="font-weight:900; color:#0f172a;">${formatRoundM3(q.estimatedQtyM3)} m³</td>
             </tr>
           </tbody>
         </table>
@@ -1001,7 +971,6 @@ export const QuotationRMC: React.FC = () => {
                   <strong>Ready-Mix Concrete (${q.mixGrade} Grade)</strong><br/>
                   <span style="color:#64748b;font-size:9px;">
                     Supply & Transit Mixer Delivery as per IS 456 / IS 4926
-                    ${(wPct > 0 || wastageQty > 0) && totalNetQty > 0 ? `<br/>(Net: ${totalNetQty.toFixed(2)} m³ + ${wPct}% Site Wastage: ${wastageQty.toFixed(2)} m³ = ${totalGrossQty.toFixed(2)} m³ → Rounded)` : ''}
                   </span>
                 </td>
                 <td><strong>${formatRoundM3(q.estimatedQtyM3)} m³</strong></td>
@@ -1025,7 +994,7 @@ export const QuotationRMC: React.FC = () => {
             <div><span>ESTIMATED GRAND TOTAL:</span><span>₹${q.grandTotal.toLocaleString('en-IN')}</span></div>
           </div>
 
-          <p style="margin-top:14px;font-size:10px;"><strong>Terms & Remarks:</strong> ${q.remarks}</p>
+          <p style="margin-top:14px;font-size:10px;"><strong>Terms & Remarks:</strong> ${cleanPrintRemarks}</p>
           <div style="margin-top:30px;display:flex;justify-content:space-between;font-size:10px;">
             <div style="border-top:1px dashed #64748b;width:180px;text-align:center;padding-top:4px;">Client Acceptance Sign & Stamp</div>
             <div style="border-top:1px dashed #64748b;width:180px;text-align:center;padding-top:4px;">For BILGI BUILDCON RMC</div>
@@ -1181,7 +1150,7 @@ export const QuotationRMC: React.FC = () => {
                         <button
                           onClick={() => handlePrintQuotation(q)}
                           className="text-slate-400 hover:text-cyan-400 p-1 transition cursor-pointer"
-                          title="Print Commercial Quotation with Measurement & Wastage Table"
+                          title="Print Commercial Quotation"
                         >
                           <Printer className="w-4 h-4" />
                         </button>
@@ -1272,7 +1241,7 @@ export const QuotationRMC: React.FC = () => {
                   </div>
                 )}
 
-                {/* Wastage Imported from Site Measurement (Editable Override) */}
+                {/* Wastage Imported from Site Measurement (Internal Calculation Only) */}
                 <div className="pt-1.5 border-t border-[#142033] flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
                     <label className="text-amber-400 font-bold uppercase text-[10px] whitespace-nowrap">
