@@ -11,20 +11,20 @@ export const CompanyDetailsModule: React.FC = () => {
   const [savedSuccess, setSavedSuccess] = useState(false);
 
   const [companyData, setCompanyData] = useState({
-    name: 'BILGI RMC',
-    gstin: '29AKMKMJNJN1',
-    address: 'Plot 108, Industrial Expressway Corridor, Sector 62',
+    name: 'BILGI BUILDCON RMC',
+    gstin: '29ABWFM2721J1ZA',
+    address: 'SY NO 118/13 AINAPUR GRAM BURNAPUR ROAD, VIJAYAPURA-586104',
     division: 'Commercial Ready-Mix Concrete Batching & Supply Division',
     phonePrimary: '',
     phoneSecondary: '',
-    bankName: 'Standard Chartered Commercial Banking',
-    accountName: 'BILGI RMC INFRASTRUCTURE',
-    accountNo: '9920 4481 0029 3841',
-    ifscSwift: 'SCBL0002841',
-    branch: 'Expressway Central Hub'
+    bankName: 'KOTAK MAHINDRA BANK',
+    accountName: 'M/s MOHAMMED JAFAR BASHEER AHMED BILGI',
+    accountNo: '9449817122',
+    ifscSwift: 'KKBK0008234',
+    branch: 'KOTAK MAHINDRA BANK LTD GROUND FLOOR, JALNAGAR, VIJAYAPURA-586101'
   });
 
-  const loadData = () => {
+  const loadData = async () => {
     try {
       const raw = localStorage.getItem('concrete360_company_profile');
       if (raw) {
@@ -36,20 +36,44 @@ export const CompanyDetailsModule: React.FC = () => {
           phoneSecondary: parsed.phoneSecondary ?? parsed.phone_secondary ?? prev.phoneSecondary
         }));
       }
+
+      if (supabase) {
+        const { data } = await (supabase as any)
+          .from('company_profile')
+          .select('*')
+          .eq('id', 'primary_company')
+          .maybeSingle();
+
+        if (data) {
+          const merged = {
+            name: data.name || 'BILGI BUILDCON RMC',
+            gstin: data.gstin || '',
+            address: data.address || '',
+            division: data.division || 'Commercial Ready-Mix Concrete Batching & Supply Division',
+            phonePrimary: data.phone_primary || '',
+            phoneSecondary: data.phone_secondary || '',
+            bankName: data.bank_name || '',
+            accountName: data.account_name || '',
+            accountNo: data.account_no || '',
+            ifscSwift: data.ifsc_swift || '',
+            branch: data.branch || ''
+          };
+          setCompanyData(merged);
+          localStorage.setItem('concrete360_company_profile', JSON.stringify(merged));
+        }
+      }
     } catch {}
   };
 
   useEffect(() => {
-    void cloudStorage.pullFromCloud();
-    loadData();
+    void loadData();
 
-    window.addEventListener('concrete360_cloud_synced', loadData);
-    window.addEventListener('storage', loadData);
-    window.addEventListener('focus', loadData);
+    const onSync = () => void loadData();
+    window.addEventListener('concrete360_cloud_synced', onSync);
+    window.addEventListener('storage', onSync);
     return () => {
-      window.removeEventListener('concrete360_cloud_synced', loadData);
-      window.removeEventListener('storage', loadData);
-      window.removeEventListener('focus', loadData);
+      window.removeEventListener('concrete360_cloud_synced', onSync);
+      window.removeEventListener('storage', onSync);
     };
   }, []);
 
@@ -82,9 +106,11 @@ export const CompanyDetailsModule: React.FC = () => {
           updated_at: new Date().toISOString()
         }, { onConflict: 'id' });
         await cloudStorage.pullFromCloud();
+        localStorage.setItem('concrete360_company_profile', JSON.stringify(cleanedData));
       }
 
       setCompanyData(cleanedData);
+      window.dispatchEvent(new Event('concrete360_company_profile_updated'));
       setSavedSuccess(true);
       setIsEditing(false);
       setTimeout(() => setSavedSuccess(false), 3000);
