@@ -612,12 +612,14 @@ export const BillingRMC: React.FC = () => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
 
-    let compProfile = {
+    let compProfile: Record<string, any> = {
       name: 'BILGI BUILDCON RMC',
       plantMake: 'CONMAT BATCHING PLANT (0.75 m³)',
       gstin: '29ABWFM2721J1ZA',
       address: 'SY NO 118/13 AINAPUR GRAM BURNAPUR ROAD, VIJAYAPURA-586104',
       division: 'Commercial Ready-Mix Concrete Batching & Supply Division',
+      phonePrimary: '',
+      phoneSecondary: '',
       bankName: 'KOTAK MAHINDRA BANK',
       accountName: 'M/s MOHAMMED JAFAR BASHEER AHMED BILGI',
       accountNo: '9449817122',
@@ -629,9 +631,19 @@ export const BillingRMC: React.FC = () => {
       const savedProf = localStorage.getItem('concrete360_company_profile');
       if (savedProf) {
         const parsedP = JSON.parse(savedProf);
-        compProfile = { ...compProfile, ...parsedP };
+        compProfile = {
+          ...compProfile,
+          ...parsedP,
+          phonePrimary: parsedP.phonePrimary ?? parsedP.phone_primary ?? '',
+          phoneSecondary: parsedP.phoneSecondary ?? parsedP.phone_secondary ?? ''
+        };
       }
     } catch {}
+
+    const companyContactNumbers = [compProfile.phonePrimary, compProfile.phoneSecondary]
+      .map(n => String(n || '').trim())
+      .filter(Boolean)
+      .join(' / ');
 
     const sub = inv.volumeM3 * inv.unitRate;
     const isGstActive = inv.applyGst ?? true;
@@ -695,7 +707,7 @@ export const BillingRMC: React.FC = () => {
               <h1>${compProfile.name}</h1>
               <p>${compProfile.division} • ${compProfile.plantMake}<br/>
               Corporate Office: ${compProfile.address}<br/>
-              Company GSTIN: <strong>${compProfile.gstin}</strong></p>
+              Company GSTIN: <strong>${compProfile.gstin}</strong>${companyContactNumbers ? `  |  Contact: <strong>${companyContactNumbers}</strong>` : ''}</p>
             </div>
             <div class="invoice-meta">
               <div style="font-size: 10px; color: #334155;">
