@@ -14,16 +14,39 @@ import {
 import { supabase } from '../../lib/supabase';
 import { cloudStorage } from '../../services/cloudStorage';
 
+interface DimensionRow {
+  id?: string;
+  length?: number | string;
+  width?: number | string;
+  thickness?: number | string;
+  depth?: number | string;
+  height?: number | string;
+  nos?: number | string;
+  quantity?: number | string;
+  volumeM3?: number;
+}
+
 interface MeasurementSpecificationItem {
   id: string;
-  label: string;
+  label?: string;
+  workLabel?: string;
+  reference?: string;
+  name?: string;
+  category?: string;
+  categories?: string[];
   elementType?: string;
+  unitSystem?: 'METRIC' | 'IMPERIAL' | string;
+  rows?: DimensionRow[];
+  dimensions?: DimensionRow[];
+  categoryRows?: Record<string, DimensionRow[]>;
   length?: number;
   width?: number;
+  thickness?: number;
   depth?: number;
   nos?: number;
   volumeM3: number;
   mixGrade?: string;
+  date?: string;
   remarks?: string;
 }
 
@@ -77,6 +100,73 @@ const formatDateDDMMYYYY = (dateStr: string) => {
   if (!dateStr) return '';
   const parts = dateStr.split('-');
   return parts.length === 3 ? `${parts[2]}-${parts[1]}-${parts[0]}` : dateStr;
+};
+
+const resolveWorkLabel = (it: MeasurementSpecificationItem, idx = 0): string => {
+  const raw =
+    it.workLabel ||
+    it.label ||
+    it.reference ||
+    it.name ||
+    (Array.isArray(it.categories) && it.categories.length > 0 ? it.categories.join(' + ') : '') ||
+    it.category ||
+    it.elementType;
+  return raw && String(raw).trim() ? String(raw).trim() : `Work Entry #${idx + 1}`;
+};
+
+const formatMeasurementDimensions = (sp: MeasurementSpecificationItem): string => {
+  const isImperial = String(sp.unitSystem || '').toUpperCase().includes('IMPERIAL');
+  const lenUnit = isImperial ? 'ft' : 'm';
+  const thickUnit = isImperial ? 'in' : 'mm';
+
+  // 1. Multi-category rows (e.g., Slab / Deck, Column, Beam, Footing)
+  if (sp.categoryRows && typeof sp.categoryRows === 'object') {
+    const parts: string[] = [];
+    Object.entries(sp.categoryRows).forEach(([catName, rows]) => {
+      if (Array.isArray(rows) && rows.length > 0) {
+        const rowStrs = rows.map((r) => {
+          const l = Number(r.length) || 0;
+          const w = Number(r.width) || 0;
+          const t = Number(r.thickness ?? r.depth ?? r.height) || 0;
+          const n = Number(r.nos ?? r.quantity) || 1;
+          const nosTag = n > 1 ? ` × ${n} Nos` : '';
+          return `${l}${lenUnit} × ${w}${lenUnit} × ${t}${thickUnit}${nosTag}`;
+        });
+        parts.push(`<strong>${catName}:</strong> ${rowStrs.join('; ')}`);
+      }
+    });
+    if (parts.length > 0) return parts.join('<br/>');
+  }
+
+  // 2. Single category with multiple rows array
+  const rowList = sp.rows || sp.dimensions;
+  if (Array.isArray(rowList) && rowList.length > 0) {
+    const catPrefix = sp.category || sp.elementType || (Array.isArray(sp.categories) ? sp.categories.join(', ') : '');
+    const rowStrs = rowList.map((r) => {
+      const l = Number(r.length) || 0;
+      const w = Number(r.width) || 0;
+      const t = Number(r.thickness ?? r.depth ?? r.height) || 0;
+      const n = Number(r.nos ?? r.quantity) || 1;
+      const nosTag = n > 1 ? ` × ${n} Nos` : '';
+      return `${l}${lenUnit} × ${w}${lenUnit} × ${t}${thickUnit}${nosTag}`;
+    });
+    return catPrefix ? `<strong>${catPrefix}:</strong> ${rowStrs.join('; ')}` : rowStrs.join('; ');
+  }
+
+  // 3. Flat dimension fields on the item
+  const l = Number(sp.length) || 0;
+  const w = Number(sp.width) || 0;
+  const t = Number(sp.thickness ?? sp.depth) || 0;
+  const n = Number(sp.nos) || 1;
+  const catLabel = sp.category || sp.elementType || (Array.isArray(sp.categories) ? sp.categories.join(', ') : '');
+
+  if (l > 0 || w > 0 || t > 0) {
+    const nosTag = n > 1 ? ` × ${n} Nos` : '';
+    const dimText = `${l}${lenUnit} × ${w}${lenUnit} × ${t}${thickUnit}${nosTag}`;
+    return catLabel ? `<strong>${catLabel}:</strong> ${dimText}` : dimText;
+  }
+
+  return catLabel || 'Measured Site Concrete';
 };
 
 export const QuotationRMC: React.FC = () => {
@@ -185,21 +275,23 @@ export const QuotationRMC: React.FC = () => {
       setUnitRate(resolveGradeCatalogRate(cleanG));
       if (grossVol > 0) setEstimatedQtyM3(grossVol);
 
-      const elementNames = items.map(it => it.label).filter(Boolean).join(', ');
+      const elementNames = items.map((it, idx) => resolveWorkLabel(it, idx)).filter(Boolean).join(', ');
       if (elementNames) {
         setRemarks(`Scope: ${elementNames} (Incl. ${wastage}% wastage allowance). Valid for 15 days.`);
       }
     } else {
-      const found = items.find(it => it.id === workId);
+      const idx = items.findIndex(it => it.id === workId);
+      const found = idx >= 0 ? items[idx] : undefined;
       if (found) {
         const netVol = Number(found.volumeM3) || 0;
         const grossVol = Number((netVol * (1 + wastage / 100)).toFixed(2));
         const cleanG = (found.mixGrade || 'M25').substring(0, 3).toUpperCase();
+        const label = resolveWorkLabel(found, idx);
 
         setMixGrade(cleanG);
         setUnitRate(resolveGradeCatalogRate(cleanG));
         setEstimatedQtyM3(grossVol);
-        setRemarks(`Structural Element: ${found.label} (${netVol.toFixed(2)} m³ net + ${wastage}% wastage).`);
+        setRemarks(`Work Scope: ${label} (${netVol.toFixed(2)} m³ net + ${wastage}% wastage).`);
       }
     }
   };
@@ -235,7 +327,6 @@ export const QuotationRMC: React.FC = () => {
         });
       }
 
-      // Load Site Inventory Measurements for this site
       const measurementsRaw = localStorage.getItem(`concrete360_advanced_measurements_${siteKey}`);
       let parsedMeasurements: MeasurementSpecificationItem[] = [];
       if (measurementsRaw) {
@@ -315,9 +406,8 @@ export const QuotationRMC: React.FC = () => {
   const handleCreateQuotation = (e: React.FormEvent) => {
     e.preventDefault();
 
-    const selectedItemObj = selectedWorkId !== 'ALL'
-      ? measurementItems.find(it => it.id === selectedWorkId)
-      : null;
+    const idx = selectedWorkId !== 'ALL' ? measurementItems.findIndex(it => it.id === selectedWorkId) : -1;
+    const selectedItemObj = idx >= 0 ? measurementItems[idx] : null;
 
     const newQuote: RMCQuotation = {
       id: `QT-${Date.now()}`,
@@ -330,7 +420,7 @@ export const QuotationRMC: React.FC = () => {
       clientPhone: siteDetails.clientPhone,
       projectSite: siteDetails.projectSite || currentSiteKey,
       workElementId: selectedWorkId,
-      workElementLabel: selectedItemObj ? `${selectedItemObj.id}: ${selectedItemObj.label}` : 'All Site Structural Works',
+      workElementLabel: selectedItemObj ? resolveWorkLabel(selectedItemObj, idx) : 'All Site Structural Works',
       mixGrade,
       netVolumeM3: Number(selectedNetTotal.toFixed(2)),
       wastagePercent,
@@ -350,7 +440,7 @@ export const QuotationRMC: React.FC = () => {
     setQuotations(updated);
     localStorage.setItem(`concrete360_site_quotations_${currentSiteKey}`, JSON.stringify(updated));
     setIsModalOpen(false);
-    setToastMsg(`Quotation ${newQuote.quoteNo} created with Site Measurement specs!`);
+    setToastMsg(`Quotation ${newQuote.quoteNo} created!`);
     setTimeout(() => setToastMsg(null), 3500);
   };
 
@@ -427,18 +517,34 @@ export const QuotationRMC: React.FC = () => {
     const sub = concreteSub + pumpSub;
     const gst = q.applyGst ? sub * 0.18 : 0;
 
-    const specs = q.specifications && q.specifications.length > 0 ? q.specifications : [];
+    // Resolve measurements either from saved quote snapshot or live Site Inventory Measurements
+    let specs: MeasurementSpecificationItem[] =
+      q.specifications && q.specifications.length > 0 ? q.specifications : [];
+
+    if (specs.length === 0) {
+      try {
+        const liveRaw = localStorage.getItem(`concrete360_advanced_measurements_${currentSiteKey}`);
+        const liveArr: MeasurementSpecificationItem[] = liveRaw ? JSON.parse(liveRaw) : [];
+        if (Array.isArray(liveArr) && liveArr.length > 0) {
+          specs = q.workElementId && q.workElementId !== 'ALL'
+            ? liveArr.filter(it => it.id === q.workElementId)
+            : liveArr;
+        }
+      } catch {}
+    }
+
+    const netSum = specs.reduce((s, sp) => s + (Number(sp.volumeM3) || 0), 0);
+
     const specRowsHtml = specs.map((sp, i) => {
-      const dims = sp.length && sp.width && sp.depth
-        ? `${sp.length}m × ${sp.width}m × ${sp.depth}m ${sp.nos && sp.nos > 1 ? `(${sp.nos} Nos)` : ''}`
-        : (sp.elementType || 'Structural Element');
+      const workTitle = resolveWorkLabel(sp, i);
+      const dimDetails = formatMeasurementDimensions(sp);
       return `
         <tr>
           <td>${i + 1}</td>
-          <td><strong>${sp.label}</strong></td>
-          <td>${dims}</td>
+          <td><strong>${workTitle}</strong></td>
+          <td>${dimDetails}</td>
           <td>${sp.mixGrade || q.mixGrade}</td>
-          <td class="right">${Number(sp.volumeM3 || 0).toFixed(2)} m³</td>
+          <td class="right"><strong>${Number(sp.volumeM3 || 0).toFixed(2)} m³</strong></td>
         </tr>
       `;
     }).join('');
@@ -453,11 +559,11 @@ export const QuotationRMC: React.FC = () => {
             .header { display: flex; justify-content: space-between; border-bottom: 2px solid #2563eb; padding-bottom: 10px; margin-bottom: 12px; }
             .header h1 { margin: 0; font-size: 20px; font-weight: 900; }
             .badge { display: inline-block; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; padding: 3px 8px; font-weight: bold; font-size: 10px; border-radius: 4px; }
-            .grid { display: flex; justify-content: space-between; border: 1px solid #cbd5e1; background: #f8fafc; padding: 10px; margin-bottom: 12px; }
-            .sec-title { font-size: 10px; font-weight: bold; text-transform: uppercase; color: #0f172a; margin: 10px 0 5px 0; }
+            .grid { display: flex; justify-content: space-between; border: 1px solid #cbd5e1; background: #f8fafc; padding: 10px; margin-bottom: 14px; }
+            .sec-title { font-size: 10px; font-weight: bold; text-transform: uppercase; color: #0f172a; margin: 12px 0 5px 0; }
             table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
             th { background: #0f172a; color: #fff; padding: 6px 8px; text-align: left; font-size: 9px; text-transform: uppercase; }
-            td { border: 1px solid #cbd5e1; padding: 6px 8px; font-size: 10px; }
+            td { border: 1px solid #cbd5e1; padding: 6px 8px; font-size: 10px; vertical-align: top; }
             .right { text-align: right; }
             .totals { width: 45%; margin-left: auto; border: 1px solid #cbd5e1; }
             .totals div { display: flex; justify-content: space-between; padding: 5px 8px; border-bottom: 1px solid #cbd5e1; }
@@ -497,22 +603,22 @@ export const QuotationRMC: React.FC = () => {
           </div>
 
           ${specs.length > 0 ? `
-            <div class="sec-title">1. Site Inventory Measurement & Structural Specifications</div>
+            <div class="sec-title">1. Site Inventory Measurements (Category & Dimension Breakdown)</div>
             <table>
               <thead>
                 <tr>
                   <th style="width:5%;">#</th>
-                  <th style="width:30%;">Structural Element</th>
-                  <th style="width:35%;">Dimensions / Specification</th>
-                  <th style="width:15%;">Concrete Grade</th>
-                  <th style="width:15%;" class="right">Net Volume</th>
+                  <th style="width:26%;">Work Label / Reference</th>
+                  <th style="width:42%;">Category & Measured Dimensions</th>
+                  <th style="width:13%;">Grade</th>
+                  <th style="width:14%;" class="right">Net Volume</th>
                 </tr>
               </thead>
               <tbody>
                 ${specRowsHtml}
                 <tr style="background:#f8fafc;font-weight:bold;">
-                  <td colspan="4" class="right">Net Measured Volume (+ ${q.wastagePercent ?? 5}% Wastage Allowance = ${q.estimatedQtyM3.toFixed(2)} m³ Gross):</td>
-                  <td class="right">${Number(q.netVolumeM3 || 0).toFixed(2)} m³</td>
+                  <td colspan="4" class="right">Total Net Measured Volume (+ ${q.wastagePercent ?? 5}% Wastage = ${q.estimatedQtyM3.toFixed(2)} m³ Gross):</td>
+                  <td class="right">${netSum.toFixed(2)} m³</td>
                 </tr>
               </tbody>
             </table>
@@ -692,7 +798,7 @@ export const QuotationRMC: React.FC = () => {
                         <button
                           onClick={() => handlePrintQuotation(q)}
                           className="text-slate-400 hover:text-cyan-400 p-1 transition cursor-pointer"
-                          title="Print Commercial Quotation with Specifications"
+                          title="Print Commercial Quotation with Measurements"
                         >
                           <Printer className="w-4 h-4" />
                         </button>
@@ -758,29 +864,12 @@ export const QuotationRMC: React.FC = () => {
                   <option value="ALL">
                     All Site Structural Works ({measurementItems.length} items • {measurementItems.reduce((s, it) => s + (Number(it.volumeM3) || 0), 0).toFixed(2)} m³ net)
                   </option>
-                  {measurementItems.map(it => (
+                  {measurementItems.map((it, idx) => (
                     <option key={it.id} value={it.id}>
-                      {it.id}: {it.label} ({Number(it.volumeM3 || 0).toFixed(2)} m³) {it.mixGrade ? `[${it.mixGrade}]` : ''}
+                      {resolveWorkLabel(it, idx)} ({Number(it.volumeM3 || 0).toFixed(2)} m³) {it.mixGrade ? `[${it.mixGrade}]` : ''}
                     </option>
                   ))}
                 </select>
-
-                {/* Preview of included specifications */}
-                {activeSpecsForSelection.length > 0 && (
-                  <div className="bg-[#0b1322] border border-[#17253e] rounded-xl p-2.5 space-y-1 max-h-28 overflow-y-auto text-[10px]">
-                    <div className="text-slate-400 font-bold uppercase mb-1">Included Structural Specifications:</div>
-                    {activeSpecsForSelection.map((sp) => (
-                      <div key={sp.id} className="flex justify-between items-center text-slate-300">
-                        <span className="truncate max-w-[230px]">
-                          • <strong>{sp.label}</strong> {sp.length && sp.width && sp.depth ? `(${sp.length}×${sp.width}×${sp.depth}m)` : ''}
-                        </span>
-                        <span className="text-cyan-300 font-bold shrink-0">
-                          {Number(sp.volumeM3 || 0).toFixed(2)} m³ [{sp.mixGrade || mixGrade}]
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
