@@ -27,15 +27,27 @@ export const CompanyDetailsModule: React.FC = () => {
   const loadData = async () => {
     try {
       const raw = localStorage.getItem('concrete360_company_profile');
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        setCompanyData(prev => ({
-          ...prev,
-          ...parsed,
-          phonePrimary: parsed.phonePrimary ?? parsed.phone_primary ?? prev.phonePrimary,
-          phoneSecondary: parsed.phoneSecondary ?? parsed.phone_secondary ?? prev.phoneSecondary
-        }));
-      }
+      const backupPhonesRaw = localStorage.getItem('concrete360_company_phones');
+      const parsed = raw ? JSON.parse(raw) : {};
+      const backupPhones = backupPhonesRaw ? JSON.parse(backupPhonesRaw) : {};
+
+      const initialPrimary =
+        parsed.phonePrimary ||
+        parsed.phone_primary ||
+        backupPhones.phonePrimary ||
+        '';
+      const initialSecondary =
+        parsed.phoneSecondary ||
+        parsed.phone_secondary ||
+        backupPhones.phoneSecondary ||
+        '';
+
+      setCompanyData(prev => ({
+        ...prev,
+        ...parsed,
+        phonePrimary: initialPrimary || prev.phonePrimary,
+        phoneSecondary: initialSecondary || prev.phoneSecondary
+      }));
 
       if (supabase) {
         const { data } = await (supabase as any)
@@ -45,19 +57,34 @@ export const CompanyDetailsModule: React.FC = () => {
           .maybeSingle();
 
         if (data) {
+          const latestBackupRaw = localStorage.getItem('concrete360_company_phones');
+          const latestBackup = latestBackupRaw ? JSON.parse(latestBackupRaw) : {};
+
+          const resolvedPrimary =
+            data.phone_primary ||
+            latestBackup.phonePrimary ||
+            initialPrimary ||
+            '';
+          const resolvedSecondary =
+            data.phone_secondary ||
+            latestBackup.phoneSecondary ||
+            initialSecondary ||
+            '';
+
           const merged = {
             name: data.name || 'BILGI BUILDCON RMC',
             gstin: data.gstin || '',
             address: data.address || '',
             division: data.division || 'Commercial Ready-Mix Concrete Batching & Supply Division',
-            phonePrimary: data.phone_primary || '',
-            phoneSecondary: data.phone_secondary || '',
+            phonePrimary: resolvedPrimary,
+            phoneSecondary: resolvedSecondary,
             bankName: data.bank_name || '',
             accountName: data.account_name || '',
             accountNo: data.account_no || '',
             ifscSwift: data.ifsc_swift || '',
             branch: data.branch || ''
           };
+
           setCompanyData(merged);
           localStorage.setItem('concrete360_company_profile', JSON.stringify(merged));
         }
@@ -80,31 +107,63 @@ export const CompanyDetailsModule: React.FC = () => {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canEditCompany) return;
-    try {
-      const cleanedData = {
-        ...companyData,
-        phonePrimary: companyData.phonePrimary.trim(),
-        phoneSecondary: companyData.phoneSecondary.trim()
-      };
 
+    const cleanedData = {
+      ...companyData,
+      phonePrimary: companyData.phonePrimary.trim(),
+      phoneSecondary: companyData.phoneSecondary.trim()
+    };
+
+    try {
       localStorage.setItem('concrete360_company_profile', JSON.stringify(cleanedData));
+      localStorage.setItem(
+        'concrete360_company_phones',
+        JSON.stringify({
+          phonePrimary: cleanedData.phonePrimary,
+          phoneSecondary: cleanedData.phoneSecondary
+        })
+      );
 
       if (supabase) {
-        await (supabase as any).from('company_profile').upsert({
-          id: 'primary_company',
-          name: cleanedData.name,
-          gstin: cleanedData.gstin,
-          address: cleanedData.address,
-          division: cleanedData.division,
-          phone_primary: cleanedData.phonePrimary || null,
-          phone_secondary: cleanedData.phoneSecondary || null,
-          bank_name: cleanedData.bankName,
-          account_name: cleanedData.accountName,
-          account_no: cleanedData.accountNo,
-          ifsc_swift: cleanedData.ifscSwift,
-          branch: cleanedData.branch,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'id' });
+        const { error } = await (supabase as any).from('company_profile').upsert(
+          {
+            id: 'primary_company',
+            name: cleanedData.name,
+            gstin: cleanedData.gstin,
+            address: cleanedData.address,
+            division: cleanedData.division,
+            phone_primary: cleanedData.phonePrimary || null,
+            phone_secondary: cleanedData.phoneSecondary || null,
+            bank_name: cleanedData.bankName,
+            account_name: cleanedData.accountName,
+            account_no: cleanedData.accountNo,
+            ifsc_swift: cleanedData.ifscSwift,
+            branch: cleanedData.branch,
+            updated_at: new Date().toISOString()
+          },
+          { onConflict: 'id' }
+        );
+
+        // Fallback upsert without phone columns if schema migration hasn't been run yet
+        if (error) {
+          await (supabase as any).from('company_profile').upsert(
+            {
+              id: 'primary_company',
+              name: cleanedData.name,
+              gstin: cleanedData.gstin,
+              address: cleanedData.address,
+              division: cleanedData.division,
+              bank_name: cleanedData.bankName,
+              account_name: cleanedData.accountName,
+              account_no: cleanedData.accountNo,
+              ifsc_swift: cleanedData.ifscSwift,
+              branch: cleanedData.branch,
+              updated_at: new Date().toISOString()
+            },
+            { onConflict: 'id' }
+          );
+        }
+
         await cloudStorage.pullFromCloud();
         localStorage.setItem('concrete360_company_profile', JSON.stringify(cleanedData));
       }
@@ -114,7 +173,10 @@ export const CompanyDetailsModule: React.FC = () => {
       setSavedSuccess(true);
       setIsEditing(false);
       setTimeout(() => setSavedSuccess(false), 3000);
-    } catch {}
+    } catch {
+      setCompanyData(cleanedData);
+      setIsEditing(false);
+    }
   };
 
   return (
