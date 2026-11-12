@@ -7,10 +7,25 @@ import {
   X, 
   ArrowRightCircle, 
   CheckCircle2,
-  Phone
+  Phone,
+  Filter,
+  Layers
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { cloudStorage } from '../../services/cloudStorage';
+
+interface MeasurementSpecificationItem {
+  id: string;
+  label: string;
+  elementType?: string;
+  length?: number;
+  width?: number;
+  depth?: number;
+  nos?: number;
+  volumeM3: number;
+  mixGrade?: string;
+  remarks?: string;
+}
 
 interface RMCQuotation {
   id: string;
@@ -22,7 +37,11 @@ interface RMCQuotation {
   clientGstin: string;
   clientPhone: string;
   projectSite: string;
+  workElementId?: string;
+  workElementLabel?: string;
   mixGrade: string;
+  netVolumeM3?: number;
+  wastagePercent?: number;
   estimatedQtyM3: number;
   unitRate: number;
   includePump: boolean;
@@ -32,6 +51,7 @@ interface RMCQuotation {
   grandTotal: number;
   status: 'DRAFT' | 'SENT' | 'ACCEPTED' | 'CONVERTED';
   remarks: string;
+  specifications?: MeasurementSpecificationItem[];
 }
 
 const STANDARD_RMC_RATES: Record<string, number> = {
@@ -73,8 +93,29 @@ export const QuotationRMC: React.FC = () => {
     return 'BASVARAJ';
   };
 
+  const getPersistedWastage = (siteKey: string): number => {
+    try {
+      const saved = localStorage.getItem(`concrete360_wastage_percent_${siteKey}`);
+      if (saved !== null && saved !== '') {
+        const parsed = parseFloat(saved);
+        if (!isNaN(parsed)) return Math.max(0, parsed);
+      }
+      const measurementSession = localStorage.getItem('concrete360_measurement');
+      if (measurementSession) {
+        const parsedS = JSON.parse(measurementSession);
+        if (parsedS.safetyWastagePercent !== undefined && parsedS.safetyWastagePercent !== null && parsedS.safetyWastagePercent !== '') {
+          const parsed = parseFloat(parsedS.safetyWastagePercent);
+          if (!isNaN(parsed)) return Math.max(0, parsed);
+        }
+      }
+    } catch {}
+    return 5;
+  };
+
   const [currentSiteKey, setCurrentSiteKey] = useState<string>(getActiveSiteKey());
   const [quotations, setQuotations] = useState<RMCQuotation[]>([]);
+  const [measurementItems, setMeasurementItems] = useState<MeasurementSpecificationItem[]>([]);
+  const [wastagePercent, setWastagePercent] = useState<number>(5);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
@@ -87,6 +128,7 @@ export const QuotationRMC: React.FC = () => {
   });
 
   // Form states
+  const [selectedWorkId, setSelectedWorkId] = useState<string>('ALL');
   const [quoteDate, setQuoteDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [validUntil, setValidUntil] = useState<string>(() => {
     const d = new Date();
@@ -100,7 +142,67 @@ export const QuotationRMC: React.FC = () => {
   const [pumpRentPerShift, setPumpRentPerShift] = useState<number | string>(6500);
   const [pumpShifts, setPumpShifts] = useState<number | string>(1);
   const [applyGst, setApplyGst] = useState<boolean>(true);
-  const [remarks, setRemarks] = useState<string>('Rates valid for 15 days. Diesel price variation clause applicable.');
+  const [remarks, setRemarks] = useState<string>('Rates valid for 15 days. Concrete supplied as per IS 456 / IS 4926 standards.');
+
+  const resolveGradeCatalogRate = (gradeCode: string): number => {
+    const cleanGrade = (gradeCode || 'M25').substring(0, 3).toUpperCase();
+    try {
+      const catKeys = ['concrete360_material_categories', 'pave_material_categories', 'concrete360_mix_designs'];
+      for (const k of catKeys) {
+        const raw = localStorage.getItem(k);
+        if (raw) {
+          const arr = JSON.parse(raw);
+          if (Array.isArray(arr)) {
+            const match = arr.find((m: any) => String(m.grade || m.name || m.code || '').toUpperCase().includes(cleanGrade));
+            if (match && (match.rate || match.unitRate || match.price)) {
+              return Number(match.rate || match.unitRate || match.price);
+            }
+          }
+        }
+      }
+    } catch {}
+    return STANDARD_RMC_RATES[cleanGrade] || 4500;
+  };
+
+  const applyMeasurementToForm = (
+    items: MeasurementSpecificationItem[],
+    workId: string,
+    wastage: number,
+    siteKey: string
+  ) => {
+    if (!Array.isArray(items) || items.length === 0) return;
+
+    if (workId === 'ALL') {
+      const netVol = items.reduce((sum, it) => sum + (Number(it.volumeM3) || 0), 0);
+      const grossVol = Number((netVol * (1 + wastage / 100)).toFixed(2));
+      const explicitGrade =
+        localStorage.getItem(`concrete360_active_mix_grade_${siteKey}`) ||
+        items.find(it => it.mixGrade)?.mixGrade ||
+        'M25';
+      const cleanG = explicitGrade.substring(0, 3).toUpperCase();
+
+      setMixGrade(cleanG);
+      setUnitRate(resolveGradeCatalogRate(cleanG));
+      if (grossVol > 0) setEstimatedQtyM3(grossVol);
+
+      const elementNames = items.map(it => it.label).filter(Boolean).join(', ');
+      if (elementNames) {
+        setRemarks(`Scope: ${elementNames} (Incl. ${wastage}% wastage allowance). Valid for 15 days.`);
+      }
+    } else {
+      const found = items.find(it => it.id === workId);
+      if (found) {
+        const netVol = Number(found.volumeM3) || 0;
+        const grossVol = Number((netVol * (1 + wastage / 100)).toFixed(2));
+        const cleanG = (found.mixGrade || 'M25').substring(0, 3).toUpperCase();
+
+        setMixGrade(cleanG);
+        setUnitRate(resolveGradeCatalogRate(cleanG));
+        setEstimatedQtyM3(grossVol);
+        setRemarks(`Structural Element: ${found.label} (${netVol.toFixed(2)} m³ net + ${wastage}% wastage).`);
+      }
+    }
+  };
 
   const loadSiteAndQuotes = () => {
     const siteKey = getActiveSiteKey();
@@ -133,6 +235,18 @@ export const QuotationRMC: React.FC = () => {
         });
       }
 
+      // Load Site Inventory Measurements for this site
+      const measurementsRaw = localStorage.getItem(`concrete360_advanced_measurements_${siteKey}`);
+      let parsedMeasurements: MeasurementSpecificationItem[] = [];
+      if (measurementsRaw) {
+        const arr = JSON.parse(measurementsRaw);
+        if (Array.isArray(arr)) parsedMeasurements = arr;
+      }
+      setMeasurementItems(parsedMeasurements);
+
+      const currentWastage = getPersistedWastage(siteKey);
+      setWastagePercent(currentWastage);
+
       const savedQuotes = localStorage.getItem(`concrete360_site_quotations_${siteKey}`);
       if (savedQuotes) {
         const parsed = JSON.parse(savedQuotes);
@@ -146,12 +260,42 @@ export const QuotationRMC: React.FC = () => {
   useEffect(() => {
     loadSiteAndQuotes();
     window.addEventListener('concrete360_site_switched', loadSiteAndQuotes);
-    return () => window.removeEventListener('concrete360_site_switched', loadSiteAndQuotes);
+    window.addEventListener('concrete360_measurement_updated', loadSiteAndQuotes);
+    window.addEventListener('storage', loadSiteAndQuotes);
+    return () => {
+      window.removeEventListener('concrete360_site_switched', loadSiteAndQuotes);
+      window.removeEventListener('concrete360_measurement_updated', loadSiteAndQuotes);
+      window.removeEventListener('storage', loadSiteAndQuotes);
+    };
   }, []);
+
+  const handleOpenCreateModal = () => {
+    loadSiteAndQuotes();
+    setSelectedWorkId('ALL');
+    const siteKey = getActiveSiteKey();
+    const rawM = localStorage.getItem(`concrete360_advanced_measurements_${siteKey}`);
+    const parsedM: MeasurementSpecificationItem[] = rawM ? JSON.parse(rawM) : [];
+    const currentWastage = getPersistedWastage(siteKey);
+
+    if (parsedM.length > 0) {
+      applyMeasurementToForm(parsedM, 'ALL', currentWastage, siteKey);
+    } else {
+      setMixGrade('M25');
+      setUnitRate(resolveGradeCatalogRate('M25'));
+      setEstimatedQtyM3(10);
+      setRemarks('Rates valid for 15 days. Concrete supplied as per IS 456 / IS 4926 standards.');
+    }
+    setIsModalOpen(true);
+  };
+
+  const handleWorkSelectionChange = (wId: string) => {
+    setSelectedWorkId(wId);
+    applyMeasurementToForm(measurementItems, wId, wastagePercent, currentSiteKey);
+  };
 
   const handleGradeChange = (g: string) => {
     setMixGrade(g);
-    setUnitRate(STANDARD_RMC_RATES[g] || 4500);
+    setUnitRate(resolveGradeCatalogRate(g));
   };
 
   const qtyNum = Number(estimatedQtyM3) || 0;
@@ -161,8 +305,20 @@ export const QuotationRMC: React.FC = () => {
   const gstAmount = applyGst ? subtotal * 0.18 : 0;
   const grandTotal = Math.round(subtotal + gstAmount);
 
+  const activeSpecsForSelection: MeasurementSpecificationItem[] =
+    selectedWorkId === 'ALL'
+      ? measurementItems
+      : measurementItems.filter(it => it.id === selectedWorkId);
+
+  const selectedNetTotal = activeSpecsForSelection.reduce((sum, it) => sum + (Number(it.volumeM3) || 0), 0);
+
   const handleCreateQuotation = (e: React.FormEvent) => {
     e.preventDefault();
+
+    const selectedItemObj = selectedWorkId !== 'ALL'
+      ? measurementItems.find(it => it.id === selectedWorkId)
+      : null;
+
     const newQuote: RMCQuotation = {
       id: `QT-${Date.now()}`,
       quoteNo: `QT-2026-${Math.floor(100 + Math.random() * 900)}`,
@@ -173,7 +329,11 @@ export const QuotationRMC: React.FC = () => {
       clientGstin: siteDetails.clientGstin,
       clientPhone: siteDetails.clientPhone,
       projectSite: siteDetails.projectSite || currentSiteKey,
+      workElementId: selectedWorkId,
+      workElementLabel: selectedItemObj ? `${selectedItemObj.id}: ${selectedItemObj.label}` : 'All Site Structural Works',
       mixGrade,
+      netVolumeM3: Number(selectedNetTotal.toFixed(2)),
+      wastagePercent,
       estimatedQtyM3: qtyNum,
       unitRate: rateNum,
       includePump,
@@ -182,14 +342,15 @@ export const QuotationRMC: React.FC = () => {
       applyGst,
       grandTotal,
       status: 'SENT',
-      remarks
+      remarks,
+      specifications: activeSpecsForSelection
     };
 
     const updated = [newQuote, ...quotations];
     setQuotations(updated);
     localStorage.setItem(`concrete360_site_quotations_${currentSiteKey}`, JSON.stringify(updated));
     setIsModalOpen(false);
-    setToastMsg(`Quotation ${newQuote.quoteNo} created for ${newQuote.clientName}`);
+    setToastMsg(`Quotation ${newQuote.quoteNo} created with Site Measurement specs!`);
     setTimeout(() => setToastMsg(null), 3500);
   };
 
@@ -216,7 +377,7 @@ export const QuotationRMC: React.FC = () => {
       applyGst: q.applyGst,
       grandTotal: q.grandTotal,
       date: new Date().toISOString().split('T')[0],
-      workElementId: 'ALL'
+      workElementId: q.workElementId || 'ALL'
     };
 
     const updatedInvoices = [newInvoice, ...existingInvoices];
@@ -266,23 +427,40 @@ export const QuotationRMC: React.FC = () => {
     const sub = concreteSub + pumpSub;
     const gst = q.applyGst ? sub * 0.18 : 0;
 
+    const specs = q.specifications && q.specifications.length > 0 ? q.specifications : [];
+    const specRowsHtml = specs.map((sp, i) => {
+      const dims = sp.length && sp.width && sp.depth
+        ? `${sp.length}m × ${sp.width}m × ${sp.depth}m ${sp.nos && sp.nos > 1 ? `(${sp.nos} Nos)` : ''}`
+        : (sp.elementType || 'Structural Element');
+      return `
+        <tr>
+          <td>${i + 1}</td>
+          <td><strong>${sp.label}</strong></td>
+          <td>${dims}</td>
+          <td>${sp.mixGrade || q.mixGrade}</td>
+          <td class="right">${Number(sp.volumeM3 || 0).toFixed(2)} m³</td>
+        </tr>
+      `;
+    }).join('');
+
     win.document.write(`
       <html>
         <head>
           <title>RMC Commercial Quotation - ${q.quoteNo}</title>
           <style>
-            @page { size: A4; margin: 16mm; }
-            body { font-family: Helvetica, Arial, sans-serif; color: #0f172a; font-size: 11px; line-height: 1.45; }
-            .header { display: flex; justify-content: space-between; border-bottom: 2px solid #2563eb; padding-bottom: 10px; margin-bottom: 14px; }
+            @page { size: A4; margin: 15mm; }
+            body { font-family: Helvetica, Arial, sans-serif; color: #0f172a; font-size: 11px; line-height: 1.4; }
+            .header { display: flex; justify-content: space-between; border-bottom: 2px solid #2563eb; padding-bottom: 10px; margin-bottom: 12px; }
             .header h1 { margin: 0; font-size: 20px; font-weight: 900; }
             .badge { display: inline-block; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; padding: 3px 8px; font-weight: bold; font-size: 10px; border-radius: 4px; }
-            .grid { display: flex; justify-content: space-between; border: 1px solid #cbd5e1; background: #f8fafc; padding: 10px; margin-bottom: 14px; }
-            table { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
-            th { background: #0f172a; color: #fff; padding: 7px 8px; text-align: left; font-size: 10px; text-transform: uppercase; }
-            td { border: 1px solid #cbd5e1; padding: 7px 8px; font-size: 10px; }
+            .grid { display: flex; justify-content: space-between; border: 1px solid #cbd5e1; background: #f8fafc; padding: 10px; margin-bottom: 12px; }
+            .sec-title { font-size: 10px; font-weight: bold; text-transform: uppercase; color: #0f172a; margin: 10px 0 5px 0; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+            th { background: #0f172a; color: #fff; padding: 6px 8px; text-align: left; font-size: 9px; text-transform: uppercase; }
+            td { border: 1px solid #cbd5e1; padding: 6px 8px; font-size: 10px; }
             .right { text-align: right; }
-            .totals { width: 42%; margin-left: auto; border: 1px solid #cbd5e1; }
-            .totals div { display: flex; justify-content: space-between; padding: 6px 8px; border-bottom: 1px solid #cbd5e1; }
+            .totals { width: 45%; margin-left: auto; border: 1px solid #cbd5e1; }
+            .totals div { display: flex; justify-content: space-between; padding: 5px 8px; border-bottom: 1px solid #cbd5e1; }
             .totals div:last-child { border-bottom: none; background: #f1f5f9; font-weight: bold; font-size: 12px; }
           </style>
         </head>
@@ -310,19 +488,43 @@ export const QuotationRMC: React.FC = () => {
               ${q.clientPhone ? `Phone: <strong>${q.clientPhone}</strong>` : ''}
             </div>
             <div>
-              <strong>SITE / PROJECT DETAILS:</strong><br/>
+              <strong>SITE / STRUCTURAL SCOPE:</strong><br/>
               Project: <strong>${q.projectSite}</strong><br/>
+              Scope: <strong>${q.workElementLabel || 'All Site Works'}</strong><br/>
               Delivery Location: ${q.clientAddress}<br/>
               HSN Code: 38245010
             </div>
           </div>
 
+          ${specs.length > 0 ? `
+            <div class="sec-title">1. Site Inventory Measurement & Structural Specifications</div>
+            <table>
+              <thead>
+                <tr>
+                  <th style="width:5%;">#</th>
+                  <th style="width:30%;">Structural Element</th>
+                  <th style="width:35%;">Dimensions / Specification</th>
+                  <th style="width:15%;">Concrete Grade</th>
+                  <th style="width:15%;" class="right">Net Volume</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${specRowsHtml}
+                <tr style="background:#f8fafc;font-weight:bold;">
+                  <td colspan="4" class="right">Net Measured Volume (+ ${q.wastagePercent ?? 5}% Wastage Allowance = ${q.estimatedQtyM3.toFixed(2)} m³ Gross):</td>
+                  <td class="right">${Number(q.netVolumeM3 || 0).toFixed(2)} m³</td>
+                </tr>
+              </tbody>
+            </table>
+          ` : ''}
+
+          <div class="sec-title">${specs.length > 0 ? '2. Commercial Rate & Cost Estimate' : 'Commercial Rate & Cost Estimate'}</div>
           <table>
             <thead>
               <tr>
                 <th>#</th>
                 <th>Item Description</th>
-                <th>Est. Qty</th>
+                <th>Gross Est. Qty</th>
                 <th>Unit Rate</th>
                 <th class="right">Amount (₹)</th>
               </tr>
@@ -330,7 +532,7 @@ export const QuotationRMC: React.FC = () => {
             <tbody>
               <tr>
                 <td>1</td>
-                <td><strong>Ready-Mix Concrete (${q.mixGrade} Grade)</strong><br/><span style="color:#64748b;font-size:9px;">Supply & Transit Mixer Delivery as per IS 4926</span></td>
+                <td><strong>Ready-Mix Concrete (${q.mixGrade} Grade)</strong><br/><span style="color:#64748b;font-size:9px;">Supply & Transit Mixer Delivery as per IS 456 / IS 4926</span></td>
                 <td>${q.estimatedQtyM3.toFixed(2)} m³</td>
                 <td>₹${q.unitRate.toLocaleString('en-IN')} / m³</td>
                 <td class="right">₹${Math.round(concreteSub).toLocaleString('en-IN')}</td>
@@ -352,8 +554,8 @@ export const QuotationRMC: React.FC = () => {
             <div><span>ESTIMATED GRAND TOTAL:</span><span>₹${q.grandTotal.toLocaleString('en-IN')}</span></div>
           </div>
 
-          <p style="margin-top:16px;font-size:10px;"><strong>Terms & Remarks:</strong> ${q.remarks}</p>
-          <div style="margin-top:45px;display:flex;justify-content:space-between;font-size:10px;">
+          <p style="margin-top:14px;font-size:10px;"><strong>Terms & Remarks:</strong> ${q.remarks}</p>
+          <div style="margin-top:40px;display:flex;justify-content:space-between;font-size:10px;">
             <div style="border-top:1px dashed #64748b;width:180px;text-align:center;padding-top:4px;">Client Acceptance Sign & Stamp</div>
             <div style="border-top:1px dashed #64748b;width:180px;text-align:center;padding-top:4px;">For BILGI BUILDCON RMC</div>
           </div>
@@ -382,12 +584,41 @@ export const QuotationRMC: React.FC = () => {
         </div>
 
         <button
-          onClick={() => setIsModalOpen(true)}
+          onClick={handleOpenCreateModal}
           className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-blue-600/30 flex items-center gap-2 cursor-pointer transition active:scale-95 shrink-0"
         >
           <Plus className="w-4 h-4 stroke-[3]" />
           <span>+ Create Estimate / Quotation</span>
         </button>
+      </div>
+
+      {/* Linked Site Inventory Measurement Summary Bar */}
+      <div className="bg-[#0b1322] border border-[#1b273d] p-4 rounded-2xl flex flex-wrap items-center justify-between gap-4 font-mono text-xs shadow-xl">
+        <div className="flex items-center gap-2.5">
+          <Layers className="w-4 h-4 text-cyan-400" />
+          <div>
+            <span className="text-slate-400 uppercase text-[10px] font-bold block">Linked Site Inventory Measurements</span>
+            <strong className="text-white text-sm">
+              {measurementItems.length} Structural Element(s) Recorded
+            </strong>
+          </div>
+        </div>
+        <div className="flex items-center gap-6">
+          <div>
+            <span className="text-slate-400 uppercase text-[10px] font-bold block">Net Measured Vol</span>
+            <strong className="text-cyan-300 text-sm">
+              {measurementItems.reduce((s, it) => s + (Number(it.volumeM3) || 0), 0).toFixed(2)} m³
+            </strong>
+          </div>
+          <div className="border-l border-[#1b273d] pl-4">
+            <span className="text-emerald-400 uppercase text-[10px] font-bold block">
+              Gross Est. Vol (+{wastagePercent}% Wastage)
+            </span>
+            <strong className="text-emerald-300 text-sm">
+              {(measurementItems.reduce((s, it) => s + (Number(it.volumeM3) || 0), 0) * (1 + wastagePercent / 100)).toFixed(2)} m³
+            </strong>
+          </div>
+        </div>
       </div>
 
       {toastMsg && (
@@ -404,7 +635,7 @@ export const QuotationRMC: React.FC = () => {
             <thead>
               <tr className="border-b border-[#1b273d] text-[10px] font-bold uppercase tracking-wider text-slate-400 bg-[#070d1a]">
                 <th className="py-4 px-5">Quote No / Date</th>
-                <th className="py-4 px-5">Client</th>
+                <th className="py-4 px-5">Client & Scope</th>
                 <th className="py-4 px-5">Mix Grade</th>
                 <th className="py-4 px-5">Est. Volume</th>
                 <th className="py-4 px-5">Rate / m³</th>
@@ -427,7 +658,12 @@ export const QuotationRMC: React.FC = () => {
                       <div className="text-amber-400 font-bold">{q.quoteNo}</div>
                       <div className="text-[10px] text-slate-400">{formatDateDDMMYYYY(q.date)}</div>
                     </td>
-                    <td className="py-4 px-5 font-sans font-bold text-cyan-300">{q.clientName}</td>
+                    <td className="py-4 px-5">
+                      <div className="font-sans font-bold text-cyan-300">{q.clientName}</div>
+                      {q.workElementLabel && (
+                        <div className="text-[10px] text-slate-400 truncate max-w-[200px]">{q.workElementLabel}</div>
+                      )}
+                    </td>
                     <td className="py-4 px-5 text-cyan-400 font-bold">{q.mixGrade}</td>
                     <td className="py-4 px-5 font-bold">{q.estimatedQtyM3} m³</td>
                     <td className="py-4 px-5">₹{q.unitRate.toLocaleString('en-IN')}</td>
@@ -456,7 +692,7 @@ export const QuotationRMC: React.FC = () => {
                         <button
                           onClick={() => handlePrintQuotation(q)}
                           className="text-slate-400 hover:text-cyan-400 p-1 transition cursor-pointer"
-                          title="Print Commercial Quotation"
+                          title="Print Commercial Quotation with Specifications"
                         >
                           <Printer className="w-4 h-4" />
                         </button>
@@ -505,6 +741,48 @@ export const QuotationRMC: React.FC = () => {
             </div>
 
             <form onSubmit={handleCreateQuotation} className="space-y-4 text-xs">
+              {/* Linked Site Measurement Selector */}
+              <div className="bg-[#070d1a] border border-[#1b273d] p-3 rounded-2xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-slate-300 font-bold uppercase tracking-wider flex items-center gap-1.5 text-[10px]">
+                    <Filter className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Import from Site Inventory Measurements:</span>
+                  </label>
+                  <span className="text-[10px] text-emerald-400 font-bold">+{wastagePercent}% Wastage</span>
+                </div>
+                <select
+                  value={selectedWorkId}
+                  onChange={(e) => handleWorkSelectionChange(e.target.value)}
+                  className="w-full px-3 py-2.5 bg-[#0b1322] border border-[#1b273d] rounded-xl text-white font-bold outline-none cursor-pointer text-xs"
+                >
+                  <option value="ALL">
+                    All Site Structural Works ({measurementItems.length} items • {measurementItems.reduce((s, it) => s + (Number(it.volumeM3) || 0), 0).toFixed(2)} m³ net)
+                  </option>
+                  {measurementItems.map(it => (
+                    <option key={it.id} value={it.id}>
+                      {it.id}: {it.label} ({Number(it.volumeM3 || 0).toFixed(2)} m³) {it.mixGrade ? `[${it.mixGrade}]` : ''}
+                    </option>
+                  ))}
+                </select>
+
+                {/* Preview of included specifications */}
+                {activeSpecsForSelection.length > 0 && (
+                  <div className="bg-[#0b1322] border border-[#17253e] rounded-xl p-2.5 space-y-1 max-h-28 overflow-y-auto text-[10px]">
+                    <div className="text-slate-400 font-bold uppercase mb-1">Included Structural Specifications:</div>
+                    {activeSpecsForSelection.map((sp) => (
+                      <div key={sp.id} className="flex justify-between items-center text-slate-300">
+                        <span className="truncate max-w-[230px]">
+                          • <strong>{sp.label}</strong> {sp.length && sp.width && sp.depth ? `(${sp.length}×${sp.width}×${sp.depth}m)` : ''}
+                        </span>
+                        <span className="text-cyan-300 font-bold shrink-0">
+                          {Number(sp.volumeM3 || 0).toFixed(2)} m³ [{sp.mixGrade || mixGrade}]
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-slate-300 font-bold uppercase text-[10px] block mb-1">Estimate Date</label>
@@ -540,7 +818,7 @@ export const QuotationRMC: React.FC = () => {
                   </select>
                 </div>
                 <div>
-                  <label className="text-slate-300 font-bold uppercase text-[10px] block mb-1">Est. Qty (m³)</label>
+                  <label className="text-slate-300 font-bold uppercase text-[10px] block mb-1">Gross Qty (m³)</label>
                   <input
                     type="number"
                     step="any"
