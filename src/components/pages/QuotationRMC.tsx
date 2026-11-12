@@ -14,24 +14,33 @@ import {
 import { supabase } from '../../lib/supabase';
 import { cloudStorage } from '../../services/cloudStorage';
 
-interface MeasurementSpecificationItem {
+export interface StudioCategoryBreakdown {
+  categoryKey: string;
+  categoryTitle: string;
+  volumeM3: number;
+  rows: {
+    label: string;
+    volumeM3?: number;
+  }[];
+}
+
+export interface StudioWorkEntry {
   id: string;
   label?: string;
   workLabel?: string;
-  reference?: string;
-  title?: string;
-  name?: string;
-  category?: string;
-  categoryLabel?: string;
-  categories?: string[];
-  elementType?: string;
-  unitSystem?: string;
-  unit?: string;
-  volumeM3: number;
   mixGrade?: string;
   date?: string;
-  remarks?: string;
-  description?: string;
+  unitSystem?: 'METRIC' | 'IMPERIAL';
+  selectedCategories?: string[];
+  slabRows?: any[];
+  columnRows?: any[];
+  beamRows?: any[];
+  wallRows?: any[];
+  stairsRows?: any[];
+  footingRows?: any[];
+  roadRows?: any[];
+  categoryRows?: Record<string, any[]>;
+  volumeM3: number;
 }
 
 interface RMCQuotation {
@@ -58,6 +67,7 @@ interface RMCQuotation {
   grandTotal: number;
   status: 'DRAFT' | 'SENT' | 'ACCEPTED' | 'CONVERTED';
   remarks: string;
+  categoryBreakdowns?: StudioCategoryBreakdown[];
 }
 
 const STANDARD_RMC_RATES: Record<string, number> = {
@@ -85,63 +95,139 @@ const formatDateDDMMYYYY = (dateStr: string) => {
   return parts.length === 3 ? `${parts[2]}-${parts[1]}-${parts[0]}` : dateStr;
 };
 
-const loadAllSiteMeasurements = (siteKey: string): MeasurementSpecificationItem[] => {
-  const results: MeasurementSpecificationItem[] = [];
-  const seenIds = new Set<string>();
+// Exact volume & dimension formatter matching SiteMeasurementStudio.tsx
+const parseStudioCategories = (entry: StudioWorkEntry): StudioCategoryBreakdown[] => {
+  const isImp = String(entry.unitSystem || '').toUpperCase() === 'IMPERIAL';
+  const breakdowns: StudioCategoryBreakdown[] = [];
 
-  try {
-    const advRaw = localStorage.getItem(`concrete360_advanced_measurements_${siteKey}`);
-    if (advRaw) {
-      const parsed = JSON.parse(advRaw);
-      if (Array.isArray(parsed)) {
-        parsed.forEach((item: any, idx: number) => {
-          const id = String(item.id || `ADV-${idx + 1}`);
-          seenIds.add(id);
-          results.push({ ...item, id });
+  const calcRowVolM3 = (cat: string, r: any): number => {
+    if (typeof r.volumeM3 === 'number' && r.volumeM3 > 0) return r.volumeM3;
+    const count = Number(r.count ?? r.nos ?? 1) || 1;
+    const l = Number(r.length) || 0;
+    const w = Number(r.width) || 0;
+    const t = Number(r.thickness ?? r.depth ?? r.height) || 0;
+
+    if (cat === 'SLAB') {
+      return isImp ? (l * w * (t / 12)) * 0.0283168 : l * w * (t / 1000);
+    }
+    if (cat === 'COLUMN' || cat === 'BEAM' || cat === 'FOOTING') {
+      return isImp ? count * l * (w / 12) * (t / 12) * 0.0283168 : count * l * (w / 1000) * (t / 1000);
+    }
+    if (cat === 'WALL') {
+      return isImp ? count * l * w * (t / 12) * 0.0283168 : count * l * w * (t / 1000);
+    }
+    if (cat === 'STAIRS') {
+      const steps = Number(r.steps ?? r.count ?? 1) || 1;
+      const riser = Number(r.riser ?? t) || 0;
+      const tread = Number(r.tread ?? w) || 0;
+      const waist = Number(r.waist ?? r.thickness) || 0;
+      if (isImp) {
+        const stepVol = steps * 0.5 * (riser / 12) * (tread / 12) * l;
+        const waistLen = steps * Math.sqrt(Math.pow(riser / 12, 2) + Math.pow(tread / 12, 2));
+        const waistVol = waistLen * l * (waist / 12);
+        return (stepVol + waistVol) * 0.0283168;
+      }
+      const stepVol = steps * 0.5 * (riser / 1000) * (tread / 1000) * l;
+      const waistLen = steps * Math.sqrt(Math.pow(riser / 1000, 2) + Math.pow(tread / 1000, 2));
+      const waistVol = waistLen * l * (waist / 1000);
+      return stepVol + waistVol;
+    }
+    if (cat === 'ROAD') {
+      const kmLen = isImp ? l : l * 1000;
+      return isImp ? kmLen * w * (t / 12) * 0.0283168 : kmLen * w * (t / 1000);
+    }
+    return 0;
+  };
+
+  const formatRowText = (cat: string, r: any): string => {
+    const count = Number(r.count ?? r.nos ?? 1) || 1;
+    const l = Number(r.length) || 0;
+    const w = Number(r.width) || 0;
+    const t = Number(r.thickness ?? r.depth ?? r.height) || 0;
+
+    if (cat === 'SLAB') {
+      return isImp
+        ? `Length: ${l} ft × Width: ${w} ft × Thickness: ${t} in`
+        : `Length: ${l} m × Width: ${w} m × Thickness: ${t} mm`;
+    }
+    if (cat === 'COLUMN' || cat === 'BEAM' || cat === 'FOOTING') {
+      return isImp
+        ? `Count: ${count} Nos × Length: ${l} ft × Width: ${w} in × Depth: ${t} in`
+        : `Count: ${count} Nos × Length: ${l} m × Width: ${w} mm × Depth: ${t} mm`;
+    }
+    if (cat === 'WALL') {
+      return isImp
+        ? `Count: ${count} Nos × Length: ${l} ft × Height: ${w} ft × Thickness: ${t} in`
+        : `Count: ${count} Nos × Length: ${l} m × Height: ${w} m × Thickness: ${t} mm`;
+    }
+    if (cat === 'STAIRS') {
+      const steps = Number(r.steps ?? count) || 1;
+      return isImp
+        ? `Steps: ${steps} × Width: ${l} ft × Riser: ${r.riser ?? t} in × Tread: ${r.tread ?? w} in`
+        : `Steps: ${steps} × Width: ${l} m × Riser: ${r.riser ?? t} mm × Tread: ${r.tread ?? w} mm`;
+    }
+    if (cat === 'ROAD') {
+      return isImp
+        ? `Length: ${l} ft × Width: ${w} ft × Thickness: ${t} in`
+        : `Length: ${l} km × Width: ${w} m × Thickness: ${t} mm`;
+    }
+    return `${l} × ${w} × ${t}`;
+  };
+
+  const categoryDefs: { key: string; title: string; rows?: any[] }[] = [
+    { key: 'SLAB', title: 'Slab / Deck Dimensions', rows: entry.slabRows || entry.categoryRows?.SLAB || entry.categoryRows?.['Slab / Deck'] },
+    { key: 'COLUMN', title: 'Column Dimensions', rows: entry.columnRows || entry.categoryRows?.COLUMN || entry.categoryRows?.['Column'] },
+    { key: 'BEAM', title: 'Beam Dimensions', rows: entry.beamRows || entry.categoryRows?.BEAM || entry.categoryRows?.['Beam'] },
+    { key: 'WALL', title: 'RCC Wall Dimensions', rows: entry.wallRows || entry.categoryRows?.WALL || entry.categoryRows?.['RCC Wall'] },
+    { key: 'STAIRS', title: 'Stairs Dimensions', rows: entry.stairsRows || entry.categoryRows?.STAIRS || entry.categoryRows?.['Stairs'] },
+    { key: 'FOOTING', title: 'Footing Dimensions', rows: entry.footingRows || entry.categoryRows?.FOOTING || entry.categoryRows?.['Footing'] },
+    { key: 'ROAD', title: 'Road Work (km) Dimensions', rows: entry.roadRows || entry.categoryRows?.ROAD || entry.categoryRows?.['Road Work (km)'] }
+  ];
+
+  categoryDefs.forEach(def => {
+    if (Array.isArray(def.rows) && def.rows.length > 0) {
+      const validRows = def.rows.filter(r => (Number(r.length) || 0) > 0 || (Number(r.width) || 0) > 0);
+      if (validRows.length > 0) {
+        let catVol = 0;
+        const formattedRows = validRows.map(r => {
+          const v = calcRowVolM3(def.key, r);
+          catVol += v;
+          return {
+            label: formatRowText(def.key, r),
+            volumeM3: Number(v.toFixed(2))
+          };
+        });
+        breakdowns.push({
+          categoryKey: def.key,
+          categoryTitle: def.title,
+          volumeM3: Number(catVol.toFixed(2)),
+          rows: formattedRows
         });
       }
     }
-  } catch {}
+  });
 
-  try {
-    const sessRaw = localStorage.getItem('concrete360_measurement');
-    if (sessRaw) {
-      const sess = JSON.parse(sessRaw);
-      const sessSite = extractCleanSiteName(sess.siteName || sess.projectName || sess.site || siteKey);
-      const candidates = sess.elements || sess.items || sess.works || sess.entries || sess.measurements || [];
-      if (Array.isArray(candidates) && (sessSite === siteKey || results.length === 0)) {
-        candidates.forEach((item: any, idx: number) => {
-          const id = String(item.id || `SESS-${idx + 1}`);
-          if (!seenIds.has(id)) {
-            seenIds.add(id);
-            results.push({ ...item, id });
-          }
-        });
-      }
-    }
-  } catch {}
-
-  return results;
+  return breakdowns;
 };
 
-const resolveWorkLabel = (it: MeasurementSpecificationItem, idx = 0): string => {
-  const candidates = [
-    it.workLabel,
-    it.label,
-    it.reference,
-    it.title,
-    it.name,
-    it.categoryLabel,
-    it.category,
-    it.elementType,
-    Array.isArray(it.categories) && it.categories.length > 0 ? it.categories.join(' + ') : ''
-  ];
-  for (const c of candidates) {
-    if (c && String(c).trim() && String(c).trim().toLowerCase() !== 'undefined') {
-      return String(c).trim();
+const loadStudioWorksForSite = (siteKey: string): StudioWorkEntry[] => {
+  try {
+    const raw = localStorage.getItem(`concrete360_advanced_measurements_${siteKey}`);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
     }
+  } catch {}
+  return [];
+};
+
+const resolveWorkLabel = (it: StudioWorkEntry, idx = 0): string => {
+  const raw = it.label || it.workLabel;
+  if (raw && String(raw).trim() && String(raw).trim().toLowerCase() !== 'undefined') {
+    return String(raw).trim();
   }
-  return `Structural Section #${idx + 1}`;
+  const cats = parseStudioCategories(it).map(c => c.categoryTitle.replace(' Dimensions', ''));
+  return cats.length > 0 ? cats.join(' + ') : `Work Entry #${idx + 1}`;
 };
 
 export const QuotationRMC: React.FC = () => {
@@ -179,7 +265,7 @@ export const QuotationRMC: React.FC = () => {
 
   const [currentSiteKey, setCurrentSiteKey] = useState<string>(getActiveSiteKey());
   const [quotations, setQuotations] = useState<RMCQuotation[]>([]);
-  const [measurementItems, setMeasurementItems] = useState<MeasurementSpecificationItem[]>([]);
+  const [measurementItems, setMeasurementItems] = useState<StudioWorkEntry[]>([]);
   const [wastagePercent, setWastagePercent] = useState<number>(5);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
@@ -230,7 +316,7 @@ export const QuotationRMC: React.FC = () => {
   };
 
   const applyMeasurementToForm = (
-    items: MeasurementSpecificationItem[],
+    items: StudioWorkEntry[],
     workId: string,
     wastage: number,
     siteKey: string
@@ -302,7 +388,7 @@ export const QuotationRMC: React.FC = () => {
         });
       }
 
-      const loadedMeasurements = loadAllSiteMeasurements(siteKey);
+      const loadedMeasurements = loadStudioWorksForSite(siteKey);
       setMeasurementItems(loadedMeasurements);
 
       const currentWastage = getPersistedWastage(siteKey);
@@ -334,7 +420,7 @@ export const QuotationRMC: React.FC = () => {
     loadSiteAndQuotes();
     setSelectedWorkId('ALL');
     const siteKey = getActiveSiteKey();
-    const parsedM = loadAllSiteMeasurements(siteKey);
+    const parsedM = loadStudioWorksForSite(siteKey);
     const currentWastage = getPersistedWastage(siteKey);
 
     if (parsedM.length > 0) {
@@ -365,10 +451,14 @@ export const QuotationRMC: React.FC = () => {
   const gstAmount = applyGst ? subtotal * 0.18 : 0;
   const grandTotal = Math.round(subtotal + gstAmount);
 
-  const activeSpecsForSelection: MeasurementSpecificationItem[] =
+  const activeSpecsForSelection: StudioWorkEntry[] =
     selectedWorkId === 'ALL'
       ? measurementItems
       : measurementItems.filter(it => it.id === selectedWorkId);
+
+  const collectedCategoryBreakdowns: StudioCategoryBreakdown[] = activeSpecsForSelection.flatMap(
+    entry => parseStudioCategories(entry)
+  );
 
   const selectedNetTotal = activeSpecsForSelection.reduce((sum, it) => sum + (Number(it.volumeM3) || 0), 0);
 
@@ -401,7 +491,8 @@ export const QuotationRMC: React.FC = () => {
       applyGst,
       grandTotal,
       status: 'SENT',
-      remarks
+      remarks,
+      categoryBreakdowns: collectedCategoryBreakdowns
     };
 
     const updated = [newQuote, ...quotations];
@@ -485,18 +576,44 @@ export const QuotationRMC: React.FC = () => {
     const sub = concreteSub + pumpSub;
     const gst = q.applyGst ? sub * 0.18 : 0;
 
+    // Resolve live category breakdowns from SiteMeasurementStudio if not already on quote
+    let breakdowns: StudioCategoryBreakdown[] =
+      q.categoryBreakdowns && q.categoryBreakdowns.length > 0 ? q.categoryBreakdowns : [];
+
+    if (breakdowns.length === 0) {
+      const liveWorks = loadStudioWorksForSite(currentSiteKey);
+      const targetWorks = q.workElementId && q.workElementId !== 'ALL'
+        ? liveWorks.filter(w => w.id === q.workElementId)
+        : liveWorks;
+      breakdowns = targetWorks.flatMap(w => parseStudioCategories(w));
+    }
+
+    const categoryCardsHtml = breakdowns.map(cat => `
+      <div style="border:1px solid #cbd5e1; border-radius:6px; padding:8px 10px; margin-bottom:8px; background:#f8fafc;">
+        <div style="display:flex; justify-content:space-between; font-weight:bold; color:#0f172a; border-bottom:1px solid #e2e8f0; padding-bottom:4px; margin-bottom:5px; font-size:10px;">
+          <span>${cat.categoryTitle}</span>
+          <span style="color:#0369a1;">${cat.volumeM3.toFixed(2)} m³</span>
+        </div>
+        ${cat.rows.map((r, idx) => `
+          <div style="display:flex; justify-content:space-between; font-size:9.5px; color:#334155; padding:2px 0;">
+            <span>${idx + 1}. ${r.label}</span>
+            ${r.volumeM3 !== undefined ? `<span style="font-weight:bold;">${r.volumeM3.toFixed(2)} m³</span>` : ''}
+          </div>
+        `).join('')}
+      </div>
+    `).join('');
+
     win.document.write(`
       <html>
         <head>
           <title>RMC Commercial Quotation - ${q.quoteNo}</title>
           <style>
-            @page { size: A4; margin: 15mm; }
+            @page { size: A4; margin: 14mm; }
             body { font-family: Helvetica, Arial, sans-serif; color: #0f172a; font-size: 11px; line-height: 1.4; }
             .header { display: flex; justify-content: space-between; border-bottom: 2px solid #2563eb; padding-bottom: 10px; margin-bottom: 12px; }
             .header h1 { margin: 0; font-size: 20px; font-weight: 900; }
             .badge { display: inline-block; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; padding: 3px 8px; font-weight: bold; font-size: 10px; border-radius: 4px; }
-            .grid { display: flex; justify-content: space-between; border: 1px solid #cbd5e1; background: #f8fafc; padding: 10px; margin-bottom: 14px; }
-            .sec-title { font-size: 10px; font-weight: bold; text-transform: uppercase; color: #0f172a; margin: 12px 0 5px 0; }
+            .grid { display: flex; justify-content: space-between; border: 1px solid #cbd5e1; background: #f8fafc; padding: 10px; margin-bottom: 12px; }
             table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
             th { background: #0f172a; color: #fff; padding: 6px 8px; text-align: left; font-size: 9px; text-transform: uppercase; }
             td { border: 1px solid #cbd5e1; padding: 6px 8px; font-size: 10px; vertical-align: top; }
@@ -526,7 +643,8 @@ export const QuotationRMC: React.FC = () => {
               <strong>TO (CLIENT / BUYER):</strong><br/>
               <strong>${q.clientName}</strong><br/>
               ${q.clientAddress}<br/>
-              ${q.clientGstin ? `GSTIN: ${q.clientGstin}<br/>` : ''} ${q.clientPhone ? `Phone: <strong>${q.clientPhone}</strong>` : ''}
+              ${q.clientGstin ? `GSTIN: ${q.clientGstin}<br/>` : ''}
+              ${q.clientPhone ? `Phone: <strong>${q.clientPhone}</strong>` : ''}
             </div>
             <div>
               <strong>SITE / STRUCTURAL SCOPE:</strong><br/>
@@ -537,7 +655,8 @@ export const QuotationRMC: React.FC = () => {
             </div>
           </div>
 
-          <div class="sec-title">Commercial Rate & Cost Estimate</div>
+          ${categoryCardsHtml}
+
           <table>
             <thead>
               <tr>
@@ -574,7 +693,7 @@ export const QuotationRMC: React.FC = () => {
           </div>
 
           <p style="margin-top:14px;font-size:10px;"><strong>Terms & Remarks:</strong> ${q.remarks}</p>
-          <div style="margin-top:40px;display:flex;justify-content:space-between;font-size:10px;">
+          <div style="margin-top:36px;display:flex;justify-content:space-between;font-size:10px;">
             <div style="border-top:1px dashed #64748b;width:180px;text-align:center;padding-top:4px;">Client Acceptance Sign & Stamp</div>
             <div style="border-top:1px dashed #64748b;width:180px;text-align:center;padding-top:4px;">For BILGI BUILDCON RMC</div>
           </div>
@@ -618,7 +737,7 @@ export const QuotationRMC: React.FC = () => {
           <div>
             <span className="text-slate-400 uppercase text-[10px] font-bold block">Linked Site Inventory Measurements</span>
             <strong className="text-white text-sm">
-              {measurementItems.length} Structural Element(s) Recorded
+              {measurementItems.length} Work Section(s) • {measurementItems.flatMap(parseStudioCategories).length} Categories
             </strong>
           </div>
         </div>
@@ -711,7 +830,7 @@ export const QuotationRMC: React.FC = () => {
                         <button
                           onClick={() => handlePrintQuotation(q)}
                           className="text-slate-400 hover:text-cyan-400 p-1 transition cursor-pointer"
-                          title="Print Commercial Quotation"
+                          title="Print Commercial Quotation with Category Dimensions"
                         >
                           <Printer className="w-4 h-4" />
                         </button>
@@ -760,12 +879,12 @@ export const QuotationRMC: React.FC = () => {
             </div>
 
             <form onSubmit={handleCreateQuotation} className="space-y-4 text-xs">
-              {/* Linked Site Measurement Selector */}
-              <div className="bg-[#070d1a] border border-[#1b273d] p-3 rounded-2xl space-y-2">
+              {/* Linked Site Measurement Selector + Live Category Breakdown Preview */}
+              <div className="bg-[#070d1a] border border-[#1b273d] p-3 rounded-2xl space-y-2.5">
                 <div className="flex items-center justify-between">
                   <label className="text-slate-300 font-bold uppercase tracking-wider flex items-center gap-1.5 text-[10px]">
                     <Filter className="w-3.5 h-3.5 text-cyan-400" />
-                    <span>Import from Site Inventory Measurements:</span>
+                    <span>SiteMeasurementStudio Categories:</span>
                   </label>
                   <span className="text-[10px] text-emerald-400 font-bold">+{wastagePercent}% Wastage</span>
                 </div>
@@ -775,7 +894,7 @@ export const QuotationRMC: React.FC = () => {
                   className="w-full px-3 py-2.5 bg-[#0b1322] border border-[#1b273d] rounded-xl text-white font-bold outline-none cursor-pointer text-xs"
                 >
                   <option value="ALL">
-                    All Site Structural Works ({measurementItems.length} items • {measurementItems.reduce((s, it) => s + (Number(it.volumeM3) || 0), 0).toFixed(2)} m³ net)
+                    All Site Categories ({measurementItems.length} work entries • {measurementItems.reduce((s, it) => s + (Number(it.volumeM3) || 0), 0).toFixed(2)} m³ net)
                   </option>
                   {measurementItems.map((it, idx) => (
                     <option key={it.id} value={it.id}>
@@ -783,6 +902,28 @@ export const QuotationRMC: React.FC = () => {
                     </option>
                   ))}
                 </select>
+
+                {/* Category & Row Dimension Cards Preview (Slab, Beam, Column, etc.) */}
+                {collectedCategoryBreakdowns.length > 0 && (
+                  <div className="space-y-2 max-h-40 overflow-y-auto pt-1">
+                    {collectedCategoryBreakdowns.map((cat) => (
+                      <div key={cat.categoryKey} className="bg-[#0b1322] border border-[#17253e] rounded-xl p-2.5 space-y-1 text-[10px]">
+                        <div className="flex justify-between items-center text-cyan-300 font-bold border-b border-[#17253e] pb-1">
+                          <span>{cat.categoryTitle}</span>
+                          <span className="text-emerald-400">{cat.volumeM3.toFixed(2)} m³</span>
+                        </div>
+                        {cat.rows.map((r, idx) => (
+                          <div key={idx} className="flex justify-between text-slate-300">
+                            <span className="truncate max-w-[270px]">{idx + 1}. {r.label}</span>
+                            {r.volumeM3 !== undefined && (
+                              <span className="text-slate-400 font-bold shrink-0">{r.volumeM3.toFixed(2)} m³</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -812,4 +953,130 @@ export const QuotationRMC: React.FC = () => {
                   <select
                     value={mixGrade}
                     onChange={(e) => handleGradeChange(e.target.value)}
-                    className="w-full px-3 py-2.5 bg-[#070d1a] border border-[#1b273d
+                    className="w-full px-3 py-2.5 bg-[#070d1a] border border-[#1b273d] rounded-xl text-cyan-400 font-bold outline-none cursor-pointer"
+                  >
+                    {Object.keys(STANDARD_RMC_RATES).map(g => (
+                      <option key={g} value={g}>{g}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-slate-300 font-bold uppercase text-[10px] block mb-1">Gross Qty (m³)</label>
+                  <input
+                    type="number"
+                    step="any"
+                    required
+                    value={estimatedQtyM3}
+                    onChange={(e) => setEstimatedQtyM3(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="w-full px-3 py-2.5 bg-[#070d1a] border border-[#1b273d] rounded-xl text-cyan-300 font-bold outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-300 font-bold uppercase text-[10px] block mb-1">Rate (₹ / m³)</label>
+                  <input
+                    type="number"
+                    required
+                    value={unitRate}
+                    onChange={(e) => setUnitRate(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="w-full px-3 py-2.5 bg-[#070d1a] border border-[#1b273d] rounded-xl text-white font-bold outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Static Pump Rental Toggle */}
+              <div className="bg-[#070d1a] border border-[#1b273d] p-3 rounded-2xl space-y-2.5">
+                <label className="flex items-center gap-2 cursor-pointer text-slate-200 font-bold">
+                  <input
+                    type="checkbox"
+                    checked={includePump}
+                    onChange={(e) => setIncludePump(e.target.checked)}
+                    className="w-4 h-4 rounded text-blue-600"
+                  />
+                  <span>Include Static Concrete Pump Rental</span>
+                </label>
+
+                {includePump && (
+                  <div className="grid grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <label className="text-slate-400 text-[10px] block mb-1">Pump Rent / Shift (₹)</label>
+                      <input
+                        type="number"
+                        value={pumpRentPerShift}
+                        onChange={(e) => setPumpRentPerShift(e.target.value === '' ? '' : Number(e.target.value))}
+                        className="w-full px-3 py-2 bg-[#0b1322] border border-[#1b273d] rounded-xl text-white font-bold outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 text-[10px] block mb-1">No. of Shifts</label>
+                      <input
+                        type="number"
+                        value={pumpShifts}
+                        onChange={(e) => setPumpShifts(e.target.value === '' ? '' : Number(e.target.value))}
+                        className="w-full px-3 py-2 bg-[#0b1322] border border-[#1b273d] rounded-xl text-white font-bold outline-none"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <label className="flex items-center gap-2 cursor-pointer text-slate-300 font-bold">
+                <input
+                  type="checkbox"
+                  checked={applyGst}
+                  onChange={(e) => setApplyGst(e.target.checked)}
+                  className="w-4 h-4 rounded text-blue-600"
+                />
+                <span>Include GST (18%) in Estimate</span>
+              </label>
+
+              <div>
+                <label className="text-slate-300 font-bold uppercase text-[10px] block mb-1">Commercial Terms / Remarks</label>
+                <input
+                  type="text"
+                  value={remarks}
+                  onChange={(e) => setRemarks(e.target.value)}
+                  className="w-full px-3 py-2.5 bg-[#070d1a] border border-[#1b273d] rounded-xl text-slate-200 outline-none font-sans"
+                />
+              </div>
+
+              <div className="bg-[#070d1a] border border-[#1b273d] p-4 rounded-2xl space-y-1.5">
+                <div className="flex justify-between text-slate-400">
+                  <span>Estimated Subtotal:</span>
+                  <span>₹{Math.round(subtotal).toLocaleString('en-IN')}</span>
+                </div>
+                {applyGst && (
+                  <div className="flex justify-between text-slate-400">
+                    <span>GST (18%):</span>
+                    <span>₹{Math.round(gstAmount).toLocaleString('en-IN')}</span>
+                  </div>
+                )}
+                <div className="flex justify-between items-center pt-2 border-t border-[#1b273d] text-sm font-black text-emerald-400">
+                  <span>Estimated Grand Total:</span>
+                  <span>₹{grandTotal.toLocaleString('en-IN')}</span>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2 border-t border-[#1b273d]">
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="px-5 py-2.5 bg-[#070d1a] text-slate-300 font-bold rounded-xl cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl shadow-lg shadow-blue-600/30 cursor-pointer"
+                >
+                  Save & Issue Quotation
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default QuotationRMC;
