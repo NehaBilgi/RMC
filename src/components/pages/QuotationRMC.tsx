@@ -861,7 +861,18 @@ export const QuotationRMC: React.FC = () => {
     }
 
     const totalNetQty = lines.reduce((sum, l) => sum + l.quantityM3, 0);
-    // Clean any accidental wastage mention from remarks before printing
+    const liveWastageSummary = summarizeEntriesWastage(targetWorks, currentSiteKey);
+    const hasWastage =
+      (Number(q.wastagePercent) || 0) > 0 ||
+      (Number(q.wastageVolumeM3) || 0) > 0 ||
+      liveWastageSummary.wastagePct > 0 ||
+      liveWastageSummary.wastageVol > 0;
+
+    const netLabel = hasWastage
+      ? 'Calculated Net Total (incl. Wastage):'
+      : 'Calculated Net Total:';
+
+    // Clean any accidental wastage % mention from remarks before printing
     const cleanPrintRemarks = (q.remarks || '').replace(/\s*incl\.\s*[\d.]+%\s*wastage/gi, '');
 
     const bottomMeasurementTableHtml = lines.length > 0 ? `
@@ -888,7 +899,7 @@ export const QuotationRMC: React.FC = () => {
               </tr>
             `).join('')}
             <tr style="background:#f8fafc;">
-              <td colspan="3" class="right" style="font-weight:bold;">Calculated Net Total:</td>
+              <td colspan="3" class="right" style="font-weight:bold;">${netLabel}</td>
               <td class="right" style="font-weight:bold;">${totalNetQty.toFixed(2)} m³</td>
             </tr>
             <tr style="background:#f1f5f9;">
