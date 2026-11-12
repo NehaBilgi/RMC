@@ -94,7 +94,7 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
 }) => {
   const getUserRole = (): 'ADMIN' | 'EMPLOYEE' | 'READ_ONLY' => {
     try {
-      const userRaw = sessionStorage.getItem('concrete360_user');
+      const userRaw = sessionStorage.getItem('concrete360_user') || localStorage.getItem('concrete360_user');
       if (userRaw) {
         const parsed = JSON.parse(userRaw);
         const r = String(parsed.role || '').toUpperCase();
@@ -123,7 +123,7 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
           return extractCleanSiteName(activeRaw);
         }
       }
-      const selected = sessionStorage.getItem('concrete360_selected_site');
+      const selected = sessionStorage.getItem('concrete360_selected_site') || localStorage.getItem('concrete360_selected_site');
       if (selected) return extractCleanSiteName(selected);
     } catch {}
     return 'MBBILGI';
@@ -205,6 +205,9 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
   };
 
   const [wastagePercent, setWastagePercent] = useState<number | ''>(() => getSavedWastage(getActiveSiteKey()));
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<ConcreteItem | null>(null);
 
   useEffect(() => {
     loadRegisteredSites();
@@ -214,6 +217,8 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
     setWastagePercent(getSavedWastage(siteKey));
 
     const handleSiteSwitch = () => {
+      // Never overwrite local row edits while modal is open
+      if (isModalOpen) return;
       const newKey = getActiveSiteKey();
       setCurrentSiteKey(newKey);
       loadRegisteredSites();
@@ -224,14 +229,12 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
     window.addEventListener('concrete360_site_switched', handleSiteSwitch);
     window.addEventListener('concrete360_cloud_synced', handleSiteSwitch);
     window.addEventListener('storage', handleSiteSwitch);
-    window.addEventListener('focus', handleSiteSwitch);
     return () => {
       window.removeEventListener('concrete360_site_switched', handleSiteSwitch);
       window.removeEventListener('concrete360_cloud_synced', handleSiteSwitch);
       window.removeEventListener('storage', handleSiteSwitch);
-      window.removeEventListener('focus', handleSiteSwitch);
     };
-  }, []);
+  }, [isModalOpen]);
 
   useEffect(() => {
     try {
@@ -242,10 +245,6 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
       window.dispatchEvent(new CustomEvent('concrete360_measurement_updated', { detail: items }));
     } catch {}
   }, [items, currentSiteKey]);
-
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingItem, setEditingItem] = useState<ConcreteItem | null>(null);
 
   const [modalTargetSiteKey, setModalTargetSiteKey] = useState<string>(currentSiteKey);
   const [modalMixGrade, setModalMixGrade] = useState<string>('M25');
@@ -437,20 +436,36 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
   };
 
   const handleOpenEditModal = (item: ConcreteItem) => {
-    const mode: UnitSystem = item.unitSystem === 'IMPERIAL' ? 'IMPERIAL' : 'METRIC';
-    setEditingItem(item);
-    setModalTargetSiteKey(item.siteKey || currentSiteKey);
-    setModalMixGrade(item.mixGrade || 'M25');
-    setModalWorkDate(item.date || new Date().toISOString().split('T')[0]);
-    setSelectedCategories(Array.isArray(item.categories) && item.categories.length > 0 ? [...item.categories] : ['SLAB']);
-    setLabel(item.label || '');
+    // Re-read fresh copy directly from localStorage to guarantee latest row arrays
+    let freshItem = item;
+    try {
+      const saved = localStorage.getItem(`concrete360_advanced_measurements_${currentSiteKey}`);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          const match = parsed.find((x: any) => x.id === item.id);
+          if (match) freshItem = match;
+        }
+      }
+    } catch {}
+
+    const mode: UnitSystem = freshItem.unitSystem === 'IMPERIAL' ? 'IMPERIAL' : 'METRIC';
+    setEditingItem(freshItem);
+    setModalTargetSiteKey(freshItem.siteKey || currentSiteKey);
+    setModalMixGrade(freshItem.mixGrade || 'M25');
+    setModalWorkDate(freshItem.date || new Date().toISOString().split('T')[0]);
+    setSelectedCategories(Array.isArray(freshItem.categories) && freshItem.categories.length > 0 ? [...freshItem.categories] : ['SLAB']);
+    setLabel(freshItem.label || '');
     setUnitMode(mode);
 
-    // Restore saved rows for each category (with legacy dimensionsSnapshot fallback for older entries)
-    if (Array.isArray(item.slabRows) && item.slabRows.length > 0) {
-      setSlabs(item.slabRows.map(r => ({ ...r })));
-    } else if (item.dimensionsSnapshot?.slab) {
-      const s = item.dimensionsSnapshot.slab;
+    if (Array.isArray(freshItem.slabRows) && freshItem.slabRows.length > 0) {
+      setSlabs(freshItem.slabRows.map(r => ({
+        length: r.length ?? '',
+        width: r.width ?? '',
+        thickness: r.thickness ?? ''
+      })));
+    } else if (freshItem.dimensionsSnapshot?.slab) {
+      const s = freshItem.dimensionsSnapshot.slab;
       const factor = mode === 'IMPERIAL' ? 1 / 0.3048 : 1;
       setSlabs([{
         length: Number((s.length * factor).toFixed(2)) || '',
@@ -462,38 +477,69 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
     }
 
     setColumns(
-      Array.isArray(item.columnRows) && item.columnRows.length > 0
-        ? item.columnRows.map(r => ({ ...r }))
+      Array.isArray(freshItem.columnRows) && freshItem.columnRows.length > 0
+        ? freshItem.columnRows.map(r => ({
+            count: r.count ?? '',
+            height: r.height ?? '',
+            dim1: r.dim1 ?? '',
+            dim2: r.dim2 ?? ''
+          }))
         : [{ count: '', height: '', dim1: '', dim2: '' }]
     );
 
     setBeams(
-      Array.isArray(item.beamRows) && item.beamRows.length > 0
-        ? item.beamRows.map(r => ({ ...r }))
+      Array.isArray(freshItem.beamRows) && freshItem.beamRows.length > 0
+        ? freshItem.beamRows.map(r => ({
+            count: r.count ?? '',
+            length: r.length ?? '',
+            width: r.width ?? '',
+            depth: r.depth ?? ''
+          }))
         : [{ count: '', length: '', width: '', depth: '' }]
     );
 
     setWalls(
-      Array.isArray(item.wallRows) && item.wallRows.length > 0
-        ? item.wallRows.map(r => ({ ...r }))
+      Array.isArray(freshItem.wallRows) && freshItem.wallRows.length > 0
+        ? freshItem.wallRows.map(r => ({
+            count: r.count ?? '',
+            length: r.length ?? '',
+            height: r.height ?? '',
+            thickness: r.thickness ?? ''
+          }))
         : [{ count: '', length: '', height: '', thickness: '' }]
     );
 
     setStairsList(
-      Array.isArray(item.stairsRows) && item.stairsRows.length > 0
-        ? item.stairsRows.map(r => ({ ...r }))
+      Array.isArray(freshItem.stairsRows) && freshItem.stairsRows.length > 0
+        ? freshItem.stairsRows.map(r => ({
+            flights: r.flights ?? '',
+            width: r.width ?? '',
+            steps: r.steps ?? '',
+            tread: r.tread ?? '',
+            riser: r.riser ?? '',
+            waist: r.waist ?? ''
+          }))
         : [{ flights: '', width: '', steps: '', tread: '', riser: '', waist: '' }]
     );
 
     setFootings(
-      Array.isArray(item.footingRows) && item.footingRows.length > 0
-        ? item.footingRows.map(r => ({ ...r }))
+      Array.isArray(freshItem.footingRows) && freshItem.footingRows.length > 0
+        ? freshItem.footingRows.map(r => ({
+            count: r.count ?? '',
+            length: r.length ?? '',
+            width: r.width ?? '',
+            depth: r.depth ?? ''
+          }))
         : [{ count: '', length: '', width: '', depth: '' }]
     );
 
     setRoads(
-      Array.isArray(item.roadRows) && item.roadRows.length > 0
-        ? item.roadRows.map(r => ({ ...r }))
+      Array.isArray(freshItem.roadRows) && freshItem.roadRows.length > 0
+        ? freshItem.roadRows.map(r => ({
+            lengthKm: r.lengthKm ?? '',
+            width: r.width ?? '',
+            thickness: r.thickness ?? ''
+          }))
         : [{ lengthKm: '', width: '', thickness: '' }]
     );
 
@@ -555,14 +601,19 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
           dimensionsSnapshot: snapshot,
           ...savedRowsPayload
         };
-        localStorage.setItem(targetStorageKey, JSON.stringify([newItem, ...existingParsed]));
+        const updatedOther = [newItem, ...existingParsed];
+        localStorage.setItem(targetStorageKey, JSON.stringify(updatedOther));
         
         if (editingItem) {
-          setItems((prev) => prev.filter((it) => it.id !== editingItem.id));
+          const remainingCurrent = items.filter((it) => it.id !== editingItem.id);
+          setItems(remainingCurrent);
+          localStorage.setItem(`concrete360_advanced_measurements_${currentSiteKey}`, JSON.stringify(remainingCurrent));
         }
       } catch {}
     } else {
       let itemToSave: ConcreteItem;
+      let nextItems: ConcreteItem[];
+
       if (editingItem) {
         itemToSave = {
           ...editingItem,
@@ -578,7 +629,7 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
           dimensionsSnapshot: snapshot,
           ...savedRowsPayload
         };
-        setItems((prev) => prev.map((it) => it.id === editingItem.id ? itemToSave : it));
+        nextItems = items.map((it) => it.id === editingItem.id ? itemToSave : it);
       } else {
         itemToSave = {
           id: `RCC-${Math.floor(1000 + Math.random() * 9000)}`,
@@ -594,8 +645,15 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
           dimensionsSnapshot: snapshot,
           ...savedRowsPayload
         };
-        setItems((prev) => [itemToSave, ...prev]);
+        nextItems = [itemToSave, ...items];
       }
+
+      // Persist immediately to localStorage before closing modal
+      setItems(nextItems);
+      try {
+        localStorage.setItem(`concrete360_advanced_measurements_${currentSiteKey}`, JSON.stringify(nextItems));
+        window.dispatchEvent(new CustomEvent('concrete360_measurement_updated', { detail: nextItems }));
+      } catch {}
 
       if (supabase) {
         void (supabase as any).from('site_measurements').upsert({
@@ -611,10 +669,12 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
           remarks: itemToSave.breakdownText,
           date: itemToSave.date,
           updated_at: new Date().toISOString()
-        }, { onConflict: 'id' }).then(() => void cloudStorage.pullFromCloud());
+        }, { onConflict: 'id' });
       }
     }
+
     setIsModalOpen(false);
+    setEditingItem(null);
   };
 
   const handleDelete = async (id: string) => {
@@ -623,10 +683,13 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
       return;
     }
     if (window.confirm('Delete this structural work record?')) {
-      setItems((prev) => prev.filter((it) => it.id !== id));
+      const nextItems = items.filter((it) => it.id !== id);
+      setItems(nextItems);
+      try {
+        localStorage.setItem(`concrete360_advanced_measurements_${currentSiteKey}`, JSON.stringify(nextItems));
+      } catch {}
       if (supabase) {
         await (supabase as any).from('site_measurements').delete().eq('id', id);
-        await cloudStorage.pullFromCloud();
       }
     }
   };
@@ -950,6 +1013,7 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
                 </p>
               </div>
               <button
+                type="button"
                 onClick={() => setIsModalOpen(false)}
                 className="text-slate-400 hover:text-white p-1 rounded-lg cursor-pointer bg-[#121c2d]"
               >
