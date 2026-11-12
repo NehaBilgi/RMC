@@ -14,18 +14,10 @@ import {
 import { supabase } from '../../lib/supabase';
 import { cloudStorage } from '../../services/cloudStorage';
 
-export interface StudioCategoryBreakdown {
-  workLabel: string;
-  mixGrade: string;
-  unitSystem: string;
-  categoryKey: string;
-  categoryTitle: string;
-  volumeM3: number;
-  volumeCft: number;
-  rows: {
-    label: string;
-    volumeM3: number;
-  }[];
+export interface MeasurementPrintLine {
+  element: string;
+  dimensionText: string;
+  quantityM3: number;
 }
 
 export interface StudioWorkEntry {
@@ -78,7 +70,7 @@ interface RMCQuotation {
   grandTotal: number;
   status: 'DRAFT' | 'SENT' | 'ACCEPTED' | 'CONVERTED';
   remarks: string;
-  categoryBreakdowns?: StudioCategoryBreakdown[];
+  measurementLines?: MeasurementPrintLine[];
 }
 
 const STANDARD_RMC_RATES: Record<string, number> = {
@@ -106,25 +98,23 @@ const formatDateDDMMYYYY = (dateStr: string) => {
   return parts.length === 3 ? `${parts[2]}-${parts[1]}-${parts[0]}` : dateStr;
 };
 
-const normalizeCategoryKey = (raw: string): { key: string; title: string } => {
+const normalizeCategoryName = (raw: string): { key: string; shortName: string } => {
   const s = String(raw || '').toUpperCase();
-  if (s.includes('SLAB') || s.includes('DECK')) return { key: 'SLAB', title: 'Slab / Deck Dimensions' };
-  if (s.includes('COL')) return { key: 'COLUMN', title: 'Column Dimensions' };
-  if (s.includes('BEAM')) return { key: 'BEAM', title: 'Beam Dimensions' };
-  if (s.includes('WALL')) return { key: 'WALL', title: 'RCC Wall Dimensions' };
-  if (s.includes('STAIR')) return { key: 'STAIRS', title: 'Stairs Dimensions' };
-  if (s.includes('FOOT')) return { key: 'FOOTING', title: 'Footing Dimensions' };
-  if (s.includes('ROAD')) return { key: 'ROAD', title: 'Road Work (km) Dimensions' };
-  return { key: s || 'CUSTOM', title: `${raw || 'Structural'} Dimensions` };
+  if (s.includes('SLAB') || s.includes('DECK')) return { key: 'SLAB', shortName: 'Slab' };
+  if (s.includes('COL')) return { key: 'COLUMN', shortName: 'Column' };
+  if (s.includes('BEAM')) return { key: 'BEAM', shortName: 'Beam' };
+  if (s.includes('WALL')) return { key: 'WALL', shortName: 'RCC Wall' };
+  if (s.includes('STAIR')) return { key: 'STAIRS', shortName: 'Stairs' };
+  if (s.includes('FOOT')) return { key: 'FOOTING', shortName: 'Footing' };
+  if (s.includes('ROAD')) return { key: 'ROAD', shortName: 'Road Work' };
+  return { key: s || 'CUSTOM', shortName: raw || 'Concrete Work' };
 };
 
-// Exact volume & dimension parser matching SiteMeasurementStudio.tsx (Metric & Imperial)
-const parseStudioCategories = (entry: StudioWorkEntry, idx = 0): StudioCategoryBreakdown[] => {
+// Converts SiteMeasurementStudio rows into clean compact lines: e.g. "Slab | 12m × 12m × 150mm | 21.60 m³"
+const extractCompactMeasurementLines = (entry: StudioWorkEntry, idx = 0): MeasurementPrintLine[] => {
   const unitRaw = String(entry.unitSystem || entry.unit || '').toUpperCase();
   const isImp = unitRaw.includes('IMPERIAL') || unitRaw.includes('FT');
-  const workTitle = resolveWorkLabel(entry, idx);
-  const grade = (entry.mixGrade || entry.grade || 'M25').substring(0, 3).toUpperCase();
-  const breakdowns: StudioCategoryBreakdown[] = [];
+  const lines: MeasurementPrintLine[] = [];
 
   const calcRowVolM3 = (catKey: string, r: any): number => {
     if (typeof r.volumeM3 === 'number' && r.volumeM3 > 0) return r.volumeM3;
@@ -150,13 +140,11 @@ const parseStudioCategories = (entry: StudioWorkEntry, idx = 0): StudioCategoryB
       if (isImp) {
         const stepVol = steps * 0.5 * (riser / 12) * (tread / 12) * l;
         const waistLen = steps * Math.sqrt(Math.pow(riser / 12, 2) + Math.pow(tread / 12, 2));
-        const waistVol = waistLen * l * (waist / 12);
-        return (stepVol + waistVol) * 0.0283168;
+        return (stepVol + waistLen * l * (waist / 12)) * 0.0283168;
       }
       const stepVol = steps * 0.5 * (riser / 1000) * (tread / 1000) * l;
       const waistLen = steps * Math.sqrt(Math.pow(riser / 1000, 2) + Math.pow(tread / 1000, 2));
-      const waistVol = waistLen * l * (waist / 1000);
-      return stepVol + waistVol;
+      return stepVol + waistLen * l * (waist / 1000);
     }
     if (catKey === 'ROAD') {
       const lenM = isImp ? l : l * 1000;
@@ -165,154 +153,100 @@ const parseStudioCategories = (entry: StudioWorkEntry, idx = 0): StudioCategoryB
     return 0;
   };
 
-  const formatRowText = (catKey: string, r: any): string => {
+  const formatCompactDim = (catKey: string, r: any): string => {
     const count = Number(r.count ?? r.nos ?? r.qty ?? 1) || 1;
     const l = Number(r.length ?? r.l) || 0;
     const w = Number(r.width ?? r.breadth ?? r.w ?? r.b) || 0;
     const t = Number(r.thickness ?? r.depth ?? r.height ?? r.t ?? r.d ?? r.h) || 0;
+    const countPrefix = count > 1 ? `${count} Nos × ` : '';
 
     if (catKey === 'SLAB') {
-      return isImp
-        ? `Length: ${l} ft × Width: ${w} ft × Thickness: ${t} in`
-        : `Length: ${l} m × Width: ${w} m × Thickness: ${t} mm`;
+      return isImp ? `${countPrefix}${l}' × ${w}' × ${t}"` : `${countPrefix}${l}m × ${w}m × ${t}mm`;
     }
     if (catKey === 'COLUMN' || catKey === 'BEAM' || catKey === 'FOOTING') {
-      return isImp
-        ? `Count: ${count} Nos × Length: ${l} ft × Width: ${w} in × Depth: ${t} in`
-        : `Count: ${count} Nos × Length: ${l} m × Width: ${w} mm × Depth: ${t} mm`;
+      return isImp ? `${countPrefix}${l}' × ${w}" × ${t}"` : `${countPrefix}${l}m × ${w}mm × ${t}mm`;
     }
     if (catKey === 'WALL') {
-      return isImp
-        ? `Count: ${count} Nos × Length: ${l} ft × Height: ${w} ft × Thickness: ${t} in`
-        : `Count: ${count} Nos × Length: ${l} m × Height: ${w} m × Thickness: ${t} mm`;
+      return isImp ? `${countPrefix}${l}' × ${w}' × ${t}"` : `${countPrefix}${l}m × ${w}m × ${t}mm`;
     }
     if (catKey === 'STAIRS') {
       const steps = Number(r.steps ?? count) || 1;
       return isImp
-        ? `Steps: ${steps} × Width: ${l} ft × Riser: ${r.riser ?? t} in × Tread: ${r.tread ?? w} in`
-        : `Steps: ${steps} × Width: ${l} m × Riser: ${r.riser ?? t} mm × Tread: ${r.tread ?? w} mm`;
+        ? `${steps} Steps × ${l}' × ${r.riser ?? t}" × ${r.tread ?? w}"`
+        : `${steps} Steps × ${l}m × ${r.riser ?? t}mm × ${r.tread ?? w}mm`;
     }
     if (catKey === 'ROAD') {
-      return isImp
-        ? `Length: ${l} ft × Width: ${w} ft × Thickness: ${t} in`
-        : `Length: ${l} km × Width: ${w} m × Thickness: ${t} mm`;
+      return isImp ? `${l}' × ${w}' × ${t}"` : `${l}km × ${w}m × ${t}mm`;
     }
-    return `${l} × ${w} × ${t}`;
+    return `${countPrefix}${l} × ${w} × ${t}`;
   };
 
-  // 1. Check explicit per-category row arrays from SiteMeasurementStudio
-  const explicitDefs: { key: string; title: string; rows?: any[] }[] = [
-    { key: 'SLAB', title: 'Slab / Deck Dimensions', rows: entry.slabRows },
-    { key: 'COLUMN', title: 'Column Dimensions', rows: entry.columnRows },
-    { key: 'BEAM', title: 'Beam Dimensions', rows: entry.beamRows },
-    { key: 'WALL', title: 'RCC Wall Dimensions', rows: entry.wallRows },
-    { key: 'STAIRS', title: 'Stairs Dimensions', rows: entry.stairsRows },
-    { key: 'FOOTING', title: 'Footing Dimensions', rows: entry.footingRows },
-    { key: 'ROAD', title: 'Road Work (km) Dimensions', rows: entry.roadRows }
+  const explicitDefs: { key: string; shortName: string; rows?: any[] }[] = [
+    { key: 'SLAB', shortName: 'Slab', rows: entry.slabRows },
+    { key: 'COLUMN', shortName: 'Column', rows: entry.columnRows },
+    { key: 'BEAM', shortName: 'Beam', rows: entry.beamRows },
+    { key: 'WALL', shortName: 'RCC Wall', rows: entry.wallRows },
+    { key: 'STAIRS', shortName: 'Stairs', rows: entry.stairsRows },
+    { key: 'FOOTING', shortName: 'Footing', rows: entry.footingRows },
+    { key: 'ROAD', shortName: 'Road Work', rows: entry.roadRows }
   ];
 
   explicitDefs.forEach(def => {
-    if (Array.isArray(def.rows) && def.rows.length > 0) {
-      const validRows = def.rows.filter(r => (Number(r.length ?? r.l) || 0) > 0 || (Number(r.width ?? r.w) || 0) > 0 || (Number(r.volumeM3) || 0) > 0);
-      if (validRows.length > 0) {
-        let catVol = 0;
-        const formattedRows = validRows.map(r => {
-          const v = calcRowVolM3(def.key, r);
-          catVol += v;
-          return { label: formatRowText(def.key, r), volumeM3: Number(v.toFixed(2)) };
-        });
-        breakdowns.push({
-          workLabel: workTitle,
-          mixGrade: grade,
-          unitSystem: isImp ? 'Imperial (ft & in)' : 'Metric (m & mm)',
-          categoryKey: def.key,
-          categoryTitle: def.title,
-          volumeM3: Number(catVol.toFixed(2)),
-          volumeCft: Number((catVol * 35.3147).toFixed(1)),
-          rows: formattedRows
-        });
-      }
+    if (Array.isArray(def.rows)) {
+      def.rows.forEach(r => {
+        if ((Number(r.length ?? r.l) || 0) > 0 || (Number(r.width ?? r.w) || 0) > 0 || (Number(r.volumeM3) || 0) > 0) {
+          lines.push({
+            element: def.shortName,
+            dimensionText: formatCompactDim(def.key, r),
+            quantityM3: Number(calcRowVolM3(def.key, r).toFixed(2))
+          });
+        }
+      });
     }
   });
 
-  // 2. Check categoryRows dictionary
-  if (breakdowns.length === 0 && entry.categoryRows && typeof entry.categoryRows === 'object') {
+  if (lines.length === 0 && entry.categoryRows && typeof entry.categoryRows === 'object') {
     Object.entries(entry.categoryRows).forEach(([rawCat, rows]) => {
-      if (Array.isArray(rows) && rows.length > 0) {
-        const norm = normalizeCategoryKey(rawCat);
-        const validRows = rows.filter(r => (Number(r.length ?? r.l) || 0) > 0 || (Number(r.width ?? r.w) || 0) > 0 || (Number(r.volumeM3) || 0) > 0);
-        if (validRows.length > 0) {
-          let catVol = 0;
-          const formattedRows = validRows.map(r => {
-            const v = calcRowVolM3(norm.key, r);
-            catVol += v;
-            return { label: formatRowText(norm.key, r), volumeM3: Number(v.toFixed(2)) };
-          });
-          breakdowns.push({
-            workLabel: workTitle,
-            mixGrade: grade,
-            unitSystem: isImp ? 'Imperial (ft & in)' : 'Metric (m & mm)',
-            categoryKey: norm.key,
-            categoryTitle: norm.title,
-            volumeM3: Number(catVol.toFixed(2)),
-            volumeCft: Number((catVol * 35.3147).toFixed(1)),
-            rows: formattedRows
-          });
-        }
-      }
-    });
-  }
-
-  // 3. Check flat rows / items array where each row has its own `category` or `elementType`
-  const mixedRows = entry.rows || entry.items || entry.elements;
-  if (breakdowns.length === 0 && Array.isArray(mixedRows) && mixedRows.length > 0) {
-    const grouped = new Map<string, { title: string; items: any[] }>();
-    mixedRows.forEach(r => {
-      const norm = normalizeCategoryKey(r.category || r.elementType || r.type || (entry.selectedCategories?.[0] ?? 'SLAB'));
-      if (!grouped.has(norm.key)) grouped.set(norm.key, { title: norm.title, items: [] });
-      grouped.get(norm.key)!.items.push(r);
-    });
-
-    grouped.forEach((grp, catKey) => {
-      let catVol = 0;
-      const formattedRows = grp.items.map(r => {
-        const v = calcRowVolM3(catKey, r);
-        catVol += v;
-        return { label: formatRowText(catKey, r), volumeM3: Number(v.toFixed(2)) };
-      });
-      if (catVol > 0 || formattedRows.length > 0) {
-        breakdowns.push({
-          workLabel: workTitle,
-          mixGrade: grade,
-          unitSystem: isImp ? 'Imperial (ft & in)' : 'Metric (m & mm)',
-          categoryKey: catKey,
-          categoryTitle: grp.title,
-          volumeM3: Number(catVol.toFixed(2)),
-          volumeCft: Number((catVol * 35.3147).toFixed(1)),
-          rows: formattedRows
+      if (Array.isArray(rows)) {
+        const norm = normalizeCategoryName(rawCat);
+        rows.forEach(r => {
+          if ((Number(r.length ?? r.l) || 0) > 0 || (Number(r.width ?? r.w) || 0) > 0 || (Number(r.volumeM3) || 0) > 0) {
+            lines.push({
+              element: norm.shortName,
+              dimensionText: formatCompactDim(norm.key, r),
+              quantityM3: Number(calcRowVolM3(norm.key, r).toFixed(2))
+            });
+          }
         });
       }
     });
   }
 
-  // 4. Fallback if entry only stored aggregate volume + selectedCategories
-  if (breakdowns.length === 0 && (Number(entry.volumeM3) || 0) > 0) {
-    const catList = entry.selectedCategories || entry.categories || ['Slab / Deck'];
-    const norm = normalizeCategoryKey(catList[0]);
-    const vol = Number(entry.volumeM3) || 0;
-    breakdowns.push({
-      workLabel: workTitle,
-      mixGrade: grade,
-      unitSystem: isImp ? 'Imperial (ft & in)' : 'Metric (m & mm)',
-      categoryKey: norm.key,
-      categoryTitle: catList.length > 1 ? catList.join(' + ') : norm.title,
-      volumeM3: Number(vol.toFixed(2)),
-      volumeCft: Number((vol * 35.3147).toFixed(1)),
-      rows: [{ label: `${workTitle} (${grade} Grade)`, volumeM3: Number(vol.toFixed(2)) }]
+  const mixedRows = entry.rows || entry.items || entry.elements;
+  if (lines.length === 0 && Array.isArray(mixedRows)) {
+    mixedRows.forEach(r => {
+      const norm = normalizeCategoryName(r.category || r.elementType || r.type || (entry.selectedCategories?.[0] ?? 'SLAB'));
+      if ((Number(r.length ?? r.l) || 0) > 0 || (Number(r.width ?? r.w) || 0) > 0 || (Number(r.volumeM3) || 0) > 0) {
+        lines.push({
+          element: norm.shortName,
+          dimensionText: formatCompactDim(norm.key, r),
+          quantityM3: Number(calcRowVolM3(norm.key, r).toFixed(2))
+        });
+      }
     });
   }
 
-  return breakdowns;
+  if (lines.length === 0 && (Number(entry.volumeM3) || 0) > 0) {
+    const catList = entry.selectedCategories || entry.categories || [];
+    const norm = normalizeCategoryName(catList[0] || resolveWorkLabel(entry, idx));
+    lines.push({
+      element: norm.shortName,
+      dimensionText: resolveWorkLabel(entry, idx),
+      quantityM3: Number((Number(entry.volumeM3) || 0).toFixed(2))
+    });
+  }
+
+  return lines;
 };
 
 const loadStudioWorksForSite = (siteKey: string): StudioWorkEntry[] => {
@@ -608,8 +542,8 @@ export const QuotationRMC: React.FC = () => {
       ? measurementItems
       : measurementItems.filter(it => it.id === selectedWorkId);
 
-  const collectedCategoryBreakdowns: StudioCategoryBreakdown[] = activeSpecsForSelection.flatMap(
-    (entry, idx) => parseStudioCategories(entry, idx)
+  const collectedMeasurementLines: MeasurementPrintLine[] = activeSpecsForSelection.flatMap(
+    (entry, idx) => extractCompactMeasurementLines(entry, idx)
   );
 
   const selectedNetTotal = activeSpecsForSelection.reduce((sum, it) => sum + (Number(it.volumeM3) || 0), 0);
@@ -644,7 +578,7 @@ export const QuotationRMC: React.FC = () => {
       grandTotal,
       status: 'SENT',
       remarks,
-      categoryBreakdowns: collectedCategoryBreakdowns
+      measurementLines: collectedMeasurementLines
     };
 
     const updated = [newQuote, ...quotations];
@@ -728,63 +662,56 @@ export const QuotationRMC: React.FC = () => {
     const sub = concreteSub + pumpSub;
     const gst = q.applyGst ? sub * 0.18 : 0;
 
-    // Pull live category & dimension calculations from SiteMeasurementStudio
+    // Resolve live compact lines from SiteMeasurementStudio (e.g., Slab | 12m × 12m × 150mm | 21.60 m³)
     const liveWorks = loadStudioWorksForSite(currentSiteKey);
     const targetWorks = q.workElementId && q.workElementId !== 'ALL'
       ? liveWorks.filter(w => w.id === q.workElementId)
       : liveWorks;
 
-    let breakdowns: StudioCategoryBreakdown[] = targetWorks.flatMap((w, idx) => parseStudioCategories(w, idx));
-    if (breakdowns.length === 0 && q.categoryBreakdowns && q.categoryBreakdowns.length > 0) {
-      breakdowns = q.categoryBreakdowns;
+    let lines: MeasurementPrintLine[] = targetWorks.flatMap((w, idx) => extractCompactMeasurementLines(w, idx));
+    if (lines.length === 0 && q.measurementLines && q.measurementLines.length > 0) {
+      lines = q.measurementLines;
     }
 
-    const totalNetVol = breakdowns.reduce((s, c) => s + c.volumeM3, 0);
-    const totalNetCft = Number((totalNetVol * 35.3147).toFixed(1));
+    const totalNetQty = lines.reduce((sum, l) => sum + l.quantityM3, 0);
     const appliedWastage = q.wastagePercent ?? wastagePercent;
-    const grossVolWithWastage = Number((totalNetVol * (1 + appliedWastage / 100)).toFixed(2));
+    const totalGrossQty = Number((totalNetQty * (1 + appliedWastage / 100)).toFixed(2));
 
-    const bottomCalculationsHtml = breakdowns.length > 0 ? `
-      <div style="margin-top:24px; border-top:2px solid #0f172a; padding-top:12px; page-break-inside:avoid;">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-          <div>
-            <span style="font-size:11px; font-weight:900; text-transform:uppercase; color:#0f172a; letter-spacing:0.4px;">
-              Site Measurement Calculations & Structural Specifications
-            </span>
-            <span style="display:block; font-size:9px; color:#475569;">
-              Source: Site Inventory Measurements (${breakdowns[0].unitSystem})
-            </span>
-          </div>
-          <div style="text-align:right; background:#eff6ff; border:1px solid #bfdbfe; padding:4px 8px; border-radius:4px;">
-            <span style="font-size:9px; color:#1e40af; font-weight:bold; display:block;">TOTAL CALCULATED VOLUME (ALL CATEGORIES)</span>
-            <span style="font-size:11px; font-weight:900; color:#0f172a;">
-              ${totalNetVol.toFixed(2)} m³ (${totalNetCft} CFT) • Gross (+${appliedWastage}%): ${grossVolWithWastage.toFixed(2)} m³
-            </span>
-          </div>
+    const bottomMeasurementTableHtml = lines.length > 0 ? `
+      <div style="margin-top:26px; page-break-inside:avoid;">
+        <div style="font-size:10px; font-weight:bold; text-transform:uppercase; color:#0f172a; margin-bottom:6px; letter-spacing:0.4px;">
+          Measurement Details
         </div>
-
-        ${breakdowns.map(cat => `
-          <div style="border:1px solid #cbd5e1; border-radius:6px; padding:7px 10px; margin-bottom:8px; background:#f8fafc;">
-            <div style="display:flex; justify-content:space-between; align-items:center; font-weight:bold; color:#0f172a; border-bottom:1px solid #e2e8f0; padding-bottom:4px; margin-bottom:4px; font-size:10px;">
-              <span>${cat.workLabel} — <span style="color:#1d4ed8;">${cat.categoryTitle}</span> [${cat.mixGrade} Grade]</span>
-              <span style="color:#0369a1; font-weight:900;">${cat.volumeM3.toFixed(2)} m³ (${cat.volumeCft} CFT)</span>
-            </div>
-            <table style="width:100%; border-collapse:collapse; margin:0;">
-              <tbody>
-                ${cat.rows.map((r, idx) => `
-                  <tr>
-                    <td style="border:none; padding:2px 0; font-size:9.5px; color:#334155;">
-                      <strong>Row ${idx + 1}:</strong> ${r.label}
-                    </td>
-                    <td style="border:none; padding:2px 0; font-size:9.5px; color:#0f172a; font-weight:bold; text-align:right;">
-                      ${r.volumeM3.toFixed(2)} m³
-                    </td>
-                  </tr>
-                `).join('')}
-              </tbody>
-            </table>
-          </div>
-        `).join('')}
+        <table class="commercial" style="margin-bottom:0;">
+          <thead>
+            <tr>
+              <th style="width:6%;">#</th>
+              <th style="width:24%;">Element</th>
+              <th style="width:50%;">Dimensions</th>
+              <th style="width:20%;" class="right">Quantity (m³)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${lines.map((line, idx) => `
+              <tr>
+                <td>${idx + 1}</td>
+                <td><strong>${line.element}</strong></td>
+                <td>${line.dimensionText}</td>
+                <td class="right"><strong>${line.quantityM3.toFixed(2)} m³</strong></td>
+              </tr>
+            `).join('')}
+            <tr style="background:#f8fafc;">
+              <td colspan="3" class="right" style="font-weight:bold;">Total Net Quantity:</td>
+              <td class="right" style="font-weight:bold;">${totalNetQty.toFixed(2)} m³</td>
+            </tr>
+            <tr style="background:#f1f5f9;">
+              <td colspan="3" class="right" style="font-weight:bold; color:#0f172a;">
+                Total Quantity (Incl. ${appliedWastage}% Wastage):
+              </td>
+              <td class="right" style="font-weight:900; color:#0f172a;">${totalGrossQty.toFixed(2)} m³</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     ` : '';
 
@@ -881,7 +808,7 @@ export const QuotationRMC: React.FC = () => {
             <div style="border-top:1px dashed #64748b;width:180px;text-align:center;padding-top:4px;">For BILGI BUILDCON RMC</div>
           </div>
 
-          ${bottomCalculationsHtml}
+          ${bottomMeasurementTableHtml}
 
           <script>window.print();</script>
         </body>
@@ -923,7 +850,7 @@ export const QuotationRMC: React.FC = () => {
           <div>
             <span className="text-slate-400 uppercase text-[10px] font-bold block">Linked Site Inventory Measurements</span>
             <strong className="text-white text-sm">
-              {measurementItems.length} Work Section(s) • {measurementItems.flatMap((w, i) => parseStudioCategories(w, i)).length} Categories
+              {measurementItems.flatMap((w, i) => extractCompactMeasurementLines(w, i)).length} Measured Item(s)
             </strong>
           </div>
         </div>
@@ -1016,7 +943,7 @@ export const QuotationRMC: React.FC = () => {
                         <button
                           onClick={() => handlePrintQuotation(q)}
                           className="text-slate-400 hover:text-cyan-400 p-1 transition cursor-pointer"
-                          title="Print Commercial Quotation with All Calculations at Bottom"
+                          title="Print Commercial Quotation with Measurement Table at Bottom"
                         >
                           <Printer className="w-4 h-4" />
                         </button>
@@ -1065,12 +992,12 @@ export const QuotationRMC: React.FC = () => {
             </div>
 
             <form onSubmit={handleCreateQuotation} className="space-y-4 text-xs">
-              {/* Linked Site Measurement Selector + Live Category Breakdown Preview */}
+              {/* Linked Site Measurement Selector + Compact Preview */}
               <div className="bg-[#070d1a] border border-[#1b273d] p-3 rounded-2xl space-y-2.5">
                 <div className="flex items-center justify-between">
                   <label className="text-slate-300 font-bold uppercase tracking-wider flex items-center gap-1.5 text-[10px]">
                     <Filter className="w-3.5 h-3.5 text-cyan-400" />
-                    <span>SiteMeasurementStudio Categories:</span>
+                    <span>Import from Site Measurements:</span>
                   </label>
                   <span className="text-[10px] text-emerald-400 font-bold">+{wastagePercent}% Wastage</span>
                 </div>
@@ -1080,7 +1007,7 @@ export const QuotationRMC: React.FC = () => {
                   className="w-full px-3 py-2.5 bg-[#0b1322] border border-[#1b273d] rounded-xl text-white font-bold outline-none cursor-pointer text-xs"
                 >
                   <option value="ALL">
-                    All Site Categories ({measurementItems.length} work entries • {measurementItems.reduce((s, it) => s + (Number(it.volumeM3) || 0), 0).toFixed(2)} m³ net)
+                    All Site Elements ({collectedMeasurementLines.length} rows • {measurementItems.reduce((s, it) => s + (Number(it.volumeM3) || 0), 0).toFixed(2)} m³ net)
                   </option>
                   {measurementItems.map((it, idx) => (
                     <option key={it.id} value={it.id}>
@@ -1089,21 +1016,15 @@ export const QuotationRMC: React.FC = () => {
                   ))}
                 </select>
 
-                {/* Category & Row Dimension Cards Preview */}
-                {collectedCategoryBreakdowns.length > 0 && (
-                  <div className="space-y-2 max-h-40 overflow-y-auto pt-1">
-                    {collectedCategoryBreakdowns.map((cat, cIdx) => (
-                      <div key={`${cat.categoryKey}-${cIdx}`} className="bg-[#0b1322] border border-[#17253e] rounded-xl p-2.5 space-y-1 text-[10px]">
-                        <div className="flex justify-between items-center text-cyan-300 font-bold border-b border-[#17253e] pb-1">
-                          <span>{cat.workLabel} — {cat.categoryTitle}</span>
-                          <span className="text-emerald-400">{cat.volumeM3.toFixed(2)} m³</span>
-                        </div>
-                        {cat.rows.map((r, idx) => (
-                          <div key={idx} className="flex justify-between text-slate-300">
-                            <span className="truncate max-w-[270px]">{idx + 1}. {r.label}</span>
-                            <span className="text-slate-400 font-bold shrink-0">{r.volumeM3.toFixed(2)} m³</span>
-                          </div>
-                        ))}
+                {/* Compact Element | Dimensions | Quantity Preview */}
+                {collectedMeasurementLines.length > 0 && (
+                  <div className="bg-[#0b1322] border border-[#17253e] rounded-xl p-2.5 space-y-1 max-h-32 overflow-y-auto text-[10px]">
+                    {collectedMeasurementLines.map((line, idx) => (
+                      <div key={idx} className="flex justify-between items-center text-slate-300 border-b border-[#142033] last:border-none pb-1 last:pb-0">
+                        <span>
+                          <strong className="text-cyan-300">{line.element}</strong>: {line.dimensionText}
+                        </span>
+                        <span className="text-emerald-400 font-bold shrink-0">{line.quantityM3.toFixed(2)} m³</span>
                       </div>
                     ))}
                   </div>
