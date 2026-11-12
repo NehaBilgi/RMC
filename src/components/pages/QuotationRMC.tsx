@@ -14,40 +14,37 @@ import {
 import { supabase } from '../../lib/supabase';
 import { cloudStorage } from '../../services/cloudStorage';
 
-interface DimensionRow {
-  id?: string;
+interface MeasurementSpecificationItem {
+  id: string;
+  label?: string;
+  workLabel?: string;
+  reference?: string;
+  title?: string;
+  name?: string;
+  category?: string;
+  categoryLabel?: string;
+  categories?: string[];
+  elementType?: string;
+  unitSystem?: string;
+  unit?: string;
+  rows?: any[];
+  dimensions?: any[];
+  items?: any[];
+  subItems?: any[];
+  entries?: any[];
+  categoryRows?: Record<string, any[]>;
   length?: number | string;
   width?: number | string;
   thickness?: number | string;
   depth?: number | string;
   height?: number | string;
   nos?: number | string;
-  quantity?: number | string;
-  volumeM3?: number;
-}
-
-interface MeasurementSpecificationItem {
-  id: string;
-  label?: string;
-  workLabel?: string;
-  reference?: string;
-  name?: string;
-  category?: string;
-  categories?: string[];
-  elementType?: string;
-  unitSystem?: 'METRIC' | 'IMPERIAL' | string;
-  rows?: DimensionRow[];
-  dimensions?: DimensionRow[];
-  categoryRows?: Record<string, DimensionRow[]>;
-  length?: number;
-  width?: number;
-  thickness?: number;
-  depth?: number;
-  nos?: number;
+  count?: number | string;
   volumeM3: number;
   mixGrade?: string;
   date?: string;
   remarks?: string;
+  description?: string;
 }
 
 interface RMCQuotation {
@@ -102,71 +99,132 @@ const formatDateDDMMYYYY = (dateStr: string) => {
   return parts.length === 3 ? `${parts[2]}-${parts[1]}-${parts[0]}` : dateStr;
 };
 
+// Pulls measurements from both `concrete360_advanced_measurements_${siteKey}` and `concrete360_measurement` session
+const loadAllSiteMeasurements = (siteKey: string): MeasurementSpecificationItem[] => {
+  const results: MeasurementSpecificationItem[] = [];
+  const seenIds = new Set<string>();
+
+  try {
+    const advRaw = localStorage.getItem(`concrete360_advanced_measurements_${siteKey}`);
+    if (advRaw) {
+      const parsed = JSON.parse(advRaw);
+      if (Array.isArray(parsed)) {
+        parsed.forEach((item: any, idx: number) => {
+          const id = String(item.id || `ADV-${idx + 1}`);
+          seenIds.add(id);
+          results.push({ ...item, id });
+        });
+      }
+    }
+  } catch {}
+
+  try {
+    const sessRaw = localStorage.getItem('concrete360_measurement');
+    if (sessRaw) {
+      const sess = JSON.parse(sessRaw);
+      const sessSite = extractCleanSiteName(sess.siteName || sess.projectName || sess.site || siteKey);
+      const candidates = sess.elements || sess.items || sess.works || sess.entries || sess.measurements || [];
+      if (Array.isArray(candidates) && (sessSite === siteKey || results.length === 0)) {
+        candidates.forEach((item: any, idx: number) => {
+          const id = String(item.id || `SESS-${idx + 1}`);
+          if (!seenIds.has(id)) {
+            seenIds.add(id);
+            results.push({ ...item, id });
+          } else {
+            // Enrich existing item with any nested rows/categories from session
+            const existingIdx = results.findIndex(r => r.id === id);
+            if (existingIdx >= 0) {
+              results[existingIdx] = { ...item, ...results[existingIdx] };
+            }
+          }
+        });
+      }
+    }
+  } catch {}
+
+  return results;
+};
+
 const resolveWorkLabel = (it: MeasurementSpecificationItem, idx = 0): string => {
-  const raw =
-    it.workLabel ||
-    it.label ||
-    it.reference ||
-    it.name ||
-    (Array.isArray(it.categories) && it.categories.length > 0 ? it.categories.join(' + ') : '') ||
-    it.category ||
-    it.elementType;
-  return raw && String(raw).trim() ? String(raw).trim() : `Work Entry #${idx + 1}`;
+  const candidates = [
+    it.workLabel,
+    it.label,
+    it.reference,
+    it.title,
+    it.name,
+    it.categoryLabel,
+    it.category,
+    it.elementType,
+    Array.isArray(it.categories) && it.categories.length > 0 ? it.categories.join(' + ') : ''
+  ];
+  for (const c of candidates) {
+    if (c && String(c).trim() && String(c).trim().toLowerCase() !== 'undefined') {
+      return String(c).trim();
+    }
+  }
+  return `Structural Section #${idx + 1}`;
+};
+
+const formatSingleRowDim = (r: any, lenUnit: string, thickUnit: string): string => {
+  const l = Number(r.length ?? r.l ?? r.len) || 0;
+  const w = Number(r.width ?? r.breadth ?? r.w ?? r.b) || 0;
+  const t = Number(r.thickness ?? r.depth ?? r.height ?? r.t ?? r.d ?? r.h) || 0;
+  const n = Number(r.nos ?? r.quantity ?? r.count ?? r.qty) || 1;
+  const cat = r.category || r.categoryLabel || r.elementType || r.type || '';
+  const nosStr = n > 1 ? ` (${n} Nos)` : '';
+
+  if (l > 0 || w > 0 || t > 0) {
+    const dim = `${l}${lenUnit} × ${w}${lenUnit} × ${t}${thickUnit}${nosStr}`;
+    return cat ? `<strong>${cat}:</strong> ${dim}` : dim;
+  }
+  return cat ? String(cat) : '';
 };
 
 const formatMeasurementDimensions = (sp: MeasurementSpecificationItem): string => {
-  const isImperial = String(sp.unitSystem || '').toUpperCase().includes('IMPERIAL');
+  const unitRaw = String(sp.unitSystem || sp.unit || '').toUpperCase();
+  const isImperial = unitRaw.includes('IMPERIAL') || unitRaw.includes('FT');
   const lenUnit = isImperial ? 'ft' : 'm';
   const thickUnit = isImperial ? 'in' : 'mm';
 
-  // 1. Multi-category rows (e.g., Slab / Deck, Column, Beam, Footing)
+  // 1. Multi-category map (e.g., { "Slab / Deck": [...], "Column": [...] })
   if (sp.categoryRows && typeof sp.categoryRows === 'object') {
-    const parts: string[] = [];
+    const blocks: string[] = [];
     Object.entries(sp.categoryRows).forEach(([catName, rows]) => {
       if (Array.isArray(rows) && rows.length > 0) {
-        const rowStrs = rows.map((r) => {
-          const l = Number(r.length) || 0;
-          const w = Number(r.width) || 0;
-          const t = Number(r.thickness ?? r.depth ?? r.height) || 0;
-          const n = Number(r.nos ?? r.quantity) || 1;
-          const nosTag = n > 1 ? ` × ${n} Nos` : '';
-          return `${l}${lenUnit} × ${w}${lenUnit} × ${t}${thickUnit}${nosTag}`;
-        });
-        parts.push(`<strong>${catName}:</strong> ${rowStrs.join('; ')}`);
+        const formatted = rows
+          .map(r => formatSingleRowDim({ ...r, category: '' }, lenUnit, thickUnit))
+          .filter(Boolean);
+        if (formatted.length > 0) {
+          blocks.push(`<strong>${catName}:</strong> ${formatted.join('; ')}`);
+        }
       }
     });
-    if (parts.length > 0) return parts.join('<br/>');
+    if (blocks.length > 0) return blocks.join('<br/>');
   }
 
-  // 2. Single category with multiple rows array
-  const rowList = sp.rows || sp.dimensions;
-  if (Array.isArray(rowList) && rowList.length > 0) {
-    const catPrefix = sp.category || sp.elementType || (Array.isArray(sp.categories) ? sp.categories.join(', ') : '');
-    const rowStrs = rowList.map((r) => {
-      const l = Number(r.length) || 0;
-      const w = Number(r.width) || 0;
-      const t = Number(r.thickness ?? r.depth ?? r.height) || 0;
-      const n = Number(r.nos ?? r.quantity) || 1;
-      const nosTag = n > 1 ? ` × ${n} Nos` : '';
-      return `${l}${lenUnit} × ${w}${lenUnit} × ${t}${thickUnit}${nosTag}`;
-    });
-    return catPrefix ? `<strong>${catPrefix}:</strong> ${rowStrs.join('; ')}` : rowStrs.join('; ');
+  // 2. Nested array of rows / dimensions / items / subItems / entries
+  const nestedRows = sp.rows || sp.dimensions || sp.items || sp.subItems || sp.entries;
+  if (Array.isArray(nestedRows) && nestedRows.length > 0) {
+    const parentCat = sp.category || sp.categoryLabel || sp.elementType || (Array.isArray(sp.categories) ? sp.categories.join(', ') : '');
+    const formatted = nestedRows
+      .map(r => formatSingleRowDim(r, lenUnit, thickUnit))
+      .filter(Boolean);
+    if (formatted.length > 0) {
+      const joined = formatted.join('<br/>');
+      return parentCat && !joined.includes(parentCat) ? `<strong>${parentCat}:</strong> ${joined}` : joined;
+    }
   }
 
-  // 3. Flat dimension fields on the item
-  const l = Number(sp.length) || 0;
-  const w = Number(sp.width) || 0;
-  const t = Number(sp.thickness ?? sp.depth) || 0;
-  const n = Number(sp.nos) || 1;
-  const catLabel = sp.category || sp.elementType || (Array.isArray(sp.categories) ? sp.categories.join(', ') : '');
+  // 3. Direct flat dimensions on item
+  const flatDim = formatSingleRowDim(sp, lenUnit, thickUnit);
+  if (flatDim) return flatDim;
 
-  if (l > 0 || w > 0 || t > 0) {
-    const nosTag = n > 1 ? ` × ${n} Nos` : '';
-    const dimText = `${l}${lenUnit} × ${w}${lenUnit} × ${t}${thickUnit}${nosTag}`;
-    return catLabel ? `<strong>${catLabel}:</strong> ${dimText}` : dimText;
-  }
+  // 4. Fallback to description/remarks or selected categories
+  if (sp.description && String(sp.description).trim()) return String(sp.description).trim();
+  if (sp.remarks && String(sp.remarks).trim()) return String(sp.remarks).trim();
+  if (Array.isArray(sp.categories) && sp.categories.length > 0) return sp.categories.join(', ');
 
-  return catLabel || 'Measured Site Concrete';
+  return `${Number(sp.volumeM3 || 0).toFixed(2)} m³ Measured Concrete`;
 };
 
 export const QuotationRMC: React.FC = () => {
@@ -327,13 +385,8 @@ export const QuotationRMC: React.FC = () => {
         });
       }
 
-      const measurementsRaw = localStorage.getItem(`concrete360_advanced_measurements_${siteKey}`);
-      let parsedMeasurements: MeasurementSpecificationItem[] = [];
-      if (measurementsRaw) {
-        const arr = JSON.parse(measurementsRaw);
-        if (Array.isArray(arr)) parsedMeasurements = arr;
-      }
-      setMeasurementItems(parsedMeasurements);
+      const loadedMeasurements = loadAllSiteMeasurements(siteKey);
+      setMeasurementItems(loadedMeasurements);
 
       const currentWastage = getPersistedWastage(siteKey);
       setWastagePercent(currentWastage);
@@ -364,8 +417,7 @@ export const QuotationRMC: React.FC = () => {
     loadSiteAndQuotes();
     setSelectedWorkId('ALL');
     const siteKey = getActiveSiteKey();
-    const rawM = localStorage.getItem(`concrete360_advanced_measurements_${siteKey}`);
-    const parsedM: MeasurementSpecificationItem[] = rawM ? JSON.parse(rawM) : [];
+    const parsedM = loadAllSiteMeasurements(siteKey);
     const currentWastage = getPersistedWastage(siteKey);
 
     if (parsedM.length > 0) {
@@ -440,7 +492,7 @@ export const QuotationRMC: React.FC = () => {
     setQuotations(updated);
     localStorage.setItem(`concrete360_site_quotations_${currentSiteKey}`, JSON.stringify(updated));
     setIsModalOpen(false);
-    setToastMsg(`Quotation ${newQuote.quoteNo} created!`);
+    setToastMsg(`Quotation ${newQuote.quoteNo} created with Site Measurements!`);
     setTimeout(() => setToastMsg(null), 3500);
   };
 
@@ -517,20 +569,19 @@ export const QuotationRMC: React.FC = () => {
     const sub = concreteSub + pumpSub;
     const gst = q.applyGst ? sub * 0.18 : 0;
 
-    // Resolve measurements either from saved quote snapshot or live Site Inventory Measurements
-    let specs: MeasurementSpecificationItem[] =
-      q.specifications && q.specifications.length > 0 ? q.specifications : [];
+    // Always enrich saved specs with live Site Inventory Measurements so full category & row details appear
+    const liveArr = loadAllSiteMeasurements(currentSiteKey);
+    let specs: MeasurementSpecificationItem[] = [];
 
-    if (specs.length === 0) {
-      try {
-        const liveRaw = localStorage.getItem(`concrete360_advanced_measurements_${currentSiteKey}`);
-        const liveArr: MeasurementSpecificationItem[] = liveRaw ? JSON.parse(liveRaw) : [];
-        if (Array.isArray(liveArr) && liveArr.length > 0) {
-          specs = q.workElementId && q.workElementId !== 'ALL'
-            ? liveArr.filter(it => it.id === q.workElementId)
-            : liveArr;
-        }
-      } catch {}
+    if (q.specifications && q.specifications.length > 0) {
+      specs = q.specifications.map(savedSp => {
+        const liveMatch = liveArr.find(l => l.id === savedSp.id);
+        return liveMatch ? { ...liveMatch, ...savedSp } : savedSp;
+      });
+    } else if (liveArr.length > 0) {
+      specs = q.workElementId && q.workElementId !== 'ALL'
+        ? liveArr.filter(it => it.id === q.workElementId)
+        : liveArr;
     }
 
     const netSum = specs.reduce((s, sp) => s + (Number(sp.volumeM3) || 0), 0);
