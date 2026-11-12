@@ -195,8 +195,8 @@ export const BillingRMC: React.FC = () => {
   
   const [totalReportVolume, setTotalReportVolume] = useState<number>(0);
   const [remainingVolume, setRemainingVolume] = useState<number>(0);
-  const [volumeM3, setVolumeM3] = useState<any>(9);
-  const [unitRate, setUnitRate] = useState<any>(4500);
+  const [volumeM3, setVolumeM3] = useState<string | number>(8);
+  const [unitRate, setUnitRate] = useState<string | number>(4500);
   const [applyGst, setApplyGst] = useState(true);
   const [invoiceDate, setInvoiceDate] = useState<string>(new Date().toISOString().split('T')[0]);
 
@@ -301,7 +301,7 @@ export const BillingRMC: React.FC = () => {
           ).trim();
 
           const eqType = String(v.equipmentType || v.type || v.category || 'Transit Mixer').trim();
-          const cap = Number(v.mixerCapacity || v.capacityM3 || v.capacity || 9);
+          const cap = Number(v.mixerCapacity || v.capacityM3 || v.capacity || 8);
           const statusText = String(v.status || '').toLowerCase();
           const isActive = v.isActive !== false && !statusText.includes('inactive') && !statusText.includes('breakdown');
 
@@ -309,7 +309,7 @@ export const BillingRMC: React.FC = () => {
             id: v.id ? String(v.id) : undefined,
             vehicleNo: vNo,
             equipmentType: eqType,
-            capacityM3: isNaN(cap) || cap <= 0 ? 9 : cap,
+            capacityM3: isNaN(cap) || cap <= 0 ? 8 : cap,
             status: v.status || 'Active',
             isActive
           };
@@ -325,13 +325,13 @@ export const BillingRMC: React.FC = () => {
 
     const finalTrucks = parsedTrucks.length > 0
       ? parsedTrucks
-      : [{ vehicleNo: 'KA28AC3087', equipmentType: 'Transit Mixer', capacityM3: 9, isActive: true }];
+      : [{ vehicleNo: 'KA28AC3087', equipmentType: 'Transit Mixer', capacityM3: 8, isActive: true }];
 
     setTransitTrucks(finalTrucks);
     return finalTrucks;
   };
 
-  const loadSiteData = () => {
+  const loadSiteData = (preserveModalInputs = false) => {
     const siteKey = getActiveSiteKey();
     setCurrentSiteKey(siteKey);
     loadMaterialCategories();
@@ -358,7 +358,6 @@ export const BillingRMC: React.FC = () => {
         }
       }
 
-      // Check phone registry backup
       let registeredPhone = '';
       try {
         const regRaw = localStorage.getItem('concrete360_site_phone_registry');
@@ -414,10 +413,6 @@ export const BillingRMC: React.FC = () => {
 
       setMeasurementItems(parsedM);
 
-      const reportGrade = resolveGradeFromReports(siteKey, parsedM);
-      setMixGrade(reportGrade);
-      setUnitRate(fetchRateForGrade(reportGrade));
-
       const netTotalVol = parsedM.reduce((sum: number, it: any) => sum + (Number(it.volumeM3) || 0), 0);
       const wastage = getPersistedWastage(siteKey);
       const grossTotalVol = netTotalVol * (1 + wastage / 100);
@@ -437,33 +432,38 @@ export const BillingRMC: React.FC = () => {
             .reduce((sum, inv) => sum + (Number(inv.volumeM3) || 0), 0);
           rem = Number(Math.max(0, selGross - workAlreadyInvoiced).toFixed(2));
           setRemainingVolume(rem);
-
-          if (selItem.mixGrade) {
-            setMixGrade(selItem.mixGrade);
-            setUnitRate(fetchRateForGrade(selItem.mixGrade));
-          }
         }
       }
 
-      let activeVNo = selectedVehicleNo;
-      if (!activeVNo || !loadedTrucks.some(t => t.vehicleNo === activeVNo)) {
-        activeVNo = loadedTrucks[0]?.vehicleNo || 'KA28AC3087';
-        setSelectedVehicleNo(activeVNo);
+      // Only populate default grade/vehicle/volume if we are NOT actively editing or typing in the modal
+      if (!preserveModalInputs && !isModalOpen) {
+        const reportGrade = resolveGradeFromReports(siteKey, parsedM);
+        setMixGrade(reportGrade);
+        setUnitRate(fetchRateForGrade(reportGrade));
+
+        let activeVNo = selectedVehicleNo;
+        if (!activeVNo || !loadedTrucks.some(t => t.vehicleNo === activeVNo)) {
+          activeVNo = loadedTrucks[0]?.vehicleNo || 'KA28AC3087';
+          setSelectedVehicleNo(activeVNo);
+        }
+
+        const activeMixer = loadedTrucks.find(t => t.vehicleNo === activeVNo) || loadedTrucks[0];
+        const mixerCapacity = activeMixer?.capacityM3 || 8;
+        const defaultVol = rem > 0 && rem < mixerCapacity ? rem : mixerCapacity;
+        setVolumeM3(defaultVol);
       }
-
-      const activeMixer = loadedTrucks.find(t => t.vehicleNo === activeVNo) || loadedTrucks[0];
-      const mixerCapacity = activeMixer?.capacityM3 || 9;
-      const defaultVol = rem > 0 && rem < mixerCapacity ? rem : mixerCapacity;
-      setVolumeM3(defaultVol);
-
     } catch {}
   };
 
   useEffect(() => {
     void cloudStorage.pullFromCloud();
-    loadSiteData();
+    loadSiteData(false);
 
-    const handleSync = () => loadSiteData();
+    const handleSync = () => {
+      // Do not overwrite user's active inputs while the add/edit modal is open
+      loadSiteData(isModalOpen);
+    };
+
     window.addEventListener('concrete360_site_switched', handleSync);
     window.addEventListener('concrete360_cloud_synced', handleSync);
     window.addEventListener('concrete360_transit_mixer_updated', handleSync);
@@ -483,7 +483,7 @@ export const BillingRMC: React.FC = () => {
       window.removeEventListener('storage', handleSync);
       window.removeEventListener('focus', handleSync);
     };
-  }, [selectedWorkId]);
+  }, [selectedWorkId, isModalOpen]);
 
   useEffect(() => {
     try {
@@ -502,12 +502,6 @@ export const BillingRMC: React.FC = () => {
 
   const handleVehicleChange = (vNo: string) => {
     setSelectedVehicleNo(vNo);
-    const matched = transitTrucks.find(t => t.vehicleNo === vNo);
-    if (matched && matched.capacityM3) {
-      const cap = Number(matched.capacityM3);
-      const autoVol = remainingVolume > 0 && remainingVolume < cap ? remainingVolume : cap;
-      setVolumeM3(autoVol);
-    }
   };
 
   const handleWorkElementChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -519,7 +513,7 @@ export const BillingRMC: React.FC = () => {
       const reportGrade = resolveGradeFromReports(currentSiteKey, measurementItems);
       setMixGrade(reportGrade);
       setUnitRate(fetchRateForGrade(reportGrade));
-      loadSiteData();
+      loadSiteData(true);
     } else {
       const item = measurementItems.find(it => it.id === wId);
       if (item) {
@@ -529,10 +523,6 @@ export const BillingRMC: React.FC = () => {
           .reduce((sum, inv) => sum + (Number(inv.volumeM3) || 0), 0);
         const rem = Number(Math.max(0, grossVol - alreadyInvoiced).toFixed(2));
         setRemainingVolume(rem);
-
-        const currentTruck = transitTrucks.find(t => t.vehicleNo === selectedVehicleNo);
-        const cap = currentTruck?.capacityM3 || 9;
-        setVolumeM3(rem > 0 && rem < cap ? rem : cap);
 
         if (item.mixGrade) {
           const gradeCode = item.mixGrade;
@@ -551,7 +541,7 @@ export const BillingRMC: React.FC = () => {
 
   const currentMixerCapacity = useMemo(() => {
     const found = transitTrucks.find(t => t.vehicleNo === selectedVehicleNo);
-    return found?.capacityM3 || 9;
+    return found?.capacityM3 || 8;
   }, [transitTrucks, selectedVehicleNo]);
 
   const handleOpenAddModal = () => {
@@ -559,7 +549,7 @@ export const BillingRMC: React.FC = () => {
       alert('Read-Only mode: Data entry is restricted.');
       return;
     }
-    loadSiteData();
+    loadSiteData(false);
     setEditingInvoiceId(null);
 
     const resolvedReportGrade = resolveGradeFromReports(currentSiteKey, measurementItems);
@@ -569,7 +559,7 @@ export const BillingRMC: React.FC = () => {
     if (transitTrucks.length > 0) {
       const firstTruck = transitTrucks[0];
       setSelectedVehicleNo(firstTruck.vehicleNo);
-      const cap = firstTruck.capacityM3 || 9;
+      const cap = firstTruck.capacityM3 || 8;
       const initialVol = remainingVolume > 0 && remainingVolume < cap ? remainingVolume : cap;
       setVolumeM3(initialVol);
     }
@@ -585,11 +575,18 @@ export const BillingRMC: React.FC = () => {
     }
     setEditingInvoiceId(inv.id);
     setMixGrade(inv.mixGrade);
-    setSelectedVehicleNo(inv.vehicleNo || (transitTrucks[0]?.vehicleNo ?? 'KA28AC3087'));
+    
+    // Ensure the existing vehicleNo is selectable even if it was removed from active fleet
+    const existingVNo = inv.vehicleNo || (transitTrucks[0]?.vehicleNo ?? 'KA28AC3087');
+    if (existingVNo && !transitTrucks.some(t => t.vehicleNo === existingVNo)) {
+      setTransitTrucks(prev => [{ vehicleNo: existingVNo, capacityM3: inv.volumeM3 }, ...prev]);
+    }
+    setSelectedVehicleNo(existingVNo);
     setVolumeM3(inv.volumeM3);
     setUnitRate(inv.unitRate);
     setApplyGst(inv.applyGst ?? true);
     setInvoiceDate(inv.date || new Date().toISOString().split('T')[0]);
+
     if (inv.workElementId) {
       setSelectedWorkId(inv.workElementId);
       const item = measurementItems.find(it => it.id === inv.workElementId);
@@ -649,7 +646,6 @@ export const BillingRMC: React.FC = () => {
 
     const formattedPrintDate = formatDateDDMMYYYY(inv.date);
 
-    // Dynamic resolution of phone number: fallback to siteDetails or phone registry if missing on older invoice
     let dynamicPhone = inv.clientPhone || siteDetails.clientPhone || '';
     if (!dynamicPhone) {
       try {
@@ -790,10 +786,12 @@ export const BillingRMC: React.FC = () => {
       alert('Permission Denied: Read-Only accounts cannot create or modify invoices.');
       return;
     }
-    loadSiteData();
 
-    // Ensure phone number from site is attached to the invoice record
+    // Do NOT call loadSiteData() here, otherwise user's edited volumeM3 and selectedVehicleNo get overwritten!
     const resolvedPhone = siteDetails.clientPhone;
+    const finalVolume = Number(volumeM3) || 0;
+    const finalRate = Number(unitRate) || 0;
+    const finalVehicle = selectedVehicleNo || (transitTrucks[0]?.vehicleNo ?? 'N/A');
 
     if (editingInvoiceId) {
       if (!canEditOrDelete) {
@@ -802,27 +800,22 @@ export const BillingRMC: React.FC = () => {
       }
       const oldInv = invoices.find(i => i.id === editingInvoiceId);
       const oldVol = oldInv ? oldInv.volumeM3 : 0;
-      const volDiff = numVolume - oldVol;
-
-      if (remainingVolume - volDiff < 0) {
-        alert('Volume exceeds remaining report balance!');
-        return;
-      }
+      const volDiff = finalVolume - oldVol;
 
       const updatedInvoices = invoices.map(i => i.id === editingInvoiceId ? {
         ...i,
-        clientName: siteDetails.clientName,
-        clientAddress: siteDetails.clientAddress,
-        clientGstin: siteDetails.clientGstin,
+        clientName: siteDetails.clientName || i.clientName,
+        clientAddress: siteDetails.clientAddress || i.clientAddress,
+        clientGstin: siteDetails.clientGstin || i.clientGstin,
         clientPhone: resolvedPhone || i.clientPhone || '',
-        paymentTerms: siteDetails.paymentTerms,
-        projectSite: siteDetails.projectSite,
-        siteAddress: siteDetails.siteAddress,
-        hsnCode: siteDetails.hsnCode,
+        paymentTerms: siteDetails.paymentTerms || i.paymentTerms,
+        projectSite: siteDetails.projectSite || i.projectSite,
+        siteAddress: siteDetails.siteAddress || i.siteAddress,
+        hsnCode: siteDetails.hsnCode || i.hsnCode,
         mixGrade,
-        vehicleNo: selectedVehicleNo || 'N/A',
-        volumeM3: numVolume,
-        unitRate: numRate,
+        vehicleNo: finalVehicle,
+        volumeM3: finalVolume,
+        unitRate: finalRate,
         applyGst,
         grandTotal: Math.round(grandTotal),
         date: invoiceDate,
@@ -865,23 +858,23 @@ export const BillingRMC: React.FC = () => {
       }
 
       setInvoices(updatedInvoices);
-      setRemainingVolume(prev => Number((prev - volDiff).toFixed(2)));
+      setRemainingVolume(prev => Number(Math.max(0, prev - volDiff).toFixed(2)));
     } else {
       const newInvoice: RMCInvoice = {
         id: `INV-${Date.now()}`,
         invoiceNo: `INV-2026-${Math.floor(100 + Math.random() * 900)}`,
-        clientName: siteDetails.clientName,
-        clientAddress: siteDetails.clientAddress,
-        clientGstin: siteDetails.clientGstin,
+        clientName: siteDetails.clientName || currentSiteKey,
+        clientAddress: siteDetails.clientAddress || 'Ainapur Site',
+        clientGstin: siteDetails.clientGstin || '',
         clientPhone: resolvedPhone,
         paymentTerms: siteDetails.paymentTerms,
-        projectSite: siteDetails.projectSite,
-        siteAddress: siteDetails.siteAddress,
+        projectSite: siteDetails.projectSite || currentSiteKey,
+        siteAddress: siteDetails.siteAddress || 'Ainapur Site',
         hsnCode: siteDetails.hsnCode,
         mixGrade,
-        vehicleNo: selectedVehicleNo || 'N/A',
-        volumeM3: numVolume,
-        unitRate: numRate,
+        vehicleNo: finalVehicle,
+        volumeM3: finalVolume,
+        unitRate: finalRate,
         applyGst,
         grandTotal: Math.round(grandTotal),
         date: invoiceDate,
@@ -922,10 +915,11 @@ export const BillingRMC: React.FC = () => {
       }
 
       setInvoices(updatedInvoices);
-      setRemainingVolume(prev => Number(Math.max(0, prev - numVolume).toFixed(2)));
+      setRemainingVolume(prev => Number(Math.max(0, prev - finalVolume).toFixed(2)));
     }
 
     setIsModalOpen(false);
+    setEditingInvoiceId(null);
   };
 
   const confirmDeleteExecution = async () => {
@@ -1171,7 +1165,11 @@ export const BillingRMC: React.FC = () => {
                 </div>
               </div>
               <button
-                onClick={() => setIsModalOpen(false)}
+                type="button"
+                onClick={() => {
+                  setIsModalOpen(false);
+                  setEditingInvoiceId(null);
+                }}
                 className="text-slate-400 hover:text-white p-1 rounded-lg bg-[#121c2d] cursor-pointer"
               >
                 <X className="w-5 h-5" />
@@ -1335,7 +1333,10 @@ export const BillingRMC: React.FC = () => {
               <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#1b273d]">
                 <button
                   type="button"
-                  onClick={() => setIsModalOpen(false)}
+                  onClick={() => {
+                    setIsModalOpen(false);
+                    setEditingInvoiceId(null);
+                  }}
                   className="px-5 py-3 bg-[#070d1a] hover:bg-[#121c2d] text-slate-300 font-bold rounded-xl cursor-pointer text-xs"
                 >
                   Cancel
