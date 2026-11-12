@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Building, Edit2, Save, X, Check, Landmark, Phone } from 'lucide-react';
 import { getSessionUser, isAdminUser, canCreateRecords } from '../../utils/accessControl';
 import { supabase } from '../../lib/supabase';
@@ -8,6 +8,7 @@ export const CompanyDetailsModule: React.FC = () => {
   const sessionUser = getSessionUser();
   const canEditCompany = isAdminUser(sessionUser) || canCreateRecords(sessionUser);
   const [isEditing, setIsEditing] = useState(false);
+  const isEditingRef = useRef(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
 
   const [companyData, setCompanyData] = useState({
@@ -24,7 +25,14 @@ export const CompanyDetailsModule: React.FC = () => {
     branch: 'KOTAK MAHINDRA BANK LTD GROUND FLOOR, JALNAGAR, VIJAYAPURA-586101'
   });
 
+  useEffect(() => {
+    isEditingRef.current = isEditing;
+  }, [isEditing]);
+
   const loadData = async () => {
+    // Never overwrite user's active typing while editing
+    if (isEditingRef.current) return;
+
     try {
       const raw = localStorage.getItem('concrete360_company_profile');
       const backupPhonesRaw = localStorage.getItem('concrete360_company_phones');
@@ -49,14 +57,14 @@ export const CompanyDetailsModule: React.FC = () => {
         phoneSecondary: initialSecondary || prev.phoneSecondary
       }));
 
-      if (supabase) {
+      if (supabase && !isEditingRef.current) {
         const { data } = await (supabase as any)
           .from('company_profile')
           .select('*')
           .eq('id', 'primary_company')
           .maybeSingle();
 
-        if (data) {
+        if (data && !isEditingRef.current) {
           const latestBackupRaw = localStorage.getItem('concrete360_company_phones');
           const latestBackup = latestBackupRaw ? JSON.parse(latestBackupRaw) : {};
 
@@ -95,7 +103,11 @@ export const CompanyDetailsModule: React.FC = () => {
   useEffect(() => {
     void loadData();
 
-    const onSync = () => void loadData();
+    const onSync = () => {
+      if (!isEditingRef.current) {
+        void loadData();
+      }
+    };
     window.addEventListener('concrete360_cloud_synced', onSync);
     window.addEventListener('storage', onSync);
     return () => {
@@ -110,8 +122,8 @@ export const CompanyDetailsModule: React.FC = () => {
 
     const cleanedData = {
       ...companyData,
-      phonePrimary: companyData.phonePrimary.trim(),
-      phoneSecondary: companyData.phoneSecondary.trim()
+      phonePrimary: String(companyData.phonePrimary || '').trim(),
+      phoneSecondary: String(companyData.phoneSecondary || '').trim()
     };
 
     try {
@@ -123,6 +135,12 @@ export const CompanyDetailsModule: React.FC = () => {
           phoneSecondary: cleanedData.phoneSecondary
         })
       );
+
+      setCompanyData(cleanedData);
+      isEditingRef.current = false;
+      setIsEditing(false);
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 3000);
 
       if (supabase) {
         const { error } = await (supabase as any).from('company_profile').upsert(
@@ -144,7 +162,6 @@ export const CompanyDetailsModule: React.FC = () => {
           { onConflict: 'id' }
         );
 
-        // Fallback upsert without phone columns if schema migration hasn't been run yet
         if (error) {
           await (supabase as any).from('company_profile').upsert(
             {
@@ -166,15 +183,19 @@ export const CompanyDetailsModule: React.FC = () => {
 
         await cloudStorage.pullFromCloud();
         localStorage.setItem('concrete360_company_profile', JSON.stringify(cleanedData));
+        localStorage.setItem(
+          'concrete360_company_phones',
+          JSON.stringify({
+            phonePrimary: cleanedData.phonePrimary,
+            phoneSecondary: cleanedData.phoneSecondary
+          })
+        );
       }
 
-      setCompanyData(cleanedData);
       window.dispatchEvent(new Event('concrete360_company_profile_updated'));
-      setSavedSuccess(true);
-      setIsEditing(false);
-      setTimeout(() => setSavedSuccess(false), 3000);
     } catch {
       setCompanyData(cleanedData);
+      isEditingRef.current = false;
       setIsEditing(false);
     }
   };
@@ -192,7 +213,11 @@ export const CompanyDetailsModule: React.FC = () => {
 
         {!isEditing && canEditCompany ? (
           <button
-            onClick={() => setIsEditing(true)}
+            type="button"
+            onClick={() => {
+              isEditingRef.current = true;
+              setIsEditing(true);
+            }}
             className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-blue-600/30 flex items-center justify-center gap-2 cursor-pointer transition active:scale-95 shrink-0 font-mono"
           >
             <Edit2 className="w-4 h-4" />
@@ -200,7 +225,12 @@ export const CompanyDetailsModule: React.FC = () => {
           </button>
         ) : isEditing ? (
           <button
-            onClick={() => setIsEditing(false)}
+            type="button"
+            onClick={() => {
+              isEditingRef.current = false;
+              setIsEditing(false);
+              void loadData();
+            }}
             className="px-5 py-2.5 bg-[#121c2d] hover:bg-[#1a263d] text-slate-300 font-bold text-xs rounded-xl border border-[#1b273d] flex items-center justify-center gap-2 cursor-pointer transition shrink-0 font-mono"
           >
             <X className="w-4 h-4" />
@@ -319,7 +349,7 @@ export const CompanyDetailsModule: React.FC = () => {
               <input
                 type="text"
                 value={companyData.name}
-                onChange={(e) => setCompanyData({ ...companyData, name: e.target.value })}
+                onChange={(e) => setCompanyData(prev => ({ ...prev, name: e.target.value }))}
                 className="w-full px-4 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-white font-bold outline-none focus:border-blue-500"
                 required
               />
@@ -330,7 +360,7 @@ export const CompanyDetailsModule: React.FC = () => {
               <input
                 type="text"
                 value={companyData.gstin}
-                onChange={(e) => setCompanyData({ ...companyData, gstin: e.target.value })}
+                onChange={(e) => setCompanyData(prev => ({ ...prev, gstin: e.target.value }))}
                 className="w-full px-4 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-cyan-400 font-bold outline-none focus:border-blue-500"
                 required
               />
@@ -342,7 +372,7 @@ export const CompanyDetailsModule: React.FC = () => {
                 type="tel"
                 placeholder="+91 98765 43210"
                 value={companyData.phonePrimary}
-                onChange={(e) => setCompanyData({ ...companyData, phonePrimary: e.target.value })}
+                onChange={(e) => setCompanyData(prev => ({ ...prev, phonePrimary: e.target.value }))}
                 className="w-full px-4 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-white font-bold outline-none focus:border-blue-500"
                 required
               />
@@ -356,7 +386,7 @@ export const CompanyDetailsModule: React.FC = () => {
                 type="tel"
                 placeholder="+91 98765 43211"
                 value={companyData.phoneSecondary}
-                onChange={(e) => setCompanyData({ ...companyData, phoneSecondary: e.target.value })}
+                onChange={(e) => setCompanyData(prev => ({ ...prev, phoneSecondary: e.target.value }))}
                 className="w-full px-4 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-white font-bold outline-none focus:border-blue-500"
               />
             </div>
@@ -366,7 +396,7 @@ export const CompanyDetailsModule: React.FC = () => {
               <input
                 type="text"
                 value={companyData.address}
-                onChange={(e) => setCompanyData({ ...companyData, address: e.target.value })}
+                onChange={(e) => setCompanyData(prev => ({ ...prev, address: e.target.value }))}
                 className="w-full px-4 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-white font-bold outline-none focus:border-blue-500"
                 required
               />
@@ -381,7 +411,7 @@ export const CompanyDetailsModule: React.FC = () => {
               <input
                 type="text"
                 value={companyData.bankName}
-                onChange={(e) => setCompanyData({ ...companyData, bankName: e.target.value })}
+                onChange={(e) => setCompanyData(prev => ({ ...prev, bankName: e.target.value }))}
                 className="w-full px-4 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-white font-bold outline-none focus:border-blue-500"
                 required
               />
@@ -392,7 +422,7 @@ export const CompanyDetailsModule: React.FC = () => {
               <input
                 type="text"
                 value={companyData.accountName}
-                onChange={(e) => setCompanyData({ ...companyData, accountName: e.target.value })}
+                onChange={(e) => setCompanyData(prev => ({ ...prev, accountName: e.target.value }))}
                 className="w-full px-4 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-white font-bold outline-none focus:border-blue-500"
                 required
               />
@@ -403,7 +433,7 @@ export const CompanyDetailsModule: React.FC = () => {
               <input
                 type="text"
                 value={companyData.accountNo}
-                onChange={(e) => setCompanyData({ ...companyData, accountNo: e.target.value })}
+                onChange={(e) => setCompanyData(prev => ({ ...prev, accountNo: e.target.value }))}
                 className="w-full px-4 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-cyan-400 font-bold outline-none focus:border-blue-500"
                 required
               />
@@ -414,7 +444,7 @@ export const CompanyDetailsModule: React.FC = () => {
               <input
                 type="text"
                 value={companyData.ifscSwift}
-                onChange={(e) => setCompanyData({ ...companyData, ifscSwift: e.target.value })}
+                onChange={(e) => setCompanyData(prev => ({ ...prev, ifscSwift: e.target.value }))}
                 className="w-full px-4 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-white font-bold outline-none focus:border-blue-500"
                 required
               />
@@ -425,7 +455,7 @@ export const CompanyDetailsModule: React.FC = () => {
               <input
                 type="text"
                 value={companyData.branch}
-                onChange={(e) => setCompanyData({ ...companyData, branch: e.target.value })}
+                onChange={(e) => setCompanyData(prev => ({ ...prev, branch: e.target.value }))}
                 className="w-full px-4 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-white font-bold outline-none focus:border-blue-500"
                 required
               />
@@ -435,7 +465,11 @@ export const CompanyDetailsModule: React.FC = () => {
           <div className="flex justify-end gap-3 pt-4 border-t border-[#1b273d]">
             <button
               type="button"
-              onClick={() => setIsEditing(false)}
+              onClick={() => {
+                isEditingRef.current = false;
+                setIsEditing(false);
+                void loadData();
+              }}
               className="px-5 py-3 bg-[#070d1a] hover:bg-[#121c2d] text-slate-300 font-bold rounded-xl cursor-pointer"
             >
               Cancel
