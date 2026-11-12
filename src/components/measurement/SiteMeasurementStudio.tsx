@@ -45,6 +45,13 @@ export interface ConcreteItem {
   volumeCft: number;
   unitSystem: UnitSystem;
   dimensionsSnapshot?: StructuralDimensionsSnapshot;
+  slabRows?: { length: number | ''; width: number | ''; thickness: number | '' }[];
+  columnRows?: { count: number | ''; height: number | ''; dim1: number | ''; dim2: number | '' }[];
+  beamRows?: { count: number | ''; length: number | ''; width: number | ''; depth: number | '' }[];
+  wallRows?: { count: number | ''; length: number | ''; height: number | ''; thickness: number | '' }[];
+  stairsRows?: { flights: number | ''; width: number | ''; steps: number | ''; tread: number | ''; riser: number | ''; waist: number | '' }[];
+  footingRows?: { count: number | ''; length: number | ''; width: number | ''; depth: number | '' }[];
+  roadRows?: { lengthKm: number | ''; width: number | ''; thickness: number | '' }[];
 }
 
 const CATEGORY_DEFINITIONS: { id: StructuralType; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
@@ -156,7 +163,14 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
               volumeM3: Number(it.volumeM3) || 0,
               volumeCft: Number(it.volumeCft) || (Number(it.volumeM3) || 0) * 35.3146667,
               unitSystem: it.unitSystem === 'IMPERIAL' ? 'IMPERIAL' : 'METRIC',
-              dimensionsSnapshot: it.dimensionsSnapshot || {}
+              dimensionsSnapshot: it.dimensionsSnapshot || {},
+              slabRows: Array.isArray(it.slabRows) ? it.slabRows : undefined,
+              columnRows: Array.isArray(it.columnRows) ? it.columnRows : undefined,
+              beamRows: Array.isArray(it.beamRows) ? it.beamRows : undefined,
+              wallRows: Array.isArray(it.wallRows) ? it.wallRows : undefined,
+              stairsRows: Array.isArray(it.stairsRows) ? it.stairsRows : undefined,
+              footingRows: Array.isArray(it.footingRows) ? it.footingRows : undefined,
+              roadRows: Array.isArray(it.roadRows) ? it.roadRows : undefined
             }));
           setItems(filtered);
           return;
@@ -422,6 +436,70 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
     setIsModalOpen(true);
   };
 
+  const handleOpenEditModal = (item: ConcreteItem) => {
+    const mode: UnitSystem = item.unitSystem === 'IMPERIAL' ? 'IMPERIAL' : 'METRIC';
+    setEditingItem(item);
+    setModalTargetSiteKey(item.siteKey || currentSiteKey);
+    setModalMixGrade(item.mixGrade || 'M25');
+    setModalWorkDate(item.date || new Date().toISOString().split('T')[0]);
+    setSelectedCategories(Array.isArray(item.categories) && item.categories.length > 0 ? [...item.categories] : ['SLAB']);
+    setLabel(item.label || '');
+    setUnitMode(mode);
+
+    // Restore saved rows for each category (with legacy dimensionsSnapshot fallback for older entries)
+    if (Array.isArray(item.slabRows) && item.slabRows.length > 0) {
+      setSlabs(item.slabRows.map(r => ({ ...r })));
+    } else if (item.dimensionsSnapshot?.slab) {
+      const s = item.dimensionsSnapshot.slab;
+      const factor = mode === 'IMPERIAL' ? 1 / 0.3048 : 1;
+      setSlabs([{
+        length: Number((s.length * factor).toFixed(2)) || '',
+        width: Number((s.width * factor).toFixed(2)) || '',
+        thickness: Number((s.thickness * factor).toFixed(2)) || ''
+      }]);
+    } else {
+      setSlabs([{ length: '', width: '', thickness: '' }]);
+    }
+
+    setColumns(
+      Array.isArray(item.columnRows) && item.columnRows.length > 0
+        ? item.columnRows.map(r => ({ ...r }))
+        : [{ count: '', height: '', dim1: '', dim2: '' }]
+    );
+
+    setBeams(
+      Array.isArray(item.beamRows) && item.beamRows.length > 0
+        ? item.beamRows.map(r => ({ ...r }))
+        : [{ count: '', length: '', width: '', depth: '' }]
+    );
+
+    setWalls(
+      Array.isArray(item.wallRows) && item.wallRows.length > 0
+        ? item.wallRows.map(r => ({ ...r }))
+        : [{ count: '', length: '', height: '', thickness: '' }]
+    );
+
+    setStairsList(
+      Array.isArray(item.stairsRows) && item.stairsRows.length > 0
+        ? item.stairsRows.map(r => ({ ...r }))
+        : [{ flights: '', width: '', steps: '', tread: '', riser: '', waist: '' }]
+    );
+
+    setFootings(
+      Array.isArray(item.footingRows) && item.footingRows.length > 0
+        ? item.footingRows.map(r => ({ ...r }))
+        : [{ count: '', length: '', width: '', depth: '' }]
+    );
+
+    setRoads(
+      Array.isArray(item.roadRows) && item.roadRows.length > 0
+        ? item.roadRows.map(r => ({ ...r }))
+        : [{ lengthKm: '', width: '', thickness: '' }]
+    );
+
+    setIsModalOpen(true);
+  };
+
   const handleSaveItem = (e: React.FormEvent) => {
     e.preventDefault();
     if (!canCreate) return;
@@ -446,6 +524,16 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
       snapshot.slab = { length: toM(slabs[0].length), width: toM(slabs[0].width), thickness: toM(slabs[0].thickness) };
     }
 
+    const savedRowsPayload = {
+      slabRows: selectedCategories.includes('SLAB') ? slabs.map(r => ({ ...r })) : [],
+      columnRows: selectedCategories.includes('COLUMN') ? columns.map(r => ({ ...r })) : [],
+      beamRows: selectedCategories.includes('BEAM') ? beams.map(r => ({ ...r })) : [],
+      wallRows: selectedCategories.includes('RCC_WALL') ? walls.map(r => ({ ...r })) : [],
+      stairsRows: selectedCategories.includes('STAIRS') ? stairsList.map(r => ({ ...r })) : [],
+      footingRows: selectedCategories.includes('FOOTING') ? footings.map(r => ({ ...r })) : [],
+      roadRows: selectedCategories.includes('ROAD_WORK') ? roads.map(r => ({ ...r })) : []
+    };
+
     const cleanTargetKey = extractCleanSiteName(modalTargetSiteKey);
 
     if (cleanTargetKey !== currentSiteKey) {
@@ -464,7 +552,8 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
           volumeM3: Number(grandTotalComputed.totalM3.toFixed(3)),
           volumeCft: Number(grandTotalComputed.totalCft.toFixed(2)),
           unitSystem: unitMode,
-          dimensionsSnapshot: snapshot
+          dimensionsSnapshot: snapshot,
+          ...savedRowsPayload
         };
         localStorage.setItem(targetStorageKey, JSON.stringify([newItem, ...existingParsed]));
         
@@ -486,7 +575,8 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
           volumeM3: Number(grandTotalComputed.totalM3.toFixed(3)),
           volumeCft: Number(grandTotalComputed.totalCft.toFixed(2)),
           unitSystem: unitMode,
-          dimensionsSnapshot: snapshot
+          dimensionsSnapshot: snapshot,
+          ...savedRowsPayload
         };
         setItems((prev) => prev.map((it) => it.id === editingItem.id ? itemToSave : it));
       } else {
@@ -501,7 +591,8 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
           volumeM3: Number(grandTotalComputed.totalM3.toFixed(3)),
           volumeCft: Number(grandTotalComputed.totalCft.toFixed(2)),
           unitSystem: unitMode,
-          dimensionsSnapshot: snapshot
+          dimensionsSnapshot: snapshot,
+          ...savedRowsPayload
         };
         setItems((prev) => [itemToSave, ...prev]);
       }
@@ -816,16 +907,7 @@ export const SiteMeasurementStudio: React.FC<Props> = ({
                         {canEditOrDelete ? (
                           <>
                             <button
-                              onClick={() => {
-                                setEditingItem(item);
-                                setModalTargetSiteKey(item.siteKey || currentSiteKey);
-                                setModalMixGrade(item.mixGrade || 'M25');
-                                setModalWorkDate(item.date || new Date().toISOString().split('T')[0]);
-                                setSelectedCategories(item.categories || ['SLAB']);
-                                setLabel(item.label || '');
-                                setUnitMode(item.unitSystem || 'METRIC');
-                                setIsModalOpen(true);
-                              }}
+                              onClick={() => handleOpenEditModal(item)}
                               className="text-slate-400 hover:text-white cursor-pointer transition-colors p-1"
                               title="Edit"
                             >
