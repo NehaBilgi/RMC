@@ -74,27 +74,50 @@ export const OngoingSiteTransfer: React.FC = () => {
   const canModify = userRole === 'ADMIN' || userRole === 'EMPLOYEE';
   const canDelete = userRole === 'ADMIN';
 
-  // Always read and preserve existing phone numbers from persistent storage
+  const getPhoneRegistry = (): Record<string, string> => {
+    try {
+      const raw = localStorage.getItem('concrete360_site_phone_registry');
+      return raw ? JSON.parse(raw) : {};
+    } catch {}
+    return {};
+  };
+
+  const persistPhoneMap = (cleanKey: string, phoneNumber: string) => {
+    try {
+      const map = getPhoneRegistry();
+      map[cleanKey] = phoneNumber;
+      localStorage.setItem('concrete360_site_phone_registry', JSON.stringify(map));
+    } catch {}
+  };
+
+  // Merge both storage keys and preserve phone numbers so sites never cap at 2 or overwrite
   const getSitesFromStorage = (): any[] => {
     try {
-      const raw = localStorage.getItem('concrete360_ongoing_sites') || localStorage.getItem('concrete360_sites');
-      const phoneMapRaw = localStorage.getItem('concrete360_site_phone_registry');
-      const phoneMap = phoneMapRaw ? JSON.parse(phoneMapRaw) : {};
+      const ongoingRaw = localStorage.getItem('concrete360_ongoing_sites');
+      const legacyRaw = localStorage.getItem('concrete360_sites');
+      const phoneMap = getPhoneRegistry();
 
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed.map((s: any) => {
-            const cleanKey = extractCleanSiteName(s.name || s.siteName || s.id);
-            const resolvedPhone = s.phone || s.phoneNumber || s.contactNo || phoneMap[cleanKey] || '';
-            return {
-              ...s,
-              phone: resolvedPhone,
-              phoneNumber: resolvedPhone
-            };
-          });
-        }
-      }
+      const ongoingArr = ongoingRaw ? JSON.parse(ongoingRaw) : [];
+      const legacyArr = legacyRaw ? JSON.parse(legacyRaw) : [];
+
+      const mergedMap = new Map<string, any>();
+
+      [...(Array.isArray(legacyArr) ? legacyArr : []), ...(Array.isArray(ongoingArr) ? ongoingArr : [])].forEach((s: any, idx: number) => {
+        const cleanKey = extractCleanSiteName(s.name || s.siteName || s.id);
+        if (!cleanKey) return;
+        const resolvedPhone = s.phone || s.phoneNumber || s.contactNo || phoneMap[cleanKey] || '';
+        mergedMap.set(cleanKey, {
+          ...s,
+          id: cleanKey,
+          siteId: s.siteId || (idx + 1 < 10 ? `S-0${idx + 1}` : `S-${idx + 1}`),
+          name: cleanKey,
+          phone: resolvedPhone,
+          phoneNumber: resolvedPhone
+        });
+      });
+
+      const result = Array.from(mergedMap.values());
+      if (result.length > 0) return result;
     } catch {}
     return DEFAULT_SITES;
   };
@@ -113,7 +136,7 @@ export const OngoingSiteTransfer: React.FC = () => {
   });
 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editingOriginalKey, setEditingOriginalKey] = useState<string | null>(null);
   const [siteToDelete, setSiteToDelete] = useState<any | null>(null);
 
   // Form Fields
@@ -149,19 +172,10 @@ export const OngoingSiteTransfer: React.FC = () => {
     };
   }, [isModalOpen]);
 
-  const persistPhoneMap = (cleanKey: string, phoneNumber: string) => {
-    try {
-      const mapRaw = localStorage.getItem('concrete360_site_phone_registry');
-      const map = mapRaw ? JSON.parse(mapRaw) : {};
-      map[cleanKey] = phoneNumber;
-      localStorage.setItem('concrete360_site_phone_registry', JSON.stringify(map));
-    } catch {}
-  };
-
   const handleSelectActiveSite = (site: any) => {
     if (!site) return;
     const cleanSiteKey = extractCleanSiteName(site.name || site.siteName);
-    const resolvedPhone = site.phone || site.phoneNumber || site.contactNo || '';
+    const resolvedPhone = site.phone || site.phoneNumber || site.contactNo || getPhoneRegistry()[cleanSiteKey] || '';
 
     const sitePayload = {
       id: site.id || cleanSiteKey,
@@ -184,7 +198,7 @@ export const OngoingSiteTransfer: React.FC = () => {
   };
 
   const handleOpenAddModal = () => {
-    setEditingIndex(null);
+    setEditingOriginalKey(null);
     setCategory('Building');
     setName('');
     setLocation('');
@@ -196,7 +210,7 @@ export const OngoingSiteTransfer: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const handleOpenEditModal = (site: any, index: number, e: React.MouseEvent) => {
+  const handleOpenEditModal = (site: any, e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
 
@@ -207,9 +221,9 @@ export const OngoingSiteTransfer: React.FC = () => {
 
     const cleanKey = extractCleanSiteName(site.name || site.siteName);
     const cat = site.category === 'Road' ? 'Road' : 'Building';
-    const sitePhone = site.phone || site.phoneNumber || site.contactNo || '';
+    const sitePhone = site.phone || site.phoneNumber || site.contactNo || getPhoneRegistry()[cleanKey] || '';
 
-    setEditingIndex(index);
+    setEditingOriginalKey(cleanKey);
     setCategory(cat);
     setName(cleanKey);
     setLocation(site.location || '');
@@ -221,10 +235,36 @@ export const OngoingSiteTransfer: React.FC = () => {
     setIsModalOpen(true);
   };
 
+  const syncSiteToSupabase = async (siteObj: any) => {
+    if (!supabase) return;
+    try {
+      await (supabase as any)
+        .from('sites')
+        .upsert({
+          id: siteObj.id,
+          site_id: siteObj.siteId,
+          name: siteObj.name,
+          site_name: siteObj.siteName,
+          category: siteObj.category,
+          location: siteObj.location,
+          supervisor: siteObj.supervisor,
+          client_name: siteObj.clientName,
+          gstin: siteObj.gstin,
+          scope: siteObj.detail,
+          assigned_fleet: siteObj.assignedFleet || 4,
+          status: 'active',
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'id' });
+    } catch (err) {
+      console.warn('Supabase site upsert skipped:', err);
+    }
+  };
+
   const handleSaveSite = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
 
+    const latestList = getSitesFromStorage();
     const cleanKey = extractCleanSiteName(name);
     const detail = category === 'Road' 
       ? (floorScope.includes('Km') ? floorScope : 'Km 0 to 12.5') 
@@ -233,74 +273,41 @@ export const OngoingSiteTransfer: React.FC = () => {
     const siteTitle = category === 'Building' ? `${cleanKey} (${detail})` : cleanKey;
     const cleanPhone = phone.trim();
 
-    // Persist phone to permanent registry so no cloud pull can overwrite it
     persistPhoneMap(cleanKey, cleanPhone);
 
     let updatedList: any[] = [];
+    let savedSiteObj: any = null;
 
-    if (editingIndex !== null && sites[editingIndex]) {
-      // EDIT MODE
-      const existing = sites[editingIndex];
-      const updatedSite = {
-        ...existing,
+    if (editingOriginalKey) {
+      const existing = latestList.find(s => extractCleanSiteName(s.name || s.siteName || s.id) === editingOriginalKey);
+      savedSiteObj = {
+        ...(existing || {}),
         id: cleanKey,
+        siteId: existing?.siteId || `S-0${latestList.length + 1}`,
         name: cleanKey,
         category,
         siteName: siteTitle,
-        location: location.trim() || existing.location || 'Ainapur Site',
+        location: location.trim() || existing?.location || 'Ainapur Site',
         supervisor: supervisor.trim() || 'adminbilgi',
         phone: cleanPhone,
         phoneNumber: cleanPhone,
         clientName: clientName.trim() || cleanKey,
         gstin: gstin.trim().toUpperCase(),
         detail,
-        assignedFleet: existing.assignedFleet || 4
+        assignedFleet: existing?.assignedFleet || 4
       };
 
-      updatedList = [...sites];
-      updatedList[editingIndex] = updatedSite;
-
-      setSites(updatedList);
-      localStorage.setItem('concrete360_ongoing_sites', JSON.stringify(updatedList));
-      localStorage.setItem('concrete360_sites', JSON.stringify(updatedList));
-
-      if (currentActiveKey === extractCleanSiteName(existing.name || existing.siteName) || currentActiveKey === cleanKey) {
-        handleSelectActiveSite(updatedSite);
-      }
-
-      setIsModalOpen(false);
-
-      // Push local data up instead of pulling older cloud data over it
-      try {
-        if (supabase) {
-          await (supabase as any)
-            .from('sites')
-            .upsert({
-              id: cleanKey,
-              site_id: updatedSite.siteId,
-              name: cleanKey,
-              site_name: siteTitle,
-              category: category,
-              location: updatedSite.location,
-              supervisor: updatedSite.supervisor,
-              phone: cleanPhone,
-              client_name: updatedSite.clientName,
-              gstin: updatedSite.gstin,
-              scope: detail,
-              assigned_fleet: updatedSite.assignedFleet,
-              status: 'active',
-              updated_at: new Date().toISOString()
-            }, { onConflict: 'id' });
-        }
-        await cloudStorage.pushAllLocalToCloud();
-      } catch (err) {
-        console.warn('Sync notice:', err);
-      }
+      updatedList = latestList.map(s => 
+        extractCleanSiteName(s.name || s.siteName || s.id) === editingOriginalKey ? savedSiteObj : s
+      );
     } else {
-      // ADD MODE
-      const newSite = {
+      const existingMatch = latestList.find(s => extractCleanSiteName(s.name || s.siteName || s.id) === cleanKey);
+      const nextNumber = latestList.length + 1;
+      const formattedSiteId = existingMatch?.siteId || (nextNumber < 10 ? `S-0${nextNumber}` : `S-${nextNumber}`);
+
+      savedSiteObj = {
         id: cleanKey,
-        siteId: `S-0${sites.length + 1}`,
+        siteId: formattedSiteId,
         category,
         name: cleanKey,
         siteName: siteTitle,
@@ -314,48 +321,30 @@ export const OngoingSiteTransfer: React.FC = () => {
         assignedFleet: 4
       };
 
-      updatedList = [newSite, ...sites.filter(s => extractCleanSiteName(s.name || s.siteName) !== cleanKey)];
-
-      setSites(updatedList);
-      localStorage.setItem('concrete360_ongoing_sites', JSON.stringify(updatedList));
-      localStorage.setItem('concrete360_sites', JSON.stringify(updatedList));
-
-      setIsModalOpen(false);
-      handleSelectActiveSite(newSite);
-
-      try {
-        if (supabase) {
-          await (supabase as any)
-            .from('sites')
-            .upsert({
-              id: cleanKey,
-              site_id: newSite.siteId,
-              name: cleanKey,
-              site_name: siteTitle,
-              category: category,
-              location: newSite.location,
-              supervisor: newSite.supervisor,
-              phone: cleanPhone,
-              client_name: newSite.clientName,
-              gstin: newSite.gstin,
-              scope: detail,
-              assigned_fleet: 4,
-              status: 'active',
-              updated_at: new Date().toISOString()
-            }, { onConflict: 'id' });
-        }
-        await cloudStorage.pushAllLocalToCloud();
-      } catch (err) {
-        console.warn('Sync notice:', err);
-      }
+      const remainingOthers = latestList.filter(s => extractCleanSiteName(s.name || s.siteName || s.id) !== cleanKey);
+      updatedList = [...remainingOthers, savedSiteObj];
     }
+
+    setSites(updatedList);
+    localStorage.setItem('concrete360_ongoing_sites', JSON.stringify(updatedList));
+    localStorage.setItem('concrete360_sites', JSON.stringify(updatedList));
+
+    if (!editingOriginalKey || currentActiveKey === editingOriginalKey || currentActiveKey === cleanKey) {
+      handleSelectActiveSite(savedSiteObj);
+    }
+
+    setIsModalOpen(false);
+    setEditingOriginalKey(null);
+
+    await syncSiteToSupabase(savedSiteObj);
   };
 
   const confirmDeleteExecution = async () => {
     if (!siteToDelete) return;
 
+    const latestList = getSitesFromStorage();
     const targetName = extractCleanSiteName(siteToDelete.name || siteToDelete.siteName || siteToDelete.id);
-    const updated = sites.filter(s => extractCleanSiteName(s.name || s.siteName || s.id) !== targetName);
+    const updated = latestList.filter(s => extractCleanSiteName(s.name || s.siteName || s.id) !== targetName);
 
     setSites(updated);
     localStorage.setItem('concrete360_ongoing_sites', JSON.stringify(updated));
@@ -435,7 +424,7 @@ export const OngoingSiteTransfer: React.FC = () => {
 
             return (
               <div
-                key={site.id || site.siteId || cleanKey || index}
+                key={`${cleanKey}-${index}`}
                 onClick={() => handleSelectActiveSite(site)}
                 className={`bg-[#0b1322] border rounded-3xl p-5 shadow-xl cursor-pointer transition relative flex flex-col justify-between group ${
                   isCurrentlyActive 
@@ -453,12 +442,14 @@ export const OngoingSiteTransfer: React.FC = () => {
                       {(site.category || 'Building').toUpperCase()} SITE
                     </span>
                     <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] font-mono text-slate-500 mr-1">{site.siteId || `S-0${index + 1}`}</span>
+                      <span className="text-[10px] font-mono text-slate-500 mr-1">
+                        {site.siteId || (index + 1 < 10 ? `S-0${index + 1}` : `S-${index + 1}`)}
+                      </span>
                       
                       {canModify && (
                         <button
                           type="button"
-                          onClick={(e) => handleOpenEditModal(site, index, e)}
+                          onClick={(e) => handleOpenEditModal(site, e)}
                           className="p-1.5 text-slate-400 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition cursor-pointer"
                           title="Edit Site Details"
                         >
@@ -597,7 +588,7 @@ export const OngoingSiteTransfer: React.FC = () => {
                   <Building2 className="w-5 h-5" />
                 </div>
                 <h3 className="text-base font-black text-slate-900 tracking-tight uppercase">
-                  {editingIndex !== null ? `EDIT ONGOING ${category.toUpperCase()} SECTION` : `ADD ONGOING ${category.toUpperCase()} SECTION`}
+                  {editingOriginalKey ? `EDIT ONGOING ${category.toUpperCase()} SECTION` : `ADD ONGOING ${category.toUpperCase()} SECTION`}
                 </h3>
               </div>
               <button
