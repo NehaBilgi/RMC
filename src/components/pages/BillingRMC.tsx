@@ -11,7 +11,8 @@ import {
   RotateCcw, 
   Eye, 
   AlertTriangle,
-  Phone
+  Phone,
+  Wrench
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { cloudStorage } from '../../services/cloudStorage';
@@ -31,6 +32,10 @@ interface RMCInvoice {
   vehicleNo: string;
   volumeM3: number;
   unitRate: number;
+  discountType: 'flat' | 'percentage';
+  discountValue: number;
+  pumpType: 'none' | 'static' | 'boom';
+  pumpRate: number;
   applyGst: boolean;
   grandTotal: number;
   date: string;
@@ -197,6 +202,13 @@ export const BillingRMC: React.FC = () => {
   const [remainingVolume, setRemainingVolume] = useState<number>(0);
   const [volumeM3, setVolumeM3] = useState<string | number>(8);
   const [unitRate, setUnitRate] = useState<string | number>(4500);
+
+  // New states for Discount & Pumping
+  const [discountType, setDiscountType] = useState<'flat' | 'percentage'>('flat');
+  const [discountValue, setDiscountValue] = useState<string | number>('');
+  const [pumpType, setPumpType] = useState<'none' | 'static' | 'boom'>('none');
+  const [pumpRate, setPumpRate] = useState<string | number>(10000);
+
   const [applyGst, setApplyGst] = useState(true);
   const [invoiceDate, setInvoiceDate] = useState<string>(new Date().toISOString().split('T')[0]);
 
@@ -435,7 +447,6 @@ export const BillingRMC: React.FC = () => {
         }
       }
 
-      // Only populate default grade/vehicle/volume if we are NOT actively editing or typing in the modal
       if (!preserveModalInputs && !isModalOpen) {
         const reportGrade = resolveGradeFromReports(siteKey, parsedM);
         setMixGrade(reportGrade);
@@ -451,6 +462,10 @@ export const BillingRMC: React.FC = () => {
         const mixerCapacity = activeMixer?.capacityM3 || 8;
         const defaultVol = rem > 0 && rem < mixerCapacity ? rem : mixerCapacity;
         setVolumeM3(defaultVol);
+        setDiscountType('flat');
+        setDiscountValue('');
+        setPumpType('none');
+        setPumpRate(10000);
       }
     } catch {}
   };
@@ -460,7 +475,6 @@ export const BillingRMC: React.FC = () => {
     loadSiteData(false);
 
     const handleSync = () => {
-      // Do not overwrite user's active inputs while the add/edit modal is open
       loadSiteData(isModalOpen);
     };
 
@@ -535,9 +549,25 @@ export const BillingRMC: React.FC = () => {
 
   const numVolume = Number(volumeM3) || 0;
   const numRate = Number(unitRate) || 0;
-  const subtotal = numVolume * numRate;
-  const gstAmount = applyGst ? subtotal * 0.18 : 0;
-  const grandTotal = subtotal + gstAmount;
+  const concreteSubtotal = numVolume * numRate;
+
+  // Discount Calculation
+  const numDiscountVal = Number(discountValue) || 0;
+  const discountAmount = discountType === 'percentage'
+    ? (concreteSubtotal * Math.min(Math.max(numDiscountVal, 0), 100)) / 100
+    : Math.min(Math.max(numDiscountVal, 0), concreteSubtotal);
+
+  const discountedConcreteTotal = concreteSubtotal - discountAmount;
+
+  // Pumping Charges Calculation
+  const activePumpCharge = pumpType !== 'none' ? (Number(pumpRate) || 0) : 0;
+
+  // Taxable Subtotal (Discounted Concrete + Pumping)
+  const taxableSubtotal = discountedConcreteTotal + activePumpCharge;
+
+  // 18% GST on Taxable Subtotal
+  const gstAmount = applyGst ? taxableSubtotal * 0.18 : 0;
+  const grandTotal = taxableSubtotal + gstAmount;
 
   const currentMixerCapacity = useMemo(() => {
     const found = transitTrucks.find(t => t.vehicleNo === selectedVehicleNo);
@@ -563,6 +593,10 @@ export const BillingRMC: React.FC = () => {
       const initialVol = remainingVolume > 0 && remainingVolume < cap ? remainingVolume : cap;
       setVolumeM3(initialVol);
     }
+    setDiscountType('flat');
+    setDiscountValue('');
+    setPumpType('none');
+    setPumpRate(10000);
     setApplyGst(true);
     setInvoiceDate(new Date().toISOString().split('T')[0]);
     setIsModalOpen(true);
@@ -576,7 +610,6 @@ export const BillingRMC: React.FC = () => {
     setEditingInvoiceId(inv.id);
     setMixGrade(inv.mixGrade);
     
-    // Ensure the existing vehicleNo is selectable even if it was removed from active fleet
     const existingVNo = inv.vehicleNo || (transitTrucks[0]?.vehicleNo ?? 'KA28AC3087');
     if (existingVNo && !transitTrucks.some(t => t.vehicleNo === existingVNo)) {
       setTransitTrucks(prev => [{ vehicleNo: existingVNo, capacityM3: inv.volumeM3 }, ...prev]);
@@ -584,6 +617,10 @@ export const BillingRMC: React.FC = () => {
     setSelectedVehicleNo(existingVNo);
     setVolumeM3(inv.volumeM3);
     setUnitRate(inv.unitRate);
+    setDiscountType(inv.discountType || 'flat');
+    setDiscountValue(inv.discountValue ?? '');
+    setPumpType(inv.pumpType || 'none');
+    setPumpRate(inv.pumpRate || 10000);
     setApplyGst(inv.applyGst ?? true);
     setInvoiceDate(inv.date || new Date().toISOString().split('T')[0]);
 
@@ -671,11 +708,19 @@ export const BillingRMC: React.FC = () => {
       .filter(Boolean)
       .join(' / ');
 
-    const sub = inv.volumeM3 * inv.unitRate;
+    const concreteSub = inv.volumeM3 * inv.unitRate;
+    const invDiscVal = Number(inv.discountValue) || 0;
+    const invDiscAmount = inv.discountType === 'percentage'
+      ? (concreteSub * invDiscVal) / 100
+      : invDiscVal;
+    const discConcreteTotal = concreteSub - invDiscAmount;
+    const invPumpCharge = inv.pumpType !== 'none' ? (Number(inv.pumpRate) || 0) : 0;
+    const taxableVal = discConcreteTotal + invPumpCharge;
+
     const isGstActive = inv.applyGst ?? true;
-    const cgst = isGstActive ? sub * 0.09 : 0;
-    const sgst = isGstActive ? sub * 0.09 : 0;
-    const calculatedGrandTotal = sub + cgst + sgst;
+    const cgst = isGstActive ? taxableVal * 0.09 : 0;
+    const sgst = isGstActive ? taxableVal * 0.09 : 0;
+    const calculatedGrandTotal = taxableVal + cgst + sgst;
 
     let linkedReport = null;
     if (inv.workElementId && measurementItems.length > 0) {
@@ -733,7 +778,7 @@ export const BillingRMC: React.FC = () => {
               <h1>${compProfile.name}</h1>
               <p>${compProfile.division} • ${compProfile.plantMake}<br/>
               Corporate Office: ${compProfile.address}<br/>
-              Company GSTIN: <strong>${compProfile.gstin}</strong>${companyContactNumbers ? `  |  Contact: <strong>${companyContactNumbers}</strong>` : ''}</p>
+              Company GSTIN: <strong>${compProfile.gstin}</strong>${companyContactNumbers ? `  |  Contact: <strong>${companyContactNumbers}</strong>` : ''}</p>
             </div>
             <div class="invoice-meta">
               <div style="font-size: 10px; color: #334155;">
@@ -762,60 +807,80 @@ export const BillingRMC: React.FC = () => {
           </div>
 
           <table>
-            <thead>
+          <thead>
+            <tr>
+              <th style="width: 5%;">#</th>
+              <th style="width: 45%;">Description of Goods / Services</th>
+              <th style="width: 15%;">HSN/SAC</th>
+              <th style="width: 10%;">Qty</th>
+              <th style="width: 12%;">Unit Rate (₹)</th>
+              <th style="width: 13%;" class="text-right">Amount (₹)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>1</td>
+              <td>
+                <strong>Ready-Mix Concrete: ${inv.mixGrade} Grade</strong><br/>
+                <span style="font-size:10px; font-weight:bold; color:#0f172a;">Vehicle No (Transit Mixer): ${inv.vehicleNo || 'N/A'}</span><br/>
+                <span style="font-size:9px; color:#555;">Automated CONMAT plant batch delivery</span>
+              </td>
+              <td>38245010</td>
+              <td>${inv.volumeM3.toFixed(2)} m³</td>
+              <td>₹${inv.unitRate.toLocaleString('en-IN')}</td>
+              <td class="text-right">₹${Math.round(concreteSub).toLocaleString('en-IN')}</td>
+            </tr>
+            ${invDiscAmount > 0 ? `
               <tr>
-                <th style="width: 5%;">#</th>
-                <th style="width: 45%;">Description of Goods / Services</th>
-                <th style="width: 15%;">HSN/SAC</th>
-                <th style="width: 10%;">Qty</th>
-                <th style="width: 12%;">Unit Rate (₹)</th>
-                <th style="width: 13%;" class="text-right">Amount (₹)</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
+                <td>-</td>
+                <td><strong>Discount Applied</strong> (${inv.discountType === 'percentage' ? `${inv.discountValue}%` : 'Flat ₹'})</td>
+                <td>-</td>
                 <td>1</td>
-                <td>
-                  <strong>Ready-Mix Concrete: ${inv.mixGrade} Grade</strong><br/>
-                  <span style="font-size:10px; font-weight:bold; color:#0f172a;">Vehicle No (Transit Mixer): ${inv.vehicleNo || 'N/A'}</span><br/>
-                  <span style="font-size:9px; color:#555;">Automated CONMAT plant batch delivery</span>
-                </td>
-                <td>38245010</td>
-                <td>${inv.volumeM3.toFixed(2)} m³</td>
-                <td>₹${inv.unitRate.toLocaleString('en-IN')}</td>
-                <td class="text-right">₹${Math.round(sub).toLocaleString('en-IN')}</td>
+                <td>-</td>
+                <td class="text-right" style="color: #16a34a;">-₹${Math.round(invDiscAmount).toLocaleString('en-IN')}</td>
               </tr>
-            </tbody>
-          </table>
+            ` : ''}
+            ${inv.pumpType !== 'none' ? `
+              <tr>
+                <td>2</td>
+                <td><strong>${inv.pumpType === 'static' ? 'Static Concrete Pump Charges' : 'Boom Concrete Pump Charges'}</strong></td>
+                <td>9954</td>
+                <td>1 Service</td>
+                <td>₹${inv.pumpRate.toLocaleString('en-IN')}</td>
+                <td class="text-right">₹${Math.round(invPumpCharge).toLocaleString('en-IN')}</td>
+              </tr>
+            ` : ''}
+          </tbody>
+        </table>
 
-          <div class="summary-section">
-            <div class="bank-box">
-              <strong>COMPANY REMITTANCE BANK ACCOUNT:</strong><br/>
-              Bank Name: ${compProfile.bankName}<br/>
-              Account Name: ${compProfile.accountName}<br/>
-              Account Number: ${compProfile.accountNo}<br/>
-              IFSC / Swift: ${compProfile.ifscSwift} | Branch: ${compProfile.branch}
-            </div>
-            <div class="totals-box">
-              <div class="totals-row"><span>Subtotal (Taxable Value):</span><span>₹${Math.round(sub).toLocaleString('en-IN')}</span></div>
-              ${isGstActive ? `
-                <div class="totals-row"><span>CGST (9%):</span><span>₹${Math.round(cgst).toLocaleString('en-IN')}</span></div>
-                <div class="totals-row"><span>SGST / UTGST (9%):</span><span>₹${Math.round(sgst).toLocaleString('en-IN')}</span></div>
-              ` : ''}
-              <div class="totals-row" style="font-weight: bold; background: #f1f5f9; color: #0f172a; font-size: 11px;"><span>PAYABLE AMOUNT:</span><span>₹${Math.round(calculatedGrandTotal).toLocaleString('en-IN')}</span></div>
-            </div>
+        <div class="summary-section">
+          <div class="bank-box">
+            <strong>COMPANY REMITTANCE BANK ACCOUNT:</strong><br/>
+            Bank Name: ${compProfile.bankName}<br/>
+            Account Name: ${compProfile.accountName}<br/>
+            Account Number: ${compProfile.accountNo}<br/>
+            IFSC / Swift: ${compProfile.ifscSwift} | Branch: ${compProfile.branch}
           </div>
-
-          <div class="signatures">
-            <div class="sig-line">Customer / Receiver Signature & Stamp</div>
-            <div class="sig-line" style="visibility: hidden;"></div>
+          <div class="totals-box">
+            <div class="totals-row"><span>Taxable Subtotal:</span><span>₹${Math.round(taxableVal).toLocaleString('en-IN')}</span></div>
+            ${isGstActive ? `
+              <div class="totals-row"><span>CGST (9%):</span><span>₹${Math.round(cgst).toLocaleString('en-IN')}</span></div>
+              <div class="totals-row"><span>SGST / UTGST (9%):</span><span>₹${Math.round(sgst).toLocaleString('en-IN')}</span></div>
+            ` : ''}
+            <div class="totals-row" style="font-weight: bold; background: #f1f5f9; color: #0f172a; font-size: 11px;"><span>PAYABLE AMOUNT:</span><span>₹${Math.round(calculatedGrandTotal).toLocaleString('en-IN')}</span></div>
           </div>
+        </div>
 
-          <script>window.print();</script>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
+        <div class="signatures">
+          <div class="sig-line">Customer / Receiver Signature & Stamp</div>
+          <div class="sig-line" style="visibility: hidden;"></div>
+        </div>
+
+        <script>window.print();</script>
+      </body>
+    </html>
+  `);
+  printWindow.document.close();
   };
 
   const handleSaveInvoice = (e: React.FormEvent) => {
@@ -825,7 +890,6 @@ export const BillingRMC: React.FC = () => {
       return;
     }
 
-    // Do NOT call loadSiteData() here, otherwise user's edited volumeM3 and selectedVehicleNo get overwritten!
     const resolvedPhone = siteDetails.clientPhone;
     const finalVolume = Number(volumeM3) || 0;
     const finalRate = Number(unitRate) || 0;
@@ -854,6 +918,10 @@ export const BillingRMC: React.FC = () => {
         vehicleNo: finalVehicle,
         volumeM3: finalVolume,
         unitRate: finalRate,
+        discountType,
+        discountValue: Number(discountValue) || 0,
+        pumpType,
+        pumpRate: Number(pumpRate) || 0,
         applyGst,
         grandTotal: Math.round(grandTotal),
         date: invoiceDate,
@@ -867,7 +935,7 @@ export const BillingRMC: React.FC = () => {
       if (supabase) {
         const targetInv = updatedInvoices.find(i => i.id === editingInvoiceId);
         if (targetInv) {
-          const basic = Number((targetInv.volumeM3 * targetInv.unitRate).toFixed(2));
+          const basic = Number((taxableSubtotal).toFixed(2));
           const cgst = targetInv.applyGst ? Number((basic * 0.09).toFixed(2)) : 0;
           const sgst = targetInv.applyGst ? Number((basic * 0.09).toFixed(2)) : 0;
           const totalTax = cgst + sgst;
@@ -913,6 +981,10 @@ export const BillingRMC: React.FC = () => {
         vehicleNo: finalVehicle,
         volumeM3: finalVolume,
         unitRate: finalRate,
+        discountType,
+        discountValue: Number(discountValue) || 0,
+        pumpType,
+        pumpRate: Number(pumpRate) || 0,
         applyGst,
         grandTotal: Math.round(grandTotal),
         date: invoiceDate,
@@ -925,7 +997,7 @@ export const BillingRMC: React.FC = () => {
       } catch {}
 
       if (supabase) {
-        const basic = Number((newInvoice.volumeM3 * newInvoice.unitRate).toFixed(2));
+        const basic = Number((taxableSubtotal).toFixed(2));
         const cgst = newInvoice.applyGst ? Number((basic * 0.09).toFixed(2)) : 0;
         const sgst = newInvoice.applyGst ? Number((basic * 0.09).toFixed(2)) : 0;
         const totalTax = cgst + sgst;
@@ -1127,24 +1199,24 @@ export const BillingRMC: React.FC = () => {
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
-                          </>
-                        )}
+                        </>
+                      )}
 
-                        {!canPrint && !canEditOrDelete && (
-                          <span className="text-slate-500 text-[10px] flex items-center gap-1 font-mono">
-                            <Eye className="w-3.5 h-3.5" />
-                            <span>View Only</span>
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                      {!canPrint && !canEditOrDelete && (
+                        <span className="text-slate-500 text-[10px] flex items-center gap-1 font-mono">
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>View Only</span>
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
       </div>
+    </div>
 
       {/* CONFIRM INVOICE DELETE MODAL */}
       {invoiceToDelete && (
@@ -1200,198 +1272,290 @@ export const BillingRMC: React.FC = () => {
                   <p className="text-[11px] text-cyan-400 font-mono">
                     Active Client: <strong className="text-white">{siteDetails.clientName || currentSiteKey}</strong> | Site: {currentSiteKey}
                   </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setIsModalOpen(false);
+                setEditingInvoiceId(null);
+              }}
+              className="text-slate-400 hover:text-white p-1 rounded-lg bg-[#121c2d] cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <form onSubmit={handleSaveInvoice} className="space-y-4 text-xs">
+            {/* Work Element Selector */}
+            <div className="bg-[#070d1a] border border-[#1b273d] p-3 rounded-2xl space-y-1.5">
+              <label className="text-slate-300 font-bold uppercase tracking-wider flex items-center gap-1.5 text-[11px]">
+                <Filter className="w-3.5 h-3.5 text-blue-400" />
+                <span>Select Structural Work Element (Linked Report):</span>
+              </label>
+              <select
+                value={selectedWorkId}
+                onChange={handleWorkElementChange}
+                className="w-full px-3 py-2.5 bg-[#0b1322] border border-[#1b273d] rounded-xl text-white font-bold outline-none cursor-pointer text-xs"
+              >
+                <option value="ALL">All Site Works Combined</option>
+                {measurementItems.map(it => (
+                  <option key={it.id} value={it.id}>
+                    {it.id}: {it.label} ({it.volumeM3} m³) {it.mixGrade ? `[${it.mixGrade}]` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Invoice Date */}
+            <div className="space-y-1.5">
+              <label className="text-slate-300 font-bold uppercase tracking-wider flex items-center gap-1.5 text-[11px]">
+                <Calendar className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Invoice Date:</span>
+              </label>
+              <input
+                type="date"
+                value={invoiceDate}
+                onChange={(e) => setInvoiceDate(e.target.value)}
+                className="w-full px-4 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-white font-bold outline-none focus:border-blue-500 text-xs"
+              />
+            </div>
+
+            {/* Concrete Mix Grade */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-slate-300 font-bold uppercase tracking-wider">Concrete Mix Grade (From Report)</label>
+                <span className="text-[10px] text-cyan-400 font-bold">Auto-synced</span>
+              </div>
+              <select
+                value={mixGrade}
+                onChange={(e) => handleMixGradeChange(e.target.value)}
+                className="w-full px-3 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-cyan-400 font-bold outline-none cursor-pointer text-xs"
+              >
+                {materialGrades.map((mat, idx) => {
+                  const gradeLabel = `${mat.grade || mat.name || 'M25'}`;
+                  return (
+                    <option key={idx} value={gradeLabel}>
+                      {gradeLabel}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+
+            {/* Vehicle Number */}
+            <div className="bg-[#070d1a] border border-[#1b273d] p-3.5 rounded-2xl space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-slate-300 font-bold uppercase tracking-wider flex items-center gap-1.5 text-[11px]">
+                  <Truck className="w-4 h-4 text-amber-400" />
+                  <span>Vehicle Number:</span>
+                </label>
+                <span className="text-[10px] text-cyan-400 font-mono">From Transit Mixer Page</span>
+              </div>
+
+              <select
+                value={selectedVehicleNo}
+                onChange={(e) => handleVehicleChange(e.target.value)}
+                className="w-full px-3 py-2.5 bg-[#0b1322] border border-[#1b273d] rounded-xl text-amber-400 font-bold outline-none cursor-pointer text-xs"
+              >
+                {transitTrucks.map((t, idx) => (
+                  <option key={t.id || idx} value={t.vehicleNo}>
+                    {t.vehicleNo} {t.capacityM3 ? `(${t.capacityM3} m³)` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-slate-300 font-bold uppercase tracking-wider">Volume (m³)</label>
+                  <span className={`text-[10px] font-bold ${remainingVolume > 0 && remainingVolume < currentMixerCapacity ? 'text-amber-400' : 'text-cyan-400'}`}>
+                    {remainingVolume > 0 && remainingVolume < currentMixerCapacity
+                      ? `Rem. Balance (${remainingVolume} m³)`
+                      : `Capacity (${currentMixerCapacity} m³)`}
+                  </span>
+                </div>
+                <input
+                  type="number"
+                  step="any"
+                  value={volumeM3}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setVolumeM3(val === '' ? '' : Number(val));
+                  }}
+                  className="w-full px-4 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-cyan-400 font-bold outline-none focus:border-blue-500 text-sm"
+              />
+                {remainingVolume > 0 && numVolume > remainingVolume && (
+                  <p className="text-[10px] text-rose-400 mt-1 font-sans">
+                    ⚠️ Exceeds remaining site balance ({remainingVolume} m³)
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-slate-300 font-bold uppercase tracking-wider">Unit Rate (₹ / m³)</label>
+                  <span className="text-[10px] text-amber-400">From Grade Catalog</span>
+                </div>
+                <input
+                  type="number"
+                  value={unitRate}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setUnitRate(val === '' ? '' : Number(val));
+                  }}
+                  className="w-full px-4 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-white font-bold outline-none focus:border-blue-500 text-sm font-mono"
+              />
+              </div>
+            </div>
+
+            {/* DISCOUNT SECTION */}
+            <div className="bg-[#070d1a] border border-[#1b273d] p-3.5 rounded-2xl space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-slate-300 font-bold uppercase tracking-wider text-[11px]">Apply Discount</label>
+                <div className="flex bg-[#0b1322] rounded-lg p-0.5 border border-[#1b273d] text-[10px]">
+                  <button
+                    type="button"
+                    onClick={() => setDiscountType('flat')}
+                    className={`px-2.5 py-1 rounded-md transition-all font-bold cursor-pointer ${discountType === 'flat' ? 'bg-emerald-600 text-white' : 'text-slate-400'}`}
+                  >
+                    Flat (₹)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDiscountType('percentage')}
+                    className={`px-2.5 py-1 rounded-md transition-all font-bold cursor-pointer ${discountType === 'percentage' ? 'bg-emerald-600 text-white' : 'text-slate-400'}`}
+                  >
+                    Percent (%)
+                  </button>
                 </div>
               </div>
+              <input
+                type="number"
+                step="any"
+                placeholder={discountType === 'flat' ? 'Enter discount amount in ₹' : 'Enter discount percentage %'}
+                value={discountValue}
+                onChange={(e) => setDiscountValue(e.target.value === '' ? '' : Number(e.target.value))}
+                className="w-full px-3 py-2.5 bg-[#0b1322] border border-[#1b273d] rounded-xl text-emerald-400 font-bold outline-none focus:border-emerald-500 text-xs font-mono"
+              />
+            </div>
+
+            {/* PUMPING EQUIPMENT SECTION */}
+            <div className="bg-[#070d1a] border border-[#1b273d] p-3.5 rounded-2xl space-y-3">
+              <label className="text-slate-300 font-bold uppercase tracking-wider flex items-center gap-1.5 text-[11px]">
+                <Wrench className="w-3.5 h-3.5 text-amber-400" />
+                <span>Pump Equipment & Charges</span>
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPumpType('none')}
+                  className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${pumpType === 'none' ? 'bg-slate-700 border-slate-500 text-white' : 'bg-[#0b1322] border-[#1b273d] text-slate-400'}`}
+                >
+                  No Pump
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setPumpType('static'); if (Number(pumpRate) <= 0) setPumpRate(10000); }}
+                  className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${pumpType === 'static' ? 'bg-emerald-600/20 border-emerald-500 text-emerald-400' : 'bg-[#0b1322] border-[#1b273d] text-slate-400'}`}
+                >
+                  Static Pump
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setPumpType('boom'); if (Number(pumpRate) <= 0) setPumpRate(15000); }}
+                  className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${pumpType === 'boom' ? 'bg-emerald-600/20 border-emerald-500 text-emerald-400' : 'bg-[#0b1322] border-[#1b273d] text-slate-400'}`}
+                >
+                  Boom Pump
+                </button>
+              </div>
+
+              {pumpType !== 'none' && (
+                <div>
+                  <label className="block text-[11px] text-slate-400 mb-1 font-bold">
+                    {pumpType === 'static' ? 'Static Pump Charges (₹)' : 'Boom Pump Charges (₹)'}
+                  </label>
+                  <input
+                    type="number"
+                    value={pumpRate}
+                    onChange={(e) => setPumpRate(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="w-full px-3 py-2.5 bg-[#0b1322] border border-[#1b273d] rounded-xl text-amber-400 font-bold outline-none focus:border-emerald-500 text-xs font-mono"
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 pt-1">
+              <input
+                type="checkbox"
+                id="gstCheck"
+                checked={applyGst}
+                onChange={(e) => setApplyGst(e.target.checked)}
+                className="w-4 h-4 rounded bg-[#070d1a] border-[#1b273d] text-blue-600 focus:ring-0 cursor-pointer"
+              />
+              <label htmlFor="gstCheck" className="text-slate-300 font-bold cursor-pointer">
+                Apply GST (18%) on Concrete & Pumping Subtotal
+              </label>
+            </div>
+
+            <div className="bg-[#070d1a] border border-[#1b273d] p-4 rounded-2xl space-y-2 text-xs">
+              <div className="flex justify-between text-slate-400">
+                <span>Concrete Subtotal ({numVolume} m³ × ₹{numRate}):</span>
+                <span>₹{Math.round(concreteSubtotal).toLocaleString('en-IN')}</span>
+              </div>
+              {discountAmount > 0 && (
+                <div className="flex justify-between text-emerald-400">
+                  <span>Discount ({discountType === 'percentage' ? `${discountValue}%` : 'Flat'}):</span>
+                  <span>-₹{Math.round(discountAmount).toLocaleString('en-IN')}</span>
+                </div>
+              )}
+              {pumpType !== 'none' && (
+                <div className="flex justify-between text-amber-400">
+                  <span>{pumpType === 'static' ? 'Static Pump Charges' : 'Boom Pump Charges'}:</span>
+                  <span>+₹{Math.round(Number(pumpRate) || 0).toLocaleString('en-IN')}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-slate-300 border-t border-[#1b273d] pt-1.5">
+                <span>Taxable Subtotal:</span>
+                <span>₹{Math.round(taxableSubtotal).toLocaleString('en-IN')}</span>
+              </div>
+              {applyGst && (
+                <div className="flex justify-between text-slate-400">
+                  <span>GST (18%):</span>
+                  <span>₹{Math.round(gstAmount).toLocaleString('en-IN')}</span>
+                </div>
+              )}
+              <div className="flex justify-between items-center pt-2 border-t border-[#1b273d] text-sm font-black text-emerald-400">
+                <span>Grand Total:</span>
+                <span className="text-base">₹{Math.round(grandTotal).toLocaleString('en-IN')}</span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#1b273d]">
               <button
                 type="button"
                 onClick={() => {
                   setIsModalOpen(false);
                   setEditingInvoiceId(null);
                 }}
-                className="text-slate-400 hover:text-white p-1 rounded-lg bg-[#121c2d] cursor-pointer"
+                className="px-5 py-3 bg-[#070d1a] hover:bg-[#121c2d] text-slate-300 font-bold rounded-xl cursor-pointer text-xs"
               >
-                <X className="w-5 h-5" />
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl shadow-lg shadow-blue-600/30 cursor-pointer text-xs transition"
+              >
+                {editingInvoiceId ? 'Update Tax Invoice' : 'Issue Tax Invoice'}
               </button>
             </div>
-
-            <form onSubmit={handleSaveInvoice} className="space-y-4 text-xs">
-              {/* Work Element Selector */}
-              <div className="bg-[#070d1a] border border-[#1b273d] p-3 rounded-2xl space-y-1.5">
-                <label className="text-slate-300 font-bold uppercase tracking-wider flex items-center gap-1.5 text-[11px]">
-                  <Filter className="w-3.5 h-3.5 text-blue-400" />
-                  <span>Select Structural Work Element (Linked Report):</span>
-                </label>
-                <select
-                  value={selectedWorkId}
-                  onChange={handleWorkElementChange}
-                  className="w-full px-3 py-2.5 bg-[#0b1322] border border-[#1b273d] rounded-xl text-white font-bold outline-none cursor-pointer text-xs"
-                >
-                  <option value="ALL">All Site Works Combined</option>
-                  {measurementItems.map(it => (
-                    <option key={it.id} value={it.id}>
-                      {it.id}: {it.label} ({it.volumeM3} m³) {it.mixGrade ? `[${it.mixGrade}]` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Invoice Date */}
-              <div className="space-y-1.5">
-                <label className="text-slate-300 font-bold uppercase tracking-wider flex items-center gap-1.5 text-[11px]">
-                  <Calendar className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>Invoice Date:</span>
-                </label>
-                <input
-                  type="date"
-                  value={invoiceDate}
-                  onChange={(e) => setInvoiceDate(e.target.value)}
-                  className="w-full px-4 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-white font-bold outline-none focus:border-blue-500 text-xs"
-                />
-              </div>
-
-              {/* Concrete Mix Grade */}
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-slate-300 font-bold uppercase tracking-wider">Concrete Mix Grade (From Report)</label>
-                  <span className="text-[10px] text-cyan-400 font-bold">Auto-synced</span>
-                </div>
-                <select
-                  value={mixGrade}
-                  onChange={(e) => handleMixGradeChange(e.target.value)}
-                  className="w-full px-3 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-cyan-400 font-bold outline-none cursor-pointer text-xs"
-                >
-                  {materialGrades.map((mat, idx) => {
-                    const gradeLabel = `${mat.grade || mat.name || 'M25'}`;
-                    return (
-                      <option key={idx} value={gradeLabel}>
-                        {gradeLabel}
-                      </option>
-                    );
-                  })}
-                </select>
-              </div>
-
-              {/* Vehicle Number */}
-              <div className="bg-[#070d1a] border border-[#1b273d] p-3.5 rounded-2xl space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-slate-300 font-bold uppercase tracking-wider flex items-center gap-1.5 text-[11px]">
-                    <Truck className="w-4 h-4 text-amber-400" />
-                    <span>Vehicle Number:</span>
-                  </label>
-                  <span className="text-[10px] text-cyan-400 font-mono">From Transit Mixer Page</span>
-                </div>
-
-                <select
-                  value={selectedVehicleNo}
-                  onChange={(e) => handleVehicleChange(e.target.value)}
-                  className="w-full px-3 py-2.5 bg-[#0b1322] border border-[#1b273d] rounded-xl text-amber-400 font-bold outline-none cursor-pointer text-xs"
-                >
-                  {transitTrucks.map((t, idx) => (
-                    <option key={t.id || idx} value={t.vehicleNo}>
-                      {t.vehicleNo} {t.capacityM3 ? `(${t.capacityM3} m³)` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-slate-300 font-bold uppercase tracking-wider">Volume (m³)</label>
-                    <span className={`text-[10px] font-bold ${remainingVolume > 0 && remainingVolume < currentMixerCapacity ? 'text-amber-400' : 'text-cyan-400'}`}>
-                      {remainingVolume > 0 && remainingVolume < currentMixerCapacity
-                        ? `Rem. Balance (${remainingVolume} m³)`
-                        : `Capacity (${currentMixerCapacity} m³)`}
-                    </span>
-                  </div>
-                  <input
-                    type="number"
-                    step="any"
-                    value={volumeM3}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setVolumeM3(val === '' ? '' : Number(val));
-                    }}
-                    className="w-full px-4 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-cyan-400 font-bold outline-none focus:border-blue-500 text-sm"
-                  />
-                  {remainingVolume > 0 && numVolume > remainingVolume && (
-                    <p className="text-[10px] text-rose-400 mt-1 font-sans">
-                      ⚠️ Exceeds remaining site balance ({remainingVolume} m³)
-                    </p>
-                  )}
-                </div>
-
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-slate-300 font-bold uppercase tracking-wider">Unit Rate (₹ / m³)</label>
-                    <span className="text-[10px] text-amber-400">From Grade Catalog</span>
-                  </div>
-                  <input
-                    type="number"
-                    value={unitRate}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setUnitRate(val === '' ? '' : Number(val));
-                    }}
-                    className="w-full px-4 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-white font-bold outline-none focus:border-blue-500 text-sm font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 pt-1">
-                <input
-                  type="checkbox"
-                  id="gstCheck"
-                  checked={applyGst}
-                  onChange={(e) => setApplyGst(e.target.checked)}
-                  className="w-4 h-4 rounded bg-[#070d1a] border-[#1b273d] text-blue-600 focus:ring-0 cursor-pointer"
-                />
-                <label htmlFor="gstCheck" className="text-slate-300 font-bold cursor-pointer">
-                  Apply GST (18%) on Concrete Supply
-                </label>
-              </div>
-
-              <div className="bg-[#070d1a] border border-[#1b273d] p-4 rounded-2xl space-y-2 text-xs">
-                <div className="flex justify-between text-slate-400">
-                  <span>Concrete Subtotal ({numVolume} m³ × ₹{numRate}):</span>
-                  <span>₹{Math.round(subtotal).toLocaleString('en-IN')}</span>
-                </div>
-                {applyGst && (
-                  <div className="flex justify-between text-slate-400">
-                    <span>GST (18% on Concrete):</span>
-                    <span>₹{Math.round(gstAmount).toLocaleString('en-IN')}</span>
-                  </div>
-                )}
-                <div className="flex justify-between items-center pt-2 border-t border-[#1b273d] text-sm font-black text-emerald-400">
-                  <span>Grand Total:</span>
-                  <span className="text-base">₹{Math.round(grandTotal).toLocaleString('en-IN')}</span>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#1b273d]">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsModalOpen(false);
-                    setEditingInvoiceId(null);
-                  }}
-                  className="px-5 py-3 bg-[#070d1a] hover:bg-[#121c2d] text-slate-300 font-bold rounded-xl cursor-pointer text-xs"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl shadow-lg shadow-blue-600/30 cursor-pointer text-xs transition"
-                >
-                  {editingInvoiceId ? 'Update Tax Invoice' : 'Issue Tax Invoice'}
-                </button>
-              </div>
-            </form>
-          </div>
+          </form>
         </div>
-      )}
-    </div>
-  );
+      </div>
+    )}
+  </div>
+ );
 };
 
 export default BillingRMC;
