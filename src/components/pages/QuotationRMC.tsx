@@ -751,7 +751,7 @@ export const QuotationRMC: React.FC = () => {
       clientPhone: siteDetails.clientPhone,
       projectSite: siteDetails.projectSite || currentSiteKey,
       workElementId: selectedWorkId,
-      workElementLabel: selectedItemObj ? resolveWorkLabel(selectedItemObj, idx) : 'All Site Structural Works',
+      workElementLabel: selectedItemObj ? resolveWorkLabel(selectedItemObj, idx) : 'All Site CONCRETE Works',
       mixGrade,
       netVolumeM3: selectedNetTotal,
       wastagePercent: wastagePctNum,
