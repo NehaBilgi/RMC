@@ -333,141 +333,141 @@ export const BillingRMC: React.FC = () => {
             !v.equipmentType;
           return v.vehicleNo.length > 0 && isMixer && v.isActive;
         });
-    }
+      }
 
-    const finalTrucks = parsedTrucks.length > 0
-      ? parsedTrucks
-      : [{ vehicleNo: 'KA28AC3087', equipmentType: 'Transit Mixer', capacityM3: 8, isActive: true }];
+  const finalTrucks = parsedTrucks.length > 0
+    ? parsedTrucks
+    : [{ vehicleNo: 'KA28AC3087', equipmentType: 'Transit Mixer', capacityM3: 8, isActive: true }];
 
-    setTransitTrucks(finalTrucks);
-    return finalTrucks;
+  setTransitTrucks(finalTrucks);
+  return finalTrucks;
   };
 
   const loadSiteData = (preserveModalInputs = false) => {
-    const siteKey = getActiveSiteKey();
-    setCurrentSiteKey(siteKey);
-    loadMaterialCategories();
+  const siteKey = getActiveSiteKey();
+  setCurrentSiteKey(siteKey);
+  loadMaterialCategories();
 
-    try {
-      let foundSite: any = null;
+  try {
+    let foundSite: any = null;
 
-      const ongoingRaw = localStorage.getItem('concrete360_ongoing_sites') || localStorage.getItem('concrete360_sites');
-      if (ongoingRaw) {
-        try {
-          const parsedList = JSON.parse(ongoingRaw);
-          if (Array.isArray(parsedList) && parsedList.length > 0) {
-            foundSite = parsedList.find((s: any) => extractCleanSiteName(s.name || s.siteName || s.id) === siteKey);
-          }
-        } catch {}
-      }
-
-      if (!foundSite) {
-        const activeRaw = localStorage.getItem('concrete360_active_site');
-        if (activeRaw) {
-          try {
-            foundSite = JSON.parse(activeRaw);
-          } catch {}
-        }
-      }
-
-      let registeredPhone = '';
+    const ongoingRaw = localStorage.getItem('concrete360_ongoing_sites') || localStorage.getItem('concrete360_sites');
+    if (ongoingRaw) {
       try {
-        const regRaw = localStorage.getItem('concrete360_site_phone_registry');
-        if (regRaw) {
-          const regMap = JSON.parse(regRaw);
-          if (regMap && regMap[siteKey]) registeredPhone = regMap[siteKey];
+        const parsedList = JSON.parse(ongoingRaw);
+        if (Array.isArray(parsedList) && parsedList.length > 0) {
+          foundSite = parsedList.find((s: any) => extractCleanSiteName(s.name || s.siteName || s.id) === siteKey);
         }
       } catch {}
+    }
 
-      if (foundSite) {
-        const resolvedClient = foundSite.clientName || foundSite.client || siteKey;
-        const resolvedLocation = foundSite.location || foundSite.address || 'Ainapur Site';
-        const resolvedGstin = foundSite.gstin || '';
-        const resolvedPhone = foundSite.phone || foundSite.phoneNumber || foundSite.contactNo || registeredPhone || '';
-        const resolvedProject = foundSite.siteName || foundSite.name || siteKey;
-
-        setSiteDetails({
-          clientName: resolvedClient,
-          clientAddress: resolvedLocation,
-          clientGstin: resolvedGstin,
-          clientPhone: resolvedPhone,
-          paymentTerms: foundSite.paymentTerms || 'Advance',
-          projectSite: resolvedProject,
-          siteAddress: resolvedLocation,
-          hsnCode: foundSite.hsnCode || '38245010 (Ready-Mix Concrete)'
-        });
+    if (!foundSite) {
+      const activeRaw = localStorage.getItem('concrete360_active_site');
+      if (activeRaw) {
+        try {
+          foundSite = JSON.parse(activeRaw);
+        } catch {}
       }
+    }
 
-      const loadedTrucks = loadTransitMixers(siteKey);
+    let registeredPhone = '';
+    try {
+      const regRaw = localStorage.getItem('concrete360_site_phone_registry');
+      if (regRaw) {
+        const regMap = JSON.parse(regRaw);
+        if (regMap && regMap[siteKey]) registeredPhone = regMap[siteKey];
+      }
+    } catch {}
 
-      const savedInvoices = localStorage.getItem(`concrete360_site_invoices_${siteKey}`);
-      let existingInvoices: RMCInvoice[] = [];
-      if (savedInvoices) {
-        const parsedI = JSON.parse(savedInvoices);
-        if (Array.isArray(parsedI)) {
-          existingInvoices = parsedI;
-          setInvoices(parsedI);
-        } else {
-          setInvoices([]);
-        }
+    if (foundSite) {
+      const resolvedClient = foundSite.clientName || foundSite.client || siteKey;
+      const resolvedLocation = foundSite.location || foundSite.address || 'Ainapur Site';
+      const resolvedGstin = foundSite.gstin || '';
+      const resolvedPhone = foundSite.phone || foundSite.phoneNumber || foundSite.contactNo || registeredPhone || '';
+      const resolvedProject = foundSite.siteName || foundSite.name || siteKey;
+
+      setSiteDetails({
+        clientName: resolvedClient,
+        clientAddress: resolvedLocation,
+        clientGstin: resolvedGstin,
+        clientPhone: resolvedPhone,
+        paymentTerms: foundSite.paymentTerms || 'Advance',
+        projectSite: resolvedProject,
+        siteAddress: resolvedLocation,
+        hsnCode: foundSite.hsnCode || '38245010 (Ready-Mix Concrete)'
+      });
+    }
+
+    const loadedTrucks = loadTransitMixers(siteKey);
+
+    const savedInvoices = localStorage.getItem(`concrete360_site_invoices_${siteKey}`);
+    let existingInvoices: RMCInvoice[] = [];
+    if (savedInvoices) {
+      const parsedI = JSON.parse(savedInvoices);
+      if (Array.isArray(parsedI)) {
+        existingInvoices = parsedI;
+        setInvoices(parsedI);
       } else {
         setInvoices([]);
       }
+    } else {
+      setInvoices([]);
+    }
 
-      const measurementsRaw = localStorage.getItem(`concrete360_advanced_measurements_${siteKey}`);
-      let parsedM: any[] = [];
-      if (measurementsRaw) {
-        try {
-          const arr = JSON.parse(measurementsRaw);
-          if (Array.isArray(arr)) parsedM = arr;
-        } catch {}
+    const measurementsRaw = localStorage.getItem(`concrete360_advanced_measurements_${siteKey}`);
+    let parsedM: any[] = [];
+    if (measurementsRaw) {
+      try {
+        const arr = JSON.parse(measurementsRaw);
+        if (Array.isArray(arr)) parsedM = arr;
+      } catch {}
+    }
+
+    setMeasurementItems(parsedM);
+
+    const netTotalVol = parsedM.reduce((sum: number, it: any) => sum + (Number(it.volumeM3) || 0), 0);
+    const wastage = getPersistedWastage(siteKey);
+    const grossTotalVol = netTotalVol * (1 + wastage / 100);
+    setTotalReportVolume(Number(grossTotalVol.toFixed(2)));
+
+    const alreadyInvoiced = existingInvoices.reduce((sum: number, inv: any) => sum + (Number(inv.volumeM3) || 0), 0);
+    let rem = Math.max(0, grossTotalVol - alreadyInvoiced);
+    rem = Number(rem.toFixed(2));
+    setRemainingVolume(rem);
+
+    if (selectedWorkId !== 'ALL') {
+      const selItem = parsedM.find(it => it.id === selectedWorkId);
+      if (selItem) {
+        const selGross = (Number(selItem.volumeM3) || 0) * (1 + wastage / 100);
+        const workAlreadyInvoiced = existingInvoices
+          .filter(inv => inv.workElementId === selectedWorkId)
+          .reduce((sum, inv) => sum + (Number(inv.volumeM3) || 0), 0);
+        rem = Number(Math.max(0, selGross - workAlreadyInvoiced).toFixed(2));
+        setRemainingVolume(rem);
+      }
+    }
+
+    if (!preserveModalInputs && !isModalOpen) {
+      const reportGrade = resolveGradeFromReports(siteKey, parsedM);
+      setMixGrade(reportGrade);
+      setUnitRate(fetchRateForGrade(reportGrade));
+
+      let activeVNo = selectedVehicleNo;
+      if (!activeVNo || !loadedTrucks.some(t => t.vehicleNo === activeVNo)) {
+        activeVNo = loadedTrucks[0]?.vehicleNo || 'KA28AC3087';
+        setSelectedVehicleNo(activeVNo);
       }
 
-      setMeasurementItems(parsedM);
-
-      const netTotalVol = parsedM.reduce((sum: number, it: any) => sum + (Number(it.volumeM3) || 0), 0);
-      const wastage = getPersistedWastage(siteKey);
-      const grossTotalVol = netTotalVol * (1 + wastage / 100);
-      setTotalReportVolume(Number(grossTotalVol.toFixed(2)));
-
-      const alreadyInvoiced = existingInvoices.reduce((sum: number, inv: any) => sum + (Number(inv.volumeM3) || 0), 0);
-      let rem = Math.max(0, grossTotalVol - alreadyInvoiced);
-      rem = Number(rem.toFixed(2));
-      setRemainingVolume(rem);
-
-      if (selectedWorkId !== 'ALL') {
-        const selItem = parsedM.find(it => it.id === selectedWorkId);
-        if (selItem) {
-          const selGross = (Number(selItem.volumeM3) || 0) * (1 + wastage / 100);
-          const workAlreadyInvoiced = existingInvoices
-            .filter(inv => inv.workElementId === selectedWorkId)
-            .reduce((sum, inv) => sum + (Number(inv.volumeM3) || 0), 0);
-          rem = Number(Math.max(0, selGross - workAlreadyInvoiced).toFixed(2));
-          setRemainingVolume(rem);
-        }
-      }
-
-      if (!preserveModalInputs && !isModalOpen) {
-        const reportGrade = resolveGradeFromReports(siteKey, parsedM);
-        setMixGrade(reportGrade);
-        setUnitRate(fetchRateForGrade(reportGrade));
-
-        let activeVNo = selectedVehicleNo;
-        if (!activeVNo || !loadedTrucks.some(t => t.vehicleNo === activeVNo)) {
-          activeVNo = loadedTrucks[0]?.vehicleNo || 'KA28AC3087';
-          setSelectedVehicleNo(activeVNo);
-        }
-
-        const activeMixer = loadedTrucks.find(t => t.vehicleNo === activeVNo) || loadedTrucks[0];
-        const mixerCapacity = activeMixer?.capacityM3 || 8;
-        const defaultVol = rem > 0 && rem < mixerCapacity ? rem : mixerCapacity;
-        setVolumeM3(defaultVol);
-        setDiscountType('flat');
-        setDiscountValue('');
-        setPumpType('none');
-        setPumpRate(10000);
-      }
-    } catch {}
+      const activeMixer = loadedTrucks.find(t => t.vehicleNo === activeVNo) || loadedTrucks[0];
+      const mixerCapacity = activeMixer?.capacityM3 || 8;
+      const defaultVol = rem > 0 && rem < mixerCapacity ? rem : mixerCapacity;
+      setVolumeM3(defaultVol);
+      setDiscountType('flat');
+      setDiscountValue('');
+      setPumpType('none');
+      setPumpRate(10000);
+    }
+  } catch {}
   };
 
   useEffect(() => {
@@ -652,8 +652,8 @@ export const BillingRMC: React.FC = () => {
       gstin: '29ABWFM2721J1ZA',
       address: 'SY NO 118/13 AINAPUR GRAM BURNAPUR ROAD, VIJAYAPURA-586104',
       division: 'Commercial Ready-Mix Concrete Batching & Supply Division',
-      phonePrimary: '',
-      phoneSecondary: '',
+      phonePrimary: '9931175133',
+      phoneSecondary: '9591055133',
       bankName: 'KOTAK MAHINDRA BANK',
       accountName: 'M/s MOHAMMED JAFAR BASHEER AHMED BILGI',
       accountNo: '9449817122',
@@ -668,8 +668,8 @@ export const BillingRMC: React.FC = () => {
         compProfile = {
           ...compProfile,
           ...parsedP,
-          phonePrimary: parsedP.phonePrimary ?? parsedP.phone_primary ?? '',
-          phoneSecondary: parsedP.phoneSecondary ?? parsedP.phone_secondary ?? ''
+          phonePrimary: parsedP.phonePrimary ?? parsedP.phone_primary ?? '9931175133',
+          phoneSecondary: parsedP.phoneSecondary ?? parsedP.phone_secondary ?? '9591055133'
         };
       }
 
@@ -687,8 +687,8 @@ export const BillingRMC: React.FC = () => {
             gstin: data.gstin || compProfile.gstin,
             address: data.address || compProfile.address,
             division: data.division || compProfile.division,
-            phonePrimary: data.phone_primary || '',
-            phoneSecondary: data.phone_secondary || '',
+            phonePrimary: data.phone_primary || '9931175133',
+            phoneSecondary: data.phone_secondary || '9591055133',
             bankName: data.bank_name || compProfile.bankName,
             accountName: data.account_name || compProfile.accountName,
             accountNo: data.account_no || compProfile.accountNo,
@@ -1199,24 +1199,24 @@ export const BillingRMC: React.FC = () => {
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
-                        </>
-                      )}
+                          </>
+                        )}
 
-                      {!canPrint && !canEditOrDelete && (
-                        <span className="text-slate-500 text-[10px] flex items-center gap-1 font-mono">
-                          <Eye className="w-3.5 h-3.5" />
-                          <span>View Only</span>
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+                        {!canPrint && !canEditOrDelete && (
+                          <span className="text-slate-500 text-[10px] flex items-center gap-1 font-mono">
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>View Only</span>
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
-    </div>
 
       {/* CONFIRM INVOICE DELETE MODAL */}
       {invoiceToDelete && (
@@ -1231,7 +1231,7 @@ export const BillingRMC: React.FC = () => {
                 <p className="text-xs text-slate-400">Reverts billed volume to site balance.</p>
               </div>
             </div>
-            
+             
             <p className="text-xs text-slate-300 bg-[#121d2f] p-3 rounded-xl border border-[#1b273d]">
               Are you sure you want to delete invoice <span className="text-rose-400 font-bold">{invoiceToDelete.invoiceNo}</span> ({invoiceToDelete.volumeM3} m³)?
             </p>
@@ -1272,143 +1272,143 @@ export const BillingRMC: React.FC = () => {
                   <p className="text-[11px] text-cyan-400 font-mono">
                     Active Client: <strong className="text-white">{siteDetails.clientName || currentSiteKey}</strong> | Site: {currentSiteKey}
                   </p>
+                </div>
               </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                setIsModalOpen(false);
-                setEditingInvoiceId(null);
-              }}
-              className="text-slate-400 hover:text-white p-1 rounded-lg bg-[#121c2d] cursor-pointer"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-
-          <form onSubmit={handleSaveInvoice} className="space-y-4 text-xs">
-            {/* Work Element Selector */}
-            <div className="bg-[#070d1a] border border-[#1b273d] p-3 rounded-2xl space-y-1.5">
-              <label className="text-slate-300 font-bold uppercase tracking-wider flex items-center gap-1.5 text-[11px]">
-                <Filter className="w-3.5 h-3.5 text-blue-400" />
-                <span>Select Structural Work Element (Linked Report):</span>
-              </label>
-              <select
-                value={selectedWorkId}
-                onChange={handleWorkElementChange}
-                className="w-full px-3 py-2.5 bg-[#0b1322] border border-[#1b273d] rounded-xl text-white font-bold outline-none cursor-pointer text-xs"
+              <button
+                type="button"
+                onClick={() => {
+                  setIsModalOpen(false);
+                  setEditingInvoiceId(null);
+                }}
+                className="text-slate-400 hover:text-white p-1 rounded-lg bg-[#121c2d] cursor-pointer"
               >
-                <option value="ALL">All Site Works Combined</option>
-                {measurementItems.map(it => (
-                  <option key={it.id} value={it.id}>
-                    {it.id}: {it.label} ({it.volumeM3} m³) {it.mixGrade ? `[${it.mixGrade}]` : ''}
-                  </option>
-                ))}
-              </select>
+                <X className="w-5 h-5" />
+              </button>
             </div>
 
-            {/* Invoice Date */}
-            <div className="space-y-1.5">
-              <label className="text-slate-300 font-bold uppercase tracking-wider flex items-center gap-1.5 text-[11px]">
-                <Calendar className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Invoice Date:</span>
-              </label>
-              <input
-                type="date"
-                value={invoiceDate}
-                onChange={(e) => setInvoiceDate(e.target.value)}
-                className="w-full px-4 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-white font-bold outline-none focus:border-blue-500 text-xs"
-              />
-            </div>
-
-            {/* Concrete Mix Grade */}
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-slate-300 font-bold uppercase tracking-wider">Concrete Mix Grade (From Report)</label>
-                <span className="text-[10px] text-cyan-400 font-bold">Auto-synced</span>
-              </div>
-              <select
-                value={mixGrade}
-                onChange={(e) => handleMixGradeChange(e.target.value)}
-                className="w-full px-3 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-cyan-400 font-bold outline-none cursor-pointer text-xs"
-              >
-                {materialGrades.map((mat, idx) => {
-                  const gradeLabel = `${mat.grade || mat.name || 'M25'}`;
-                  return (
-                    <option key={idx} value={gradeLabel}>
-                      {gradeLabel}
-                    </option>
-                  );
-                })}
-              </select>
-            </div>
-
-            {/* Vehicle Number */}
-            <div className="bg-[#070d1a] border border-[#1b273d] p-3.5 rounded-2xl space-y-2">
-              <div className="flex items-center justify-between">
+            <form onSubmit={handleSaveInvoice} className="space-y-4 text-xs">
+              {/* Work Element Selector */}
+              <div className="bg-[#070d1a] border border-[#1b273d] p-3 rounded-2xl space-y-1.5">
                 <label className="text-slate-300 font-bold uppercase tracking-wider flex items-center gap-1.5 text-[11px]">
-                  <Truck className="w-4 h-4 text-amber-400" />
-                  <span>Vehicle Number:</span>
+                  <Filter className="w-3.5 h-3.5 text-blue-400" />
+                  <span>Select Structural Work Element (Linked Report):</span>
                 </label>
-                <span className="text-[10px] text-cyan-400 font-mono">From Transit Mixer Page</span>
+                <select
+                  value={selectedWorkId}
+                  onChange={handleWorkElementChange}
+                  className="w-full px-3 py-2.5 bg-[#0b1322] border border-[#1b273d] rounded-xl text-white font-bold outline-none cursor-pointer text-xs"
+                >
+                  <option value="ALL">All Site Works Combined</option>
+                  {measurementItems.map(it => (
+                    <option key={it.id} value={it.id}>
+                      {it.id}: {it.label} ({it.volumeM3} m³) {it.mixGrade ? `[${it.mixGrade}]` : ''}
+                    </option>
+                  ))}
+                </select>
               </div>
 
-              <select
-                value={selectedVehicleNo}
-                onChange={(e) => handleVehicleChange(e.target.value)}
-                className="w-full px-3 py-2.5 bg-[#0b1322] border border-[#1b273d] rounded-xl text-amber-400 font-bold outline-none cursor-pointer text-xs"
-              >
-                {transitTrucks.map((t, idx) => (
-                  <option key={t.id || idx} value={t.vehicleNo}>
-                    {t.vehicleNo} {t.capacityM3 ? `(${t.capacityM3} m³)` : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
+              {/* Invoice Date */}
+              <div className="space-y-1.5">
+                <label className="text-slate-300 font-bold uppercase tracking-wider flex items-center gap-1.5 text-[11px]">
+                  <Calendar className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Invoice Date:</span>
+                </label>
+                <input
+                  type="date"
+                  value={invoiceDate}
+                  onChange={(e) => setInvoiceDate(e.target.value)}
+                  className="w-full px-4 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-white font-bold outline-none focus:border-blue-500 text-xs"
+                />
+              </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Concrete Mix Grade */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-slate-300 font-bold uppercase tracking-wider">Volume (m³)</label>
-                  <span className={`text-[10px] font-bold ${remainingVolume > 0 && remainingVolume < currentMixerCapacity ? 'text-amber-400' : 'text-cyan-400'}`}>
-                    {remainingVolume > 0 && remainingVolume < currentMixerCapacity
-                      ? `Rem. Balance (${remainingVolume} m³)`
-                      : `Capacity (${currentMixerCapacity} m³)`}
-                  </span>
+                  <label className="text-slate-300 font-bold uppercase tracking-wider">Concrete Mix Grade (From Report)</label>
+                  <span className="text-[10px] text-cyan-400 font-bold">Auto-synced</span>
                 </div>
-                <input
-                  type="number"
-                  step="any"
-                  value={volumeM3}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setVolumeM3(val === '' ? '' : Number(val));
-                  }}
-                  className="w-full px-4 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-cyan-400 font-bold outline-none focus:border-blue-500 text-sm"
-              />
-                {remainingVolume > 0 && numVolume > remainingVolume && (
-                  <p className="text-[10px] text-rose-400 mt-1 font-sans">
-                    ⚠️ Exceeds remaining site balance ({remainingVolume} m³)
-                  </p>
-                )}
+                <select
+                  value={mixGrade}
+                  onChange={(e) => handleMixGradeChange(e.target.value)}
+                  className="w-full px-3 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-cyan-400 font-bold outline-none cursor-pointer text-xs"
+                >
+                  {materialGrades.map((mat, idx) => {
+                    const gradeLabel = `${mat.grade || mat.name || 'M25'}`;
+                    return (
+                      <option key={idx} value={gradeLabel}>
+                        {gradeLabel}
+                      </option>
+                    );
+                  })}
+                </select>
               </div>
 
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-slate-300 font-bold uppercase tracking-wider">Unit Rate (₹ / m³)</label>
-                  <span className="text-[10px] text-amber-400">From Grade Catalog</span>
+              {/* Vehicle Number */}
+              <div className="bg-[#070d1a] border border-[#1b273d] p-3.5 rounded-2xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-slate-300 font-bold uppercase tracking-wider flex items-center gap-1.5 text-[11px]">
+                    <Truck className="w-4 h-4 text-amber-400" />
+                    <span>Vehicle Number:</span>
+                  </label>
+                  <span className="text-[10px] text-cyan-400 font-mono">From Transit Mixer Page</span>
                 </div>
-                <input
-                  type="number"
-                  value={unitRate}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setUnitRate(val === '' ? '' : Number(val));
-                  }}
-                  className="w-full px-4 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-white font-bold outline-none focus:border-blue-500 text-sm font-mono"
-              />
+
+                <select
+                  value={selectedVehicleNo}
+                  onChange={(e) => handleVehicleChange(e.target.value)}
+                  className="w-full px-3 py-2.5 bg-[#0b1322] border border-[#1b273d] rounded-xl text-amber-400 font-bold outline-none cursor-pointer text-xs"
+                >
+                  {transitTrucks.map((t, idx) => (
+                    <option key={t.id || idx} value={t.vehicleNo}>
+                      {t.vehicleNo} {t.capacityM3 ? `(${t.capacityM3} m³)` : ''}
+                    </option>
+                  ))}
+                </select>
               </div>
-            </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-slate-300 font-bold uppercase tracking-wider">Volume (m³)</label>
+                    <span className={`text-[10px] font-bold ${remainingVolume > 0 && remainingVolume < currentMixerCapacity ? 'text-amber-400' : 'text-cyan-400'}`}>
+                      {remainingVolume > 0 && remainingVolume < currentMixerCapacity
+                        ? `Rem. Balance (${remainingVolume} m³)`
+                        : `Capacity (${currentMixerCapacity} m³)`}
+                    </span>
+                  </div>
+                  <input
+                    type="number"
+                    step="any"
+                    value={volumeM3}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setVolumeM3(val === '' ? '' : Number(val));
+                    }}
+                    className="w-full px-4 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-cyan-400 font-bold outline-none focus:border-blue-500 text-sm"
+                  />
+                  {remainingVolume > 0 && numVolume > remainingVolume && (
+                    <p className="text-[10px] text-rose-400 mt-1 font-sans">
+                      ⚠️ Exceeds remaining site balance ({remainingVolume} m³)
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-slate-300 font-bold uppercase tracking-wider">Unit Rate (₹ / m³)</label>
+                    <span className="text-[10px] text-amber-400">From Grade Catalog</span>
+                  </div>
+                  <input
+                    type="number"
+                    value={unitRate}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setUnitRate(val === '' ? '' : Number(val));
+                    }}
+                    className="w-full px-4 py-3 bg-[#070d1a] border border-[#1b273d] rounded-xl text-white font-bold outline-none focus:border-blue-500 text-sm font-mono"
+                  />
+                </div>
+              </div>
 
             {/* DISCOUNT SECTION */}
             <div className="bg-[#070d1a] border border-[#1b273d] p-3.5 rounded-2xl space-y-2">
@@ -1486,24 +1486,24 @@ export const BillingRMC: React.FC = () => {
               )}
             </div>
 
-            <div className="flex items-center gap-2 pt-1">
-              <input
-                type="checkbox"
-                id="gstCheck"
-                checked={applyGst}
-                onChange={(e) => setApplyGst(e.target.checked)}
-                className="w-4 h-4 rounded bg-[#070d1a] border-[#1b273d] text-blue-600 focus:ring-0 cursor-pointer"
-              />
-              <label htmlFor="gstCheck" className="text-slate-300 font-bold cursor-pointer">
-                Apply GST (18%) on Concrete & Pumping Subtotal
-              </label>
-            </div>
-
-            <div className="bg-[#070d1a] border border-[#1b273d] p-4 rounded-2xl space-y-2 text-xs">
-              <div className="flex justify-between text-slate-400">
-                <span>Concrete Subtotal ({numVolume} m³ × ₹{numRate}):</span>
-                <span>₹{Math.round(concreteSubtotal).toLocaleString('en-IN')}</span>
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="gstCheck"
+                  checked={applyGst}
+                  onChange={(e) => setApplyGst(e.target.checked)}
+                  className="w-4 h-4 rounded bg-[#070d1a] border-[#1b273d] text-blue-600 focus:ring-0 cursor-pointer"
+                />
+                <label htmlFor="gstCheck" className="text-slate-300 font-bold cursor-pointer">
+                  Apply GST (18%) on Concrete & Pumping Subtotal
+                </label>
               </div>
+
+              <div className="bg-[#070d1a] border border-[#1b273d] p-4 rounded-2xl space-y-2 text-xs">
+                <div className="flex justify-between text-slate-400">
+                  <span>Concrete Subtotal ({numVolume} m³ × ₹{numRate}):</span>
+                  <span>₹{Math.round(concreteSubtotal).toLocaleString('en-IN')}</span>
+                </div>
               {discountAmount > 0 && (
                 <div className="flex justify-between text-emerald-400">
                   <span>Discount ({discountType === 'percentage' ? `${discountValue}%` : 'Flat'}):</span>
@@ -1520,42 +1520,42 @@ export const BillingRMC: React.FC = () => {
                 <span>Taxable Subtotal:</span>
                 <span>₹{Math.round(taxableSubtotal).toLocaleString('en-IN')}</span>
               </div>
-              {applyGst && (
-                <div className="flex justify-between text-slate-400">
-                  <span>GST (18%):</span>
-                  <span>₹{Math.round(gstAmount).toLocaleString('en-IN')}</span>
+                {applyGst && (
+                  <div className="flex justify-between text-slate-400">
+                    <span>GST (18%):</span>
+                    <span>₹{Math.round(gstAmount).toLocaleString('en-IN')}</span>
+                  </div>
+                )}
+                <div className="flex justify-between items-center pt-2 border-t border-[#1b273d] text-sm font-black text-emerald-400">
+                  <span>Grand Total:</span>
+                  <span className="text-base">₹{Math.round(grandTotal).toLocaleString('en-IN')}</span>
                 </div>
-              )}
-              <div className="flex justify-between items-center pt-2 border-t border-[#1b273d] text-sm font-black text-emerald-400">
-                <span>Grand Total:</span>
-                <span className="text-base">₹{Math.round(grandTotal).toLocaleString('en-IN')}</span>
               </div>
-            </div>
 
-            <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#1b273d]">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsModalOpen(false);
-                  setEditingInvoiceId(null);
-                }}
-                className="px-5 py-3 bg-[#070d1a] hover:bg-[#121c2d] text-slate-300 font-bold rounded-xl cursor-pointer text-xs"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl shadow-lg shadow-blue-600/30 cursor-pointer text-xs transition"
-              >
-                {editingInvoiceId ? 'Update Tax Invoice' : 'Issue Tax Invoice'}
-              </button>
-            </div>
-          </form>
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#1b273d]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsModalOpen(false);
+                    setEditingInvoiceId(null);
+                  }}
+                  className="px-5 py-3 bg-[#070d1a] hover:bg-[#121c2d] text-slate-300 font-bold rounded-xl cursor-pointer text-xs"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl shadow-lg shadow-blue-600/30 cursor-pointer text-xs transition"
+                >
+                  {editingInvoiceId ? 'Update Tax Invoice' : 'Issue Tax Invoice'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
-      </div>
-    )}
-  </div>
- );
+      )}
+    </div>
+  );
 };
 
 export default BillingRMC;
