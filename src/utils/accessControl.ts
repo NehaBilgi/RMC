@@ -4,6 +4,7 @@ export const PAGE_ACCESS_OPTIONS = [
     pages: [
       { id: 'dashboard', label: 'Dashboard' },
       { id: 'ongoing_site', label: 'Ongoing Site' },
+      { id: 'quotation', label: 'Estimate / Quotation' },
       { id: 'billing', label: 'Billing' },
       { id: 'total_bill', label: 'Total Bill of Site' },
       { id: 'site_tests', label: 'At-Site Tests' },
@@ -17,6 +18,7 @@ export const PAGE_ACCESS_OPTIONS = [
       { id: 'transit_mixer', label: 'Transit Mixer' },
       { id: 'concrete_pumps', label: 'Concrete Pumps' },
       { id: 'mix_design', label: 'Mix Design' },
+      { id: 'rmc_batch_report', label: 'RMC Batch Report (Plant)' },
       { id: 'site_report', label: 'Report / Material Used' },
       { id: 'measurements', label: 'Site Inventory Measurements' }
     ]
@@ -24,7 +26,8 @@ export const PAGE_ACCESS_OPTIONS = [
   {
     section: 'Configuration',
     pages: [
-      { id: 'company_details', label: 'Company Details' }
+      { id: 'company_details', label: 'Company Details' },
+      { id: 'user_management', label: 'User Management' }
     ]
   }
 ] as const;
@@ -55,8 +58,9 @@ export const getSessionUser = (): SessionUser | null => {
 export const canViewPage = (user: SessionUser | null | undefined, pageId: string): boolean => {
   if (!user) return false;
   if (isAdminUser(user)) return true;
+  if (pageId === 'user_management') return false; // Admin only
   // Existing accounts without a saved page list retain their previous access.
-  if (!Array.isArray(user.pageAccess)) return pageId !== 'user_management';
+  if (!Array.isArray(user.pageAccess)) return true;
   return user.pageAccess.includes(pageId);
 };
 
