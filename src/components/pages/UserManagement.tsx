@@ -203,7 +203,7 @@ function UserForm({
             ? 'Admins can access every page. Page selection applies to employee and read-only accounts.'
             : 'Select the pages this user can open. Editing and deleting records, and User Management, remain admin-only.'}
         </p>
-        <div className="max-h-44 overflow-y-auto space-y-3 pr-1">
+        <div className="max-h-72 overflow-y-auto space-y-3 pr-1">
           {PAGE_ACCESS_OPTIONS.map(section => (
             <div key={section.section}>
               <p className="mb-1.5 text-[9px] font-extrabold uppercase tracking-[0.14em] text-slate-500">
