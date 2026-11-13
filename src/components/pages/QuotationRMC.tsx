@@ -751,7 +751,7 @@ export const QuotationRMC: React.FC = () => {
       clientPhone: siteDetails.clientPhone,
       projectSite: siteDetails.projectSite || currentSiteKey,
       workElementId: selectedWorkId,
-      workElementLabel: selectedItemObj ? resolveWorkLabel(selectedItemObj, idx) : 'All Site CONCRETE Works',
+      workElementLabel: selectedItemObj ? resolveWorkLabel(selectedItemObj, idx) : 'All Site Concrete Works',
       mixGrade,
       netVolumeM3: selectedNetTotal,
       wastagePercent: wastagePctNum,
@@ -1002,7 +1002,7 @@ export const QuotationRMC: React.FC = () => {
               ${q.clientPhone ? `Phone: <strong>${q.clientPhone}</strong>` : ''}
             </div>
             <div>
-              <strong>SITE / STRUCTURAL SCOPE:</strong><br/>
+              <strong>SITE / CONCRETE SCOPE:</strong><br/>
               Project: <strong>${q.projectSite}</strong><br/>
               Scope: <strong>${q.workElementLabel || 'All Site Works'}</strong><br/>
               Delivery Location: ${q.clientAddress}<br/>
