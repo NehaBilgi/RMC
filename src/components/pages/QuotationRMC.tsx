@@ -483,7 +483,7 @@ const resolveWorkLabel = (it: StudioWorkEntry, idx = 0): string => {
     return String(raw).trim();
   }
   const cats = it.selectedCategories || it.categories || [];
-  return cats.length > 0 ? cats.join(' + ') : `CONCRETE Work #${idx + 1}`;
+  return cats.length > 0 ? cats.join(' + ') : `Structural Work #${idx + 1}`;
 };
 
 export const QuotationRMC: React.FC = () => {
@@ -498,7 +498,7 @@ export const QuotationRMC: React.FC = () => {
         return extractCleanSiteName(parsed.name || parsed.siteName || parsed.id);
       }
     } catch {}
-    return 'SAMEER';
+    return 'BASVARAJ';
   };
 
   const [currentSiteKey, setCurrentSiteKey] = useState<string>(getActiveSiteKey());
@@ -508,11 +508,11 @@ export const QuotationRMC: React.FC = () => {
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
   const [siteDetails, setSiteDetails] = useState({
-    clientName: 'SAMEER',
-    clientAddress: 'Ainapur Site',
-    clientGstin: '29UNREGISTERED',
+    clientName: '',
+    clientAddress: '',
+    clientGstin: '',
     clientPhone: '',
-    projectSite: 'SAMEER (slab/BEAM)'
+    projectSite: ''
   });
 
   // Form states
@@ -523,18 +523,18 @@ export const QuotationRMC: React.FC = () => {
     d.setDate(d.getDate() + 15);
     return d.toISOString().split('T')[0];
   });
-  const [mixGrade, setMixGrade] = useState<string>('M20');
+  const [mixGrade, setMixGrade] = useState<string>('M25');
   const [wastagePercent, setWastagePercent] = useState<number | string>(0);
-  const [estimatedQtyM3, setEstimatedQtyM3] = useState<number | string>(9);
-  const [unitRate, setUnitRate] = useState<number | string>(4100);
-  const [includePump, setIncludePump] = useState<boolean>(true);
-  const [pumpRentPerShift, setPumpRentPerShift] = useState<number | string>(5000);
+  const [estimatedQtyM3, setEstimatedQtyM3] = useState<number | string>(30);
+  const [unitRate, setUnitRate] = useState<number | string>(4500);
+  const [includePump, setIncludePump] = useState<boolean>(false);
+  const [pumpRentPerShift, setPumpRentPerShift] = useState<number | string>(6500);
   const [pumpShifts, setPumpShifts] = useState<number | string>(1);
-  const [applyGst, setApplyGst] = useState<boolean>(false);
-  const [remarks, setRemarks] = useState<string>('Scope: BEAM + SLAB (9 m³ total). Valid for 15 days.');
+  const [applyGst, setApplyGst] = useState<boolean>(true);
+  const [remarks, setRemarks] = useState<string>('Rates valid for 15 days. Concrete supplied as per IS 456 / IS 4926 standards.');
 
   const resolveGradeCatalogRate = (gradeCode: string): number => {
-    const cleanGrade = (gradeCode || 'M20').substring(0, 3).toUpperCase();
+    const cleanGrade = (gradeCode || 'M25').substring(0, 3).toUpperCase();
     try {
       const catKeys = ['concrete360_material_categories', 'pave_material_categories', 'concrete360_mix_designs'];
       for (const k of catKeys) {
@@ -550,7 +550,7 @@ export const QuotationRMC: React.FC = () => {
         }
       }
     } catch {}
-    return STANDARD_RMC_RATES[cleanGrade] || 4100;
+    return STANDARD_RMC_RATES[cleanGrade] || 4500;
   };
 
   const applyMeasurementToForm = (
@@ -577,7 +577,7 @@ export const QuotationRMC: React.FC = () => {
         localStorage.getItem(`concrete360_active_mix_grade_${siteKey}`) ||
         items.find(it => it.mixGrade || it.grade)?.mixGrade ||
         items.find(it => it.grade)?.grade ||
-        'M20';
+        'M25';
       const cleanG = explicitGrade.substring(0, 3).toUpperCase();
 
       setMixGrade(cleanG);
@@ -603,7 +603,7 @@ export const QuotationRMC: React.FC = () => {
           : entryStats.grossVol;
         const roundedVol = roundToHalfM3(grossVol);
 
-        const cleanG = (found.mixGrade || found.grade || 'M20').substring(0, 3).toUpperCase();
+        const cleanG = (found.mixGrade || found.grade || 'M25').substring(0, 3).toUpperCase();
         const label = resolveWorkLabel(found, idx);
 
         setMixGrade(cleanG);
@@ -639,9 +639,9 @@ export const QuotationRMC: React.FC = () => {
         setSiteDetails({
           clientName: foundSite.clientName || foundSite.client || siteKey,
           clientAddress: foundSite.location || foundSite.address || 'Ainapur Site',
-          clientGstin: foundSite.gstin || '29UNREGISTERED',
+          clientGstin: foundSite.gstin || '',
           clientPhone: foundSite.phone || foundSite.phoneNumber || phoneMap[siteKey] || '',
-          projectSite: foundSite.siteName || foundSite.name || 'SAMEER (slab/BEAM)'
+          projectSite: foundSite.siteName || foundSite.name || siteKey
         });
       }
 
@@ -653,34 +653,7 @@ export const QuotationRMC: React.FC = () => {
         const parsed = JSON.parse(savedQuotes);
         if (Array.isArray(parsed)) setQuotations(parsed);
       } else {
-        setQuotations([
-          {
-            id: 'QT-2026-270',
-            quoteNo: 'QT-2026-270',
-            date: '2026-11-12',
-            validUntil: '2026-11-27',
-            clientName: 'SAMEER',
-            clientAddress: 'Ainapur Site',
-            clientGstin: '29UNREGISTERED',
-            clientPhone: '',
-            projectSite: 'SAMEER (slab/BEAM)',
-            workElementId: 'ALL',
-            workElementLabel: 'All Site Structural Works',
-            mixGrade: 'M20',
-            estimatedQtyM3: 9,
-            unitRate: 4100,
-            includePump: true,
-            pumpRentPerShift: 5000,
-            pumpShifts: 1,
-            applyGst: false,
-            grandTotal: 41900,
-            status: 'SENT',
-            remarks: 'Scope: BEAM + SLAB (9 m³ total). Valid for 15 days.',
-            measurementLines: [
-              { element: 'Slab', dimensionText: '8.38 m³ net volume (incl. all structural works)', quantityM3: 9 }
-            ]
-          }
-        ]);
+        setQuotations([]);
       }
     } catch {}
   };
@@ -707,10 +680,10 @@ export const QuotationRMC: React.FC = () => {
       applyMeasurementToForm(parsedM, 'ALL', siteKey);
     } else {
       setWastagePercent(0);
-      setMixGrade('M20');
-      setUnitRate(resolveGradeCatalogRate('M20'));
-      setEstimatedQtyM3(9);
-      setRemarks('Scope: BEAM + SLAB (9 m³ total). Valid for 15 days.');
+      setMixGrade('M25');
+      setUnitRate(resolveGradeCatalogRate('M25'));
+      setEstimatedQtyM3(10);
+      setRemarks('Rates valid for 15 days. Concrete supplied as per IS 456 / IS 4926 standards.');
     }
     setIsModalOpen(true);
   };
@@ -774,9 +747,9 @@ export const QuotationRMC: React.FC = () => {
       validUntil,
       clientName: siteDetails.clientName || currentSiteKey,
       clientAddress: siteDetails.clientAddress || 'Ainapur Site',
-      clientGstin: siteDetails.clientGstin || '29UNREGISTERED',
+      clientGstin: siteDetails.clientGstin,
       clientPhone: siteDetails.clientPhone,
-      projectSite: siteDetails.projectSite || 'SAMEER (slab/BEAM)',
+      projectSite: siteDetails.projectSite || currentSiteKey,
       workElementId: selectedWorkId,
       workElementLabel: selectedItemObj ? resolveWorkLabel(selectedItemObj, idx) : 'All Site Structural Works',
       mixGrade,
@@ -792,7 +765,7 @@ export const QuotationRMC: React.FC = () => {
       grandTotal,
       status: 'SENT',
       remarks,
-      measurementLines: collectedMeasurementLines.length > 0 ? collectedMeasurementLines : [{ element: 'Slab / Beam Works', dimensionText: 'All Site Structural Works', quantityM3: qtyNum }]
+      measurementLines: collectedMeasurementLines
     };
 
     const updated = [newQuote, ...quotations];
@@ -876,9 +849,9 @@ export const QuotationRMC: React.FC = () => {
       plantMake: 'CONMAT Batching Plant (0.75 m³)',
       gstin: '29ABWFM2721J1ZA',
       address: 'SY NO 118/13 AINAPUR GRAM BURNAPUR ROAD, VIJAYAPURA-586104',
-      division: 'Commercial Ready-Mix Concrete Batching & Supply Division',
-      phonePrimary: '+91 9931175133',
-      phoneSecondary: '+91 9591055133'
+      division: 'Commercial Ready-Mix Concrete Supply',
+      phonePrimary: '',
+      phoneSecondary: ''
     };
 
     try {
@@ -894,12 +867,12 @@ export const QuotationRMC: React.FC = () => {
           parsedP.phonePrimary ||
           parsedP.phone_primary ||
           parsedPhones.phonePrimary ||
-          '+91 9931175133',
+          '',
         phoneSecondary:
           parsedP.phoneSecondary ||
           parsedP.phone_secondary ||
           parsedPhones.phoneSecondary ||
-          '+91 9591055133'
+          ''
       };
     } catch {}
 
@@ -913,6 +886,7 @@ export const QuotationRMC: React.FC = () => {
     const sub = concreteSub + pumpSub;
     const gst = q.applyGst ? sub * 0.18 : 0;
 
+    // Resolve live compact lines from SiteMeasurementStudio
     const liveWorks = loadStudioWorksForSite(currentSiteKey);
     const targetWorks = q.workElementId && q.workElementId !== 'ALL'
       ? liveWorks.filter(w => w.id === q.workElementId)
@@ -926,6 +900,7 @@ export const QuotationRMC: React.FC = () => {
     const totalNetQty = Number(lines.reduce((sum, l) => sum + l.quantityM3, 0).toFixed(2));
     const liveWastageSummary = summarizeEntriesWastage(targetWorks, currentSiteKey);
 
+    // Internal wastage calculation (hidden from print output)
     const wastagePct =
       (Number(q.wastagePercent) || 0) > 0
         ? Number(q.wastagePercent)
@@ -940,6 +915,7 @@ export const QuotationRMC: React.FC = () => {
 
     const totalWithWastage = Number((totalNetQty + wastageVol).toFixed(2));
 
+    // Strip any wastage mentions from remarks before printing
     const cleanPrintRemarks = (q.remarks || '').replace(/\s*\(?(\+?[\d.]+\s*%?\s*)?wastage\)?/gi, '').trim();
 
     const bottomMeasurementTableHtml = lines.length > 0 ? `
@@ -969,7 +945,7 @@ export const QuotationRMC: React.FC = () => {
               <td colspan="3" class="right" style="font-weight:bold; color:#0f172a;">
                 Calculated Total Quantity:
               </td>
-              <td class="right" style="font-weight:bold; color:#0f172a;">${totalWithWastage > 0 ? totalWithWastage.toFixed(2) : q.estimatedQtyM3} m³</td>
+              <td class="right" style="font-weight:bold; color:#0f172a;">${totalWithWastage.toFixed(2)} m³</td>
             </tr>
             <tr style="background:#f1f5f9;">
               <td colspan="3" class="right" style="font-weight:bold; color:#0f172a;">
@@ -1026,7 +1002,7 @@ export const QuotationRMC: React.FC = () => {
               ${q.clientPhone ? `Phone: <strong>${q.clientPhone}</strong>` : ''}
             </div>
             <div>
-              <strong>SITE / CONCRETE SCOPE:</strong><br/>
+              <strong>SITE / STRUCTURAL SCOPE:</strong><br/>
               Project: <strong>${q.projectSite}</strong><br/>
               Scope: <strong>${q.workElementLabel || 'All Site Works'}</strong><br/>
               Delivery Location: ${q.clientAddress}<br/>
@@ -1074,13 +1050,13 @@ export const QuotationRMC: React.FC = () => {
             <div><span>ESTIMATED GRAND TOTAL:</span><span>₹${q.grandTotal.toLocaleString('en-IN')}</span></div>
           </div>
 
-          ${bottomMeasurementTableHtml}
-
-          <p style="margin-top:20px;font-size:10px;"><strong>Terms & Remarks:</strong> ${cleanPrintRemarks}</p>
-          <div style="margin-top:25px;display:flex;justify-content:space-between;font-size:10px;">
+          <p style="margin-top:14px;font-size:10px;"><strong>Terms & Remarks:</strong> ${cleanPrintRemarks}</p>
+          <div style="margin-top:30px;display:flex;justify-content:space-between;font-size:10px;">
             <div style="border-top:1px dashed #64748b;width:180px;text-align:center;padding-top:4px;">Client Acceptance Sign & Stamp</div>
             <div style="border-top:1px dashed #64748b;width:180px;text-align:center;padding-top:4px;">For ${compProfile.name}</div>
           </div>
+
+          ${bottomMeasurementTableHtml}
 
           <script>window.print();</script>
         </body>
@@ -1122,7 +1098,7 @@ export const QuotationRMC: React.FC = () => {
           <div>
             <span className="text-slate-400 uppercase text-[10px] font-bold block">Linked Site Inventory Measurements</span>
             <strong className="text-white text-sm">
-              {measurementItems.flatMap((w, i) => extractCompactMeasurementLines(w, i)).length || 1} Measured Item(s)
+              {measurementItems.flatMap((w, i) => extractCompactMeasurementLines(w, i)).length} Measured Item(s)
             </strong>
           </div>
         </div>
@@ -1130,7 +1106,7 @@ export const QuotationRMC: React.FC = () => {
           <div>
             <span className="text-slate-400 uppercase text-[10px] font-bold block">Net Measured Vol</span>
             <strong className="text-cyan-300 text-sm">
-              {(allNetVolume || 8.38).toFixed(2)} m³
+              {allNetVolume.toFixed(2)} m³
             </strong>
           </div>
           {allWastageVolume > 0 && (
@@ -1148,7 +1124,7 @@ export const QuotationRMC: React.FC = () => {
               Total Quotation Vol (Round)
             </span>
             <strong className="text-emerald-300 text-sm">
-              {formatRoundM3(allRoundedVolume || 9)} m³
+              {formatRoundM3(allRoundedVolume)} m³
             </strong>
           </div>
         </div>
@@ -1294,7 +1270,7 @@ export const QuotationRMC: React.FC = () => {
                   className="w-full px-3 py-2.5 bg-[#0b1322] border border-[#1b273d] rounded-xl text-white font-bold outline-none cursor-pointer text-xs"
                 >
                   <option value="ALL">
-                    All Site Elements ({collectedMeasurementLines.length || 1} rows • {(allNetVolume || 8.38).toFixed(2)} m³ → {formatRoundM3(allRoundedVolume || 9)} m³)
+                    All Site Elements ({collectedMeasurementLines.length} rows • {allNetVolume.toFixed(2)} m³ → {formatRoundM3(allRoundedVolume)} m³)
                   </option>
                   {measurementItems.map((it, idx) => {
                     const st = extractEntryWastage(it);
@@ -1308,7 +1284,7 @@ export const QuotationRMC: React.FC = () => {
                 </select>
 
                 {/* Compact Element | Dimensions | Quantity Preview */}
-                {collectedMeasurementLines.length > 0 ? (
+                {collectedMeasurementLines.length > 0 && (
                   <div className="bg-[#0b1322] border border-[#17253e] rounded-xl p-2.5 space-y-1 max-h-32 overflow-y-auto text-[10px]">
                     {collectedMeasurementLines.map((line, idx) => (
                       <div key={idx} className="flex justify-between items-center text-slate-300 border-b border-[#142033] last:border-none pb-1 last:pb-0">
@@ -1318,11 +1294,6 @@ export const QuotationRMC: React.FC = () => {
                         <span className="text-emerald-400 font-bold shrink-0">{line.quantityM3.toFixed(2)} m³</span>
                       </div>
                     ))}
-                  </div>
-                ) : (
-                  <div className="bg-[#0b1322] border border-[#17253e] rounded-xl p-2.5 text-[10px] text-slate-300 flex justify-between items-center">
-                    <span><strong className="text-cyan-300">All Site Structural Works</strong> (BEAM + SLAB)</span>
-                    <span className="text-emerald-400 font-bold">9.00 m³</span>
                   </div>
                 )}
 
@@ -1342,12 +1313,14 @@ export const QuotationRMC: React.FC = () => {
                       className="w-16 px-2 py-1 bg-[#0b1322] border border-amber-500/40 rounded-lg text-amber-300 font-bold text-center outline-none text-xs"
                     />
                   </div>
-                  <div className="text-[10px] text-right text-slate-300">
-                    <span>Net: <strong>{(selectedNetTotal || 8.38).toFixed(2)}</strong> + Wastage: <strong className="text-amber-400">{selectedWastageVol.toFixed(2)}</strong></span>
-                    <span className="block text-emerald-400 font-bold">
-                      Gross: {(selectedGrossTotal || 9).toFixed(2)} m³ → {formatRoundM3(roundToHalfM3(selectedGrossTotal || 9))} m³
-                    </span>
-                  </div>
+                  {selectedNetTotal > 0 && (
+                    <div className="text-[10px] text-right text-slate-300">
+                      <span>Net: <strong>{selectedNetTotal.toFixed(2)}</strong> + Wastage: <strong className="text-amber-400">{selectedWastageVol.toFixed(2)}</strong></span>
+                      <span className="block text-emerald-400 font-bold">
+                        Gross: {selectedGrossTotal.toFixed(2)} m³ → {formatRoundM3(roundToHalfM3(selectedGrossTotal))} m³
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
 
