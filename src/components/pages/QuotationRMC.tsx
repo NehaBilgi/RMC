@@ -483,7 +483,7 @@ const resolveWorkLabel = (it: StudioWorkEntry, idx = 0): string => {
     return String(raw).trim();
   }
   const cats = it.selectedCategories || it.categories || [];
-  return cats.length > 0 ? cats.join(' + ') : `Structural Work #${idx + 1}`;
+  return cats.length > 0 ? cats.join(' + ') : `CONCRETE Work #${idx + 1}`;
 };
 
 export const QuotationRMC: React.FC = () => {
