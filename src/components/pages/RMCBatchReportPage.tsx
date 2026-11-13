@@ -46,7 +46,6 @@ interface BatchRecord {
   indentNo: string;
   invoiceNo: string;
   date: string;
-  time: string;
   siteName: string;
   clientName: string;
   transporterName: string;
@@ -124,7 +123,6 @@ export const RMCBatchReportPage: React.FC = () => {
     const fallback = qaSource[gradeKey] || qaSource['M30'];
 
     try {
-      // 1. Primary source: MixDesignModule's site + mode storage (`concrete360_mixes_${siteKey}_${mode}`)
       const directMixesRaw = localStorage.getItem(`concrete360_mixes_${siteKey}_${mode}`);
       if (directMixesRaw) {
         const parsed = JSON.parse(directMixesRaw);
@@ -142,7 +140,6 @@ export const RMCBatchReportPage: React.FC = () => {
         }
       }
 
-      // 2. Secondary source: MixDesignModule's serialized array (`concrete360_mix_designs_${siteKey}`)
       const globalListRaw = localStorage.getItem(`concrete360_mix_designs_${siteKey}`) || localStorage.getItem('concrete360_mix_designs');
       if (globalListRaw) {
         const list = JSON.parse(globalListRaw);
@@ -170,7 +167,6 @@ export const RMCBatchReportPage: React.FC = () => {
       }
     } catch {}
 
-    // 3. Default directly to MixDesignModule's BILGI_QA_REV2 constants
     return {
       cement: fallback.cementKg,
       admix: fallback.mineralAdmixtureKg,
@@ -243,7 +239,6 @@ export const RMCBatchReportPage: React.FC = () => {
           indentNo: `IND-${siteKey.slice(0, 3)}-${1001 + idx}`,
           invoiceNo: inv.invoiceNo || `INV-2026-${100 + idx}`,
           date: inv.date || new Date().toISOString().split('T')[0],
-          time: '11:45 AM',
           siteName: siteKey,
           clientName: inv.clientName || siteKey,
           transporterName: 'BILGI BUILDCON RMC',
@@ -257,7 +252,7 @@ export const RMCBatchReportPage: React.FC = () => {
           unitRecipe,
           drops,
           silo1TargetKg: s1Target,
-          silo1ActualKg: s1Target + Math.round((Math.random() * 8) - 4),
+          silo1ActualKg: s1Target + Math.max(2, Math.round(Math.random() * 6 + 1)), // Cement Silo 1 strictly greater than target (always positive + variance)
           silo2TargetKg: s2Target,
           silo2ActualKg: s2Target + Math.round((Math.random() * 6) - 3),
           mSandTargetKg: sandTarget,
@@ -333,7 +328,7 @@ export const RMCBatchReportPage: React.FC = () => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
 
-    const s1Var = (((b.silo1ActualKg - b.silo1TargetKg) / b.silo1TargetKg) * 100).toFixed(1);
+    const s1Var = Math.max(0.1, Number((((b.silo1ActualKg - b.silo1TargetKg) / b.silo1TargetKg) * 100).toFixed(1)));
     const s2Var = (((b.silo2ActualKg - b.silo2TargetKg) / b.silo2TargetKg) * 100).toFixed(1);
     const sandVar = (((b.mSandActualKg - b.mSandTargetKg) / b.mSandTargetKg) * 100).toFixed(1);
     const a20Var = (((b.agg20mmActualKg - b.agg20mmTargetKg) / b.agg20mmTargetKg) * 100).toFixed(1);
@@ -381,7 +376,7 @@ export const RMCBatchReportPage: React.FC = () => {
           <div class="meta-grid">
             <div><strong>Indent No:</strong> ${b.indentNo}</div>
             <div><strong>Invoice No:</strong> ${b.invoiceNo}</div>
-            <div><strong>Date & Time:</strong> ${b.date} | ${b.time}</div>
+            <div><strong>Date:</strong> ${b.date}</div>
             <div><strong>Project Site:</strong> ${b.siteName}</div>
             <div><strong>Client Name:</strong> ${b.clientName}</div>
             <div><strong>Transporter:</strong> ${b.transporterName}</div>
@@ -453,7 +448,7 @@ export const RMCBatchReportPage: React.FC = () => {
               </tr>
               <tr>
                 <td class="row-title">Variance (%)</td>
-                <td>${Number(s1Var) > 0 ? `+${s1Var}` : s1Var}%</td>
+                <td>+${s1Var}%</td>
                 <td>${Number(s2Var) > 0 ? `+${s2Var}` : s2Var}%</td>
                 <td>${Number(sandVar) > 0 ? `+${sandVar}` : sandVar}%</td>
                 <td>${Number(a20Var) > 0 ? `+${a20Var}` : a20Var}%</td>
