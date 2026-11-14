@@ -15,7 +15,6 @@ import {
 import { cloudStorage } from '../../services/cloudStorage';
 import { 
   BILGI_QA_REV2_GGBS, 
-  BILGI_QA_REV2_FLY_ASH, 
   AdmixtureMode 
 } from './MixDesignModule';
 
@@ -116,14 +115,13 @@ export const RMCBatchReportPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDate, setSelectedDate] = useState<string>('');
 
-  // Pulls mix proportions directly from MixDesignModule storage & Rev. 2 QA constants
-  const getLinkedMixDesign = (siteKey: string, gradeStr: string, mode: AdmixtureMode) => {
+  // Pulls GGBS mix proportions directly from MixDesignModule storage & Rev. 2 QA constants
+  const getLinkedMixDesign = (siteKey: string, gradeStr: string) => {
     const gradeKey = (gradeStr || 'M30').substring(0, 3).toUpperCase();
-    const qaSource = mode === 'GGBS' ? BILGI_QA_REV2_GGBS : BILGI_QA_REV2_FLY_ASH;
-    const fallback = qaSource[gradeKey] || qaSource['M30'];
+    const fallback = BILGI_QA_REV2_GGBS[gradeKey] || BILGI_QA_REV2_GGBS['M30'];
 
     try {
-      const directMixesRaw = localStorage.getItem(`concrete360_mixes_${siteKey}_${mode}`);
+      const directMixesRaw = localStorage.getItem(`concrete360_mixes_${siteKey}_GGBS`);
       if (directMixesRaw) {
         const parsed = JSON.parse(directMixesRaw);
         if (parsed && parsed[gradeKey]) {
@@ -146,10 +144,10 @@ export const RMCBatchReportPage: React.FC = () => {
         if (Array.isArray(list)) {
           const match = list.find((it: any) => String(it.grade || it.code || '').toUpperCase().includes(gradeKey));
           if (match) {
-            const modeSpecificVal = mode === 'GGBS' ? Number(match.ggbsKgPerM3) : Number(match.flyAshKgPerM3);
+            const ggbsVal = Number(match.ggbsKgPerM3);
             const genericVal = Number(match.mineralAdmixtureKg);
-            const resolvedSilo2 = (!isNaN(modeSpecificVal) && modeSpecificVal > 0)
-              ? modeSpecificVal
+            const resolvedSilo2 = (!isNaN(ggbsVal) && ggbsVal > 0)
+              ? ggbsVal
               : (!isNaN(genericVal) && genericVal > 0)
                 ? genericVal
                 : fallback.mineralAdmixtureKg;
@@ -187,19 +185,17 @@ export const RMCBatchReportPage: React.FC = () => {
       const savedInvoicesRaw = localStorage.getItem(`concrete360_site_invoices_${siteKey}`);
       const invoices = savedInvoicesRaw ? JSON.parse(savedInvoicesRaw) : [];
 
-      let activeAdmixtureMode: AdmixtureMode = 'GGBS';
-      const savedMode = localStorage.getItem(`concrete360_admixture_mode_${siteKey}`) || localStorage.getItem('concrete360_admixture_mode');
-      if (savedMode === 'GGBS' || savedMode === 'FLY_ASH') activeAdmixtureMode = savedMode;
+      const activeAdmixtureMode: AdmixtureMode = 'GGBS';
 
       const generatedBatches: BatchRecord[] = invoices.map((inv: any, idx: number) => {
         const gradeKey = (inv.mixGrade || 'M30').substring(0, 3).toUpperCase();
-        const recipe = getLinkedMixDesign(siteKey, gradeKey, activeAdmixtureMode);
+        const recipe = getLinkedMixDesign(siteKey, gradeKey);
         const totalLoadVol = Number(inv.volumeM3) || 5.0;
 
         const unitRecipe: UnitRecipePerM3 = {
           silo1Kg: recipe.cement,
           silo2Kg: recipe.admix,
-          silo2Name: 'Cement Silo 2',
+          silo2Name: 'GGBS (Silo 2)',
           mSandKg: recipe.mSand,
           agg20mmKg: recipe.agg20,
           agg10mmKg: recipe.agg10,
@@ -252,7 +248,7 @@ export const RMCBatchReportPage: React.FC = () => {
           unitRecipe,
           drops,
           silo1TargetKg: s1Target,
-          silo1ActualKg: s1Target + Math.max(2, Math.round(Math.random() * 6 + 1)), // Cement Silo 1 strictly greater than target (always positive + variance)
+          silo1ActualKg: s1Target + Math.max(2, Math.round(Math.random() * 6 + 1)),
           silo2TargetKg: s2Target,
           silo2ActualKg: s2Target + Math.round((Math.random() * 6) - 3),
           mSandTargetKg: sandTarget,
@@ -388,7 +384,7 @@ export const RMCBatchReportPage: React.FC = () => {
             <div><strong>Batch Operator:</strong> ${b.operator}</div>
           </div>
 
-          <div class="section-label">1. Standard Mix Proportion (Per 1 m³ SSD Condition - Linked Mix Design)</div>
+          <div class="section-label">1. Standard Mix Proportion (Per 1 m³ SSD Condition - Linked GGBS Mix Design)</div>
           <table>
             <thead>
               <tr>
