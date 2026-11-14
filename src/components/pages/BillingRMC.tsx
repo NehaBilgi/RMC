@@ -648,6 +648,7 @@ export const BillingRMC: React.FC = () => {
 
     let compProfile: Record<string, any> = {
       name: 'BILGI BUILDCON RMC',
+      unitSubtitle: 'Unit of M/S MOHAMMED JAFAR BASHEER AHMED BILGI',
       plantMake: 'CONMAT BATCHING PLANT (0.75 m³)',
       gstin: '29ABWFM2721J1ZA',
       address: 'SY NO 118/13 AINAPUR GRAM BURNAPUR ROAD, VIJAYAPURA-586104',
@@ -668,6 +669,7 @@ export const BillingRMC: React.FC = () => {
         compProfile = {
           ...compProfile,
           ...parsedP,
+          unitSubtitle: parsedP.unitSubtitle || 'Unit of M/S MOHAMMED JAFAR BASHEER AHMED BILGI',
           phonePrimary: parsedP.phonePrimary ?? parsedP.phone_primary ?? '9931175133',
           phoneSecondary: parsedP.phoneSecondary ?? parsedP.phone_secondary ?? '9591055133'
         };
@@ -759,7 +761,8 @@ export const BillingRMC: React.FC = () => {
             .top-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #f97316; padding-bottom: 12px; margin-bottom: 12px; }
             .brand h1 { font-size: 20px; font-weight: 900; color: #0f172a; margin: 0; }
             .brand h1 span { color: #f97316; }
-            .brand p { font-size: 9px; color: #475569; margin: 3px 0 0 0; }
+            .brand .unit-subtitle { font-size: 10.5px; font-weight: 500; color: #1e293b; margin: 2px 0 3px 0; }
+            .brand p { font-size: 9px; color: #475569; margin: 2px 0 0 0; }
             .invoice-meta { text-align: right; }
             .parties { display: flex; justify-content: space-between; border: 1px solid #cbd5e1; margin-bottom: 12px; background: #f8fafc; }
             .party-box { width: 50%; padding: 10px; }
@@ -782,6 +785,7 @@ export const BillingRMC: React.FC = () => {
           <div class="top-header">
             <div class="brand">
               <h1>${compProfile.name}</h1>
+              <div class="unit-subtitle">${compProfile.unitSubtitle}</div>
               <p>${compProfile.division} • ${compProfile.plantMake}<br/>
               Corporate Office: ${compProfile.address}${headerGstinAndContact ? `<br/>${headerGstinAndContact}` : ''}</p>
             </div>
@@ -1550,6 +1554,7 @@ export const BillingRMC: React.FC = () => {
                 </button>
                 <button
                   type="submit"
+                  onClick={handleSaveInvoice}
                   className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl shadow-lg shadow-blue-600/30 cursor-pointer text-xs transition"
                 >
                   {editingInvoiceId ? 'Update Tax Invoice' : 'Issue Tax Invoice'}
