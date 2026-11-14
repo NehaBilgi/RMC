@@ -740,6 +740,12 @@ export const BillingRMC: React.FC = () => {
       } catch {}
     }
 
+    // Build header GSTIN & Contact line based on whether GST is applied
+    const headerGstinAndContact = [
+      isGstActive ? `Company GSTIN: <strong>${compProfile.gstin}</strong>` : '',
+      companyContactNumbers ? `Contact: <strong>${companyContactNumbers}</strong>` : ''
+    ].filter(Boolean).join('  |  ');
+
     printWindow.document.write(`
       <html>
         <head>
@@ -777,8 +783,7 @@ export const BillingRMC: React.FC = () => {
             <div class="brand">
               <h1>${compProfile.name}</h1>
               <p>${compProfile.division} • ${compProfile.plantMake}<br/>
-              Corporate Office: ${compProfile.address}<br/>
-              Company GSTIN: <strong>${compProfile.gstin}</strong>${companyContactNumbers ? `  |  Contact: <strong>${companyContactNumbers}</strong>` : ''}</p>
+              Corporate Office: ${compProfile.address}${headerGstinAndContact ? `<br/>${headerGstinAndContact}` : ''}</p>
             </div>
             <div class="invoice-meta">
               <div style="font-size: 10px; color: #334155;">
@@ -794,7 +799,7 @@ export const BillingRMC: React.FC = () => {
               <div class="party-title">Billed To (Buyer Details):</div>
               <div><strong>${inv.clientName}</strong></div>
               <div>${inv.clientAddress}</div>
-              <div>GSTIN / Tax ID: ${inv.clientGstin}</div>
+              ${isGstActive ? `<div>GSTIN / Tax ID: ${inv.clientGstin || '29UNREGISTERED'}</div>` : ''}
               ${dynamicPhone ? `<div>Phone No: <strong>${dynamicPhone}</strong></div>` : ''}
             </div>
             <div class="party-box">
@@ -945,7 +950,7 @@ export const BillingRMC: React.FC = () => {
             invoice_no: targetInv.invoiceNo,
             date: targetInv.date,
             customer_name: targetInv.clientName,
-            customer_gst: targetInv.clientGstin,
+            customer_gst: targetInv.applyGst ? targetInv.clientGstin : '',
             mix_grade: targetInv.mixGrade,
             volume_m3: targetInv.volumeM3,
             rate_per_m3: targetInv.unitRate,
@@ -1007,7 +1012,7 @@ export const BillingRMC: React.FC = () => {
           invoice_no: newInvoice.invoiceNo,
           date: newInvoice.date,
           customer_name: newInvoice.clientName,
-          customer_gst: newInvoice.clientGstin,
+          customer_gst: newInvoice.applyGst ? newInvoice.clientGstin : '',
           mix_grade: newInvoice.mixGrade,
           volume_m3: newInvoice.volumeM3,
           rate_per_m3: newInvoice.unitRate,
