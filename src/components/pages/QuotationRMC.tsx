@@ -846,6 +846,7 @@ export const QuotationRMC: React.FC = () => {
           invoice_no: newInvoice.invoiceNo,
           date: newInvoice.date,
           customer_name: newInvoice.clientName,
+          customer_gst: newInvoice.applyGst ? newInvoice.clientGstin : '',
           mix_grade: newInvoice.mixGrade,
           volume_m3: newInvoice.volumeM3,
           rate_per_m3: newInvoice.unitRate,
@@ -872,6 +873,7 @@ export const QuotationRMC: React.FC = () => {
 
     let compProfile: Record<string, any> = {
       name: 'BILGI BUILDCON RMC',
+      unitSubtitle: 'Unit of M/S MOHAMMED JAFAR BASHEER AHMED BILGI',
       plantMake: 'CONMAT Batching Plant (0.75 m³)',
       gstin: '29ABWFM2721J1ZA',
       address: 'SY NO 118/13 AINAPUR GRAM BURNAPUR ROAD, VIJAYAPURA-586104',
@@ -889,6 +891,7 @@ export const QuotationRMC: React.FC = () => {
       compProfile = {
         ...compProfile,
         ...parsedP,
+        unitSubtitle: parsedP.unitSubtitle || 'Unit of M/S MOHAMMED JAFAR BASHEER AHMED BILGI',
         phonePrimary:
           parsedP.phonePrimary ||
           parsedP.phone_primary ||
@@ -910,7 +913,14 @@ export const QuotationRMC: React.FC = () => {
     const concreteSub = q.estimatedQtyM3 * q.unitRate;
     const pumpSub = q.includePump ? q.pumpRentPerShift * q.pumpShifts : 0;
     const sub = concreteSub + pumpSub;
-    const gst = q.applyGst ? sub * 0.18 : 0;
+    const isGstActive = Boolean(q.applyGst);
+    const gst = isGstActive ? sub * 0.18 : 0;
+
+    // Build header GSTIN & Contact line based on whether GST is applied
+    const headerGstinAndContact = [
+      isGstActive ? `Company GSTIN: <strong>${compProfile.gstin}</strong>` : '',
+      companyContactNumbers ? `Contact: <strong>${companyContactNumbers}</strong>` : ''
+    ].filter(Boolean).join('  |  ');
 
     const liveWorks = loadStudioWorksForSite(currentSiteKey);
     const targetWorks = q.workElementId && q.workElementId !== 'ALL'
@@ -989,7 +999,8 @@ export const QuotationRMC: React.FC = () => {
             @page { size: A4; margin: 14mm; }
             body { font-family: Helvetica, Arial, sans-serif; color: #0f172a; font-size: 11px; line-height: 1.4; }
             .header { display: flex; justify-content: space-between; border-bottom: 2px solid #2563eb; padding-bottom: 10px; margin-bottom: 12px; }
-            .header h1 { margin: 0; font-size: 20px; font-weight: 900; }
+            .header h1 { margin: 0; font-size: 20px; font-weight: 900; color: #0f172a; }
+            .header .unit-subtitle { font-size: 10.5px; font-weight: 500; color: #1e293b; margin: 2px 0 3px 0; }
             .badge { display: inline-block; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; padding: 3px 8px; font-weight: bold; font-size: 10px; border-radius: 4px; }
             .grid { display: flex; justify-content: space-between; border: 1px solid #cbd5e1; background: #f8fafc; padding: 10px; margin-bottom: 14px; }
             table.commercial { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
@@ -1005,8 +1016,9 @@ export const QuotationRMC: React.FC = () => {
           <div class="header">
             <div>
               <h1>${compProfile.name}</h1>
-              <p style="margin:3px 0;color:#475569;">${compProfile.division} • ${compProfile.plantMake}<br/>
-              ${compProfile.address} | GSTIN: <strong>${compProfile.gstin}</strong>${companyContactNumbers ? `<br/>Contact: <strong>${companyContactNumbers}</strong>` : ''}</p>
+              <div class="unit-subtitle">${compProfile.unitSubtitle}</div>
+              <p style="margin:2px 0 0 0;color:#475569;font-size:9px;">${compProfile.division} • ${compProfile.plantMake}<br/>
+              Corporate Office: ${compProfile.address}${headerGstinAndContact ? `<br/>${headerGstinAndContact}` : ''}</p>
             </div>
             <div style="text-align:right;">
               <span class="badge">ESTIMATE / QUOTATION</span><br/><br/>
@@ -1021,7 +1033,7 @@ export const QuotationRMC: React.FC = () => {
               <strong>TO (CLIENT / BUYER):</strong><br/>
               <strong>${q.clientName}</strong><br/>
               ${q.clientAddress}<br/>
-              ${q.clientGstin ? `GSTIN: ${q.clientGstin}<br/>` : ''}
+              ${isGstActive ? `GSTIN / Tax ID: ${q.clientGstin || '29UNREGISTERED'}<br/>` : ''}
               ${q.clientPhone ? `Phone: <strong>${q.clientPhone}</strong>` : ''}
             </div>
             <div>
@@ -1069,7 +1081,7 @@ export const QuotationRMC: React.FC = () => {
 
           <div class="totals">
             <div><span>Estimated Subtotal:</span><span>₹${Math.round(sub).toLocaleString('en-IN')}</span></div>
-            ${q.applyGst ? `<div><span>GST (18%):</span><span>₹${Math.round(gst).toLocaleString('en-IN')}</span></div>` : ''}
+            ${isGstActive ? `<div><span>GST (18%):</span><span>₹${Math.round(gst).toLocaleString('en-IN')}</span></div>` : ''}
             <div><span>ESTIMATED GRAND TOTAL:</span><span>₹${q.grandTotal.toLocaleString('en-IN')}</span></div>
           </div>
 
