@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Factory, 
   Printer, 
@@ -23,7 +23,8 @@ interface SubBatchDrop {
   batchQtyM3: number;
   silo1Kg: number;
   silo2Kg: number;
-  mSandKg: number;
+  mSand1Kg: number;
+  mSand2Kg: number;
   agg20mmKg: number;
   agg10mmKg: number;
   waterLtr: number;
@@ -33,7 +34,8 @@ interface UnitRecipePerM3 {
   silo1Kg: number;
   silo2Kg: number;
   silo2Name: string;
-  mSandKg: number;
+  mSand1Kg: number;
+  mSand2Kg: number;
   agg20mmKg: number;
   agg10mmKg: number;
   waterLtr: number;
@@ -61,8 +63,10 @@ interface BatchRecord {
   silo1ActualKg: number;
   silo2TargetKg: number;
   silo2ActualKg: number;
-  mSandTargetKg: number;
-  mSandActualKg: number;
+  mSand1TargetKg: number;
+  mSand1ActualKg: number;
+  mSand2TargetKg: number;
+  mSand2ActualKg: number;
   agg20mmTargetKg: number;
   agg20mmActualKg: number;
   agg10mmTargetKg: number;
@@ -110,6 +114,7 @@ export const RMCBatchReportPage: React.FC = () => {
   const [isMixerCapModalOpen, setIsMixerCapModalOpen] = useState(false);
   const [tempMixerCap, setTempMixerCap] = useState<string>(String(plantMixerCapacity));
   const [expandedBatchId, setExpandedBatchId] = useState<string | null>(null);
+  const hasAutoExpandedRef = useRef<boolean>(false);
 
   const [batches, setBatches] = useState<BatchRecord[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -192,15 +197,20 @@ export const RMCBatchReportPage: React.FC = () => {
         const recipe = getLinkedMixDesign(siteKey, gradeKey);
         const totalLoadVol = Number(inv.volumeM3) || 5.0;
 
+        // Divide M-Sand into two parts (50% M-Sand 1 + 50% M-Sand 2)
+        const mSand1Unit = Number((recipe.mSand / 2).toFixed(1));
+        const mSand2Unit = Number((recipe.mSand - mSand1Unit).toFixed(1));
+
         const unitRecipe: UnitRecipePerM3 = {
           silo1Kg: recipe.cement,
           silo2Kg: recipe.admix,
           silo2Name: 'GGBS (Silo 2)',
-          mSandKg: recipe.mSand,
+          mSand1Kg: mSand1Unit,
+          mSand2Kg: mSand2Unit,
           agg20mmKg: recipe.agg20,
           agg10mmKg: recipe.agg10,
           waterLtr: recipe.water,
-          totalDensity: Math.round(recipe.cement + recipe.admix + recipe.mSand + recipe.agg20 + recipe.agg10 + recipe.water)
+          totalDensity: Math.round(recipe.cement + recipe.admix + mSand1Unit + mSand2Unit + recipe.agg20 + recipe.agg10 + recipe.water)
         };
 
         const drops: SubBatchDrop[] = [];
@@ -209,12 +219,17 @@ export const RMCBatchReportPage: React.FC = () => {
 
         while (remainingVol > 0.001) {
           const dropQty = Math.min(activeCap, remainingVol);
+          const totalDropSand = Math.round(recipe.mSand * dropQty);
+          const dropSand1 = Math.floor(totalDropSand / 2);
+          const dropSand2 = totalDropSand - dropSand1;
+
           drops.push({
             batchIndex: batchNo,
             batchQtyM3: Number(dropQty.toFixed(3)),
             silo1Kg: Math.round(recipe.cement * dropQty),
             silo2Kg: Math.round(recipe.admix * dropQty),
-            mSandKg: Math.round(recipe.mSand * dropQty),
+            mSand1Kg: dropSand1,
+            mSand2Kg: dropSand2,
             agg20mmKg: Math.round(recipe.agg20 * dropQty),
             agg10mmKg: Math.round(recipe.agg10 * dropQty),
             waterLtr: Math.round(recipe.water * dropQty)
@@ -225,7 +240,9 @@ export const RMCBatchReportPage: React.FC = () => {
 
         const s1Target = Math.round(recipe.cement * totalLoadVol);
         const s2Target = Math.round(recipe.admix * totalLoadVol);
-        const sandTarget = Math.round(recipe.mSand * totalLoadVol);
+        const totalSandTarget = Math.round(recipe.mSand * totalLoadVol);
+        const sand1Target = Math.floor(totalSandTarget / 2);
+        const sand2Target = totalSandTarget - sand1Target;
         const a20Target = Math.round(recipe.agg20 * totalLoadVol);
         const a10Target = Math.round(recipe.agg10 * totalLoadVol);
         const waterTarget = Math.round(recipe.water * totalLoadVol);
@@ -251,8 +268,10 @@ export const RMCBatchReportPage: React.FC = () => {
           silo1ActualKg: s1Target + Math.max(2, Math.round(Math.random() * 6 + 1)),
           silo2TargetKg: s2Target,
           silo2ActualKg: s2Target + Math.round((Math.random() * 6) - 3),
-          mSandTargetKg: sandTarget,
-          mSandActualKg: sandTarget + Math.round((Math.random() * 15) - 7),
+          mSand1TargetKg: sand1Target,
+          mSand1ActualKg: sand1Target + Math.round((Math.random() * 8) - 4),
+          mSand2TargetKg: sand2Target,
+          mSand2ActualKg: sand2Target + Math.round((Math.random() * 8) - 4),
           agg20mmTargetKg: a20Target,
           agg20mmActualKg: a20Target + Math.round((Math.random() * 12) - 6),
           agg10mmTargetKg: a10Target,
@@ -269,9 +288,11 @@ export const RMCBatchReportPage: React.FC = () => {
       const highlightedId = sessionStorage.getItem('concrete360_highlight_invoice_id');
       if (highlightedId && generatedBatches.some(b => b.id === highlightedId)) {
         setExpandedBatchId(highlightedId);
+        hasAutoExpandedRef.current = true;
         sessionStorage.removeItem('concrete360_highlight_invoice_id');
-      } else if (generatedBatches.length > 0 && !expandedBatchId) {
+      } else if (!hasAutoExpandedRef.current && generatedBatches.length > 0) {
         setExpandedBatchId(generatedBatches[0].id);
+        hasAutoExpandedRef.current = true;
       }
     } catch {}
   };
@@ -280,15 +301,20 @@ export const RMCBatchReportPage: React.FC = () => {
     void cloudStorage.pullFromCloud();
     loadBatchReports();
 
+    const handleSiteSwitch = () => {
+      hasAutoExpandedRef.current = false;
+      loadBatchReports();
+    };
     const handleSync = () => loadBatchReports();
-    window.addEventListener('concrete360_site_switched', handleSync);
+
+    window.addEventListener('concrete360_site_switched', handleSiteSwitch);
     window.addEventListener('concrete360_mix_designs_updated', handleSync);
     window.addEventListener('concrete360_invoices_updated', handleSync);
     window.addEventListener('concrete360_cloud_synced', handleSync);
     window.addEventListener('storage', handleSync);
     window.addEventListener('focus', handleSync);
     return () => {
-      window.removeEventListener('concrete360_site_switched', handleSync);
+      window.removeEventListener('concrete360_site_switched', handleSiteSwitch);
       window.removeEventListener('concrete360_mix_designs_updated', handleSync);
       window.removeEventListener('concrete360_invoices_updated', handleSync);
       window.removeEventListener('concrete360_cloud_synced', handleSync);
@@ -326,7 +352,8 @@ export const RMCBatchReportPage: React.FC = () => {
 
     const s1Var = Math.max(0.1, Number((((b.silo1ActualKg - b.silo1TargetKg) / b.silo1TargetKg) * 100).toFixed(1)));
     const s2Var = (((b.silo2ActualKg - b.silo2TargetKg) / b.silo2TargetKg) * 100).toFixed(1);
-    const sandVar = (((b.mSandActualKg - b.mSandTargetKg) / b.mSandTargetKg) * 100).toFixed(1);
+    const sand1Var = b.mSand1TargetKg > 0 ? (((b.mSand1ActualKg - b.mSand1TargetKg) / b.mSand1TargetKg) * 100).toFixed(1) : '0.0';
+    const sand2Var = b.mSand2TargetKg > 0 ? (((b.mSand2ActualKg - b.mSand2TargetKg) / b.mSand2TargetKg) * 100).toFixed(1) : '0.0';
     const a20Var = (((b.agg20mmActualKg - b.agg20mmTargetKg) / b.agg20mmTargetKg) * 100).toFixed(1);
     const a10Var = (((b.agg10mmActualKg - b.agg10mmTargetKg) / b.agg10mmTargetKg) * 100).toFixed(1);
     const waterVar = (((b.waterActualLtr - b.waterTargetLtr) / b.waterTargetLtr) * 100).toFixed(1);
@@ -337,7 +364,8 @@ export const RMCBatchReportPage: React.FC = () => {
         <td>${d.batchQtyM3.toFixed(2)} m³</td>
         <td>${d.silo1Kg} kg</td>
         <td>${d.silo2Kg} kg</td>
-        <td>${d.mSandKg} kg</td>
+        <td>${d.mSand1Kg} kg</td>
+        <td>${d.mSand2Kg} kg</td>
         <td>${d.agg20mmKg} kg</td>
         <td>${d.agg10mmKg} kg</td>
         <td>${d.waterLtr} L</td>
@@ -391,7 +419,8 @@ export const RMCBatchReportPage: React.FC = () => {
                 <th style="text-align: left;">Mix Proportion / m³</th>
                 <th>Cement Silo 1</th>
                 <th>Cement Silo 2</th>
-                <th>M-Sand</th>
+                <th>M-Sand 1</th>
+                <th>M-Sand 2</th>
                 <th>20MM Aggregate</th>
                 <th>10MM Aggregate</th>
                 <th>Batching Water</th>
@@ -402,7 +431,8 @@ export const RMCBatchReportPage: React.FC = () => {
                 <td class="row-title">Design Weight (1 m³)</td>
                 <td><strong>${b.unitRecipe.silo1Kg} kg/m³</strong></td>
                 <td><strong>${b.unitRecipe.silo2Kg} kg/m³</strong></td>
-                <td><strong>${b.unitRecipe.mSandKg} kg/m³</strong></td>
+                <td><strong>${b.unitRecipe.mSand1Kg} kg/m³</strong></td>
+                <td><strong>${b.unitRecipe.mSand2Kg} kg/m³</strong></td>
                 <td><strong>${b.unitRecipe.agg20mmKg} kg/m³</strong></td>
                 <td><strong>${b.unitRecipe.agg10mmKg} kg/m³</strong></td>
                 <td><strong>${b.unitRecipe.waterLtr} L/m³</strong></td>
@@ -417,7 +447,8 @@ export const RMCBatchReportPage: React.FC = () => {
                 <th style="text-align: left;">Parameters / Material</th>
                 <th>Cement Silo 1</th>
                 <th>Cement Silo 2</th>
-                <th>M-Sand</th>
+                <th>M-Sand 1</th>
+                <th>M-Sand 2</th>
                 <th>20MM Aggregate</th>
                 <th>10MM Aggregate</th>
                 <th>Batching Water</th>
@@ -428,7 +459,8 @@ export const RMCBatchReportPage: React.FC = () => {
                 <td class="row-title">Total Target Weight</td>
                 <td>${b.silo1TargetKg} kg</td>
                 <td>${b.silo2TargetKg} kg</td>
-                <td>${b.mSandTargetKg} kg</td>
+                <td>${b.mSand1TargetKg} kg</td>
+                <td>${b.mSand2TargetKg} kg</td>
                 <td>${b.agg20mmTargetKg} kg</td>
                 <td>${b.agg10mmTargetKg} kg</td>
                 <td>${b.waterTargetLtr} Litres</td>
@@ -437,7 +469,8 @@ export const RMCBatchReportPage: React.FC = () => {
                 <td class="row-title">Total Actual Batched</td>
                 <td><strong>${b.silo1ActualKg} kg</strong></td>
                 <td><strong>${b.silo2ActualKg} kg</strong></td>
-                <td><strong>${b.mSandActualKg} kg</strong></td>
+                <td><strong>${b.mSand1ActualKg} kg</strong></td>
+                <td><strong>${b.mSand2ActualKg} kg</strong></td>
                 <td><strong>${b.agg20mmActualKg} kg</strong></td>
                 <td><strong>${b.agg10mmActualKg} kg</strong></td>
                 <td><strong>${b.waterActualLtr} Litres</strong></td>
@@ -446,7 +479,8 @@ export const RMCBatchReportPage: React.FC = () => {
                 <td class="row-title">Variance (%)</td>
                 <td>+${s1Var}%</td>
                 <td>${Number(s2Var) > 0 ? `+${s2Var}` : s2Var}%</td>
-                <td>${Number(sandVar) > 0 ? `+${sandVar}` : sandVar}%</td>
+                <td>${Number(sand1Var) > 0 ? `+${sand1Var}` : sand1Var}%</td>
+                <td>${Number(sand2Var) > 0 ? `+${sand2Var}` : sand2Var}%</td>
                 <td>${Number(a20Var) > 0 ? `+${a20Var}` : a20Var}%</td>
                 <td>${Number(a10Var) > 0 ? `+${a10Var}` : a10Var}%</td>
                 <td>${Number(waterVar) > 0 ? `+${waterVar}` : waterVar}%</td>
@@ -462,7 +496,8 @@ export const RMCBatchReportPage: React.FC = () => {
                 <th>Cycle Qty</th>
                 <th>Cement Silo 1</th>
                 <th>Cement Silo 2</th>
-                <th>M-Sand</th>
+                <th>M-Sand 1</th>
+                <th>M-Sand 2</th>
                 <th>20MM Aggregate</th>
                 <th>10MM Aggregate</th>
                 <th>Batching Water</th>
@@ -571,7 +606,7 @@ export const RMCBatchReportPage: React.FC = () => {
                 <th className="py-4 px-4">Drops (@ {plantMixerCapacity} m³)</th>
                 <th className="py-4 px-4">Cement Silo 1</th>
                 <th className="py-4 px-4">Cement Silo 2</th>
-                <th className="py-4 px-4">M-Sand</th>
+                <th className="py-4 px-4">M-Sand 1 / 2</th>
                 <th className="py-4 px-4">20mm / 10mm</th>
                 <th className="py-4 px-4 text-right">Actions</th>
               </tr>
@@ -612,7 +647,9 @@ export const RMCBatchReportPage: React.FC = () => {
                         <td className="py-4 px-4 text-slate-300">
                           {b.silo2ActualKg} kg <span className="text-[10px] text-slate-500">({b.silo2TargetKg})</span>
                         </td>
-                        <td className="py-4 px-4 text-slate-300">{b.mSandActualKg} kg</td>
+                        <td className="py-4 px-4 text-slate-300">
+                          {b.mSand1ActualKg} / {b.mSand2ActualKg}
+                        </td>
                         <td className="py-4 px-4 text-slate-300">
                           {b.agg20mmActualKg} / {b.agg10mmActualKg}
                         </td>
@@ -641,10 +678,11 @@ export const RMCBatchReportPage: React.FC = () => {
                                     Linked Mix Design (1 m³ Standard Batching Target):
                                   </span>
                                 </div>
-                                <div className="flex items-center gap-3 text-slate-300 text-[11px]">
+                                <div className="flex flex-wrap items-center gap-3 text-slate-300 text-[11px]">
                                   <span>Silo 1: <strong className="text-blue-400">{b.unitRecipe.silo1Kg} kg/m³</strong></span>
                                   <span>Silo 2: <strong className="text-purple-400">{b.unitRecipe.silo2Kg} kg/m³</strong></span>
-                                  <span>M-Sand: <strong className="text-amber-400">{b.unitRecipe.mSandKg} kg/m³</strong></span>
+                                  <span>M-Sand 1: <strong className="text-amber-400">{b.unitRecipe.mSand1Kg} kg/m³</strong></span>
+                                  <span>M-Sand 2: <strong className="text-amber-400">{b.unitRecipe.mSand2Kg} kg/m³</strong></span>
                                   <span>20mm: <strong className="text-emerald-400">{b.unitRecipe.agg20mmKg} kg/m³</strong></span>
                                   <span>10mm: <strong className="text-emerald-400">{b.unitRecipe.agg10mmKg} kg/m³</strong></span>
                                   <span>Water: <strong className="text-cyan-400">{b.unitRecipe.waterLtr} L/m³</strong></span>
@@ -666,7 +704,8 @@ export const RMCBatchReportPage: React.FC = () => {
                                     <div className="text-[10px] text-slate-400 pt-1 border-t border-[#131d2d] space-y-0.5 text-left font-mono">
                                       <div>Silo 1: <strong className="text-blue-300">{d.silo1Kg} kg</strong></div>
                                       <div>Silo 2: <strong className="text-purple-300">{d.silo2Kg} kg</strong></div>
-                                      <div>M-Sand: <strong className="text-amber-300">{d.mSandKg} kg</strong></div>
+                                      <div>M-Sand 1: <strong className="text-amber-300">{d.mSand1Kg} kg</strong></div>
+                                      <div>M-Sand 2: <strong className="text-amber-300">{d.mSand2Kg} kg</strong></div>
                                       <div>20mm: <strong className="text-emerald-300">{d.agg20mmKg} kg</strong></div>
                                       <div>10mm: <strong className="text-emerald-300">{d.agg10mmKg} kg</strong></div>
                                       <div>Water: <strong className="text-cyan-300">{d.waterLtr} L</strong></div>
