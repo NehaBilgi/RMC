@@ -952,7 +952,7 @@ export const QuotationRMC: React.FC = () => {
     const cleanPrintRemarks = (q.remarks || '').replace(/\s*\(?(\+?[\d.]+\s*%?\s*)?wastage\)?/gi, '').trim();
 
     const bottomMeasurementTableHtml = lines.length > 0 ? `
-      <div style="margin-top:26px; page-break-inside:avoid;">
+      <div style="margin-top:22px; page-break-inside:avoid;">
         <div style="font-size:10px; font-weight:bold; text-transform:uppercase; color:#0f172a; margin-bottom:6px; letter-spacing:0.4px;">
           Measurement Details
         </div>
@@ -991,6 +991,21 @@ export const QuotationRMC: React.FC = () => {
       </div>
     ` : '';
 
+    const generalTermsHtml = `
+      <div class="terms-section">
+        <div class="terms-title">3. GENERAL TERMS & CONDITIONS</div>
+        <ul class="terms-list">
+          <li><strong>Measurement:</strong> All billing is calculated strictly on cubic meter (m<sup>3</sup>) basis.</li>
+          <li><strong>Custom Mix Design:</strong> If required, customers can provide their own mix design, and rates will change accordingly.</li>
+          <li><strong>Payment Terms:</strong> 100% advance payment required.</li>
+          <li><strong>Labor:</strong> We do not provide concrete leveling labour, it will be from the client side.</li>
+          <li><strong>Leveling & Thickness:</strong> The client shall be responsible for ensuring that the concrete is laid, levelled, and maintained at the required levels and specified thickness as per the approved measurements and calculations. ${compProfile.name} shall not be held responsible for any variations in concrete levels or thickness resulting from improper levelling or execution at the site.</li>
+          <li><strong>Curing:</strong> Post concrete curing is mandatory.</li>
+          <li><strong>Taxes:</strong> ${isGstActive ? 'The above rates are inclusive of GST 18%.' : 'The above rates are excluding GST 18% (GST extra as applicable @ 18%).'}</li>
+        </ul>
+      </div>
+    `;
+
     win.document.write(`
       <html>
         <head>
@@ -1010,6 +1025,10 @@ export const QuotationRMC: React.FC = () => {
             .totals { width: 45%; margin-left: auto; border: 1px solid #cbd5e1; }
             .totals div { display: flex; justify-content: space-between; padding: 5px 8px; border-bottom: 1px solid #cbd5e1; }
             .totals div:last-child { border-bottom: none; background: #f1f5f9; font-weight: bold; font-size: 12px; }
+            .terms-section { margin-top: 20px; page-break-inside: avoid; }
+            .terms-title { font-size: 12px; font-weight: 900; text-transform: uppercase; color: #0f172a; border-bottom: 1px solid #94a3b8; padding-bottom: 4px; margin-bottom: 8px; letter-spacing: 0.3px; }
+            .terms-list { margin: 0; padding-left: 16px; color: #1e293b; font-size: 10px; line-height: 1.5; }
+            .terms-list li { margin-bottom: 4px; }
           </style>
         </head>
         <body>
@@ -1087,8 +1106,10 @@ export const QuotationRMC: React.FC = () => {
 
           ${bottomMeasurementTableHtml}
 
-          <p style="margin-top:20px;font-size:10px;"><strong>Terms & Remarks:</strong> ${cleanPrintRemarks}</p>
-          <div style="margin-top:25px;display:flex;justify-content:space-between;font-size:10px;">
+          ${generalTermsHtml}
+
+          <p style="margin-top:14px;font-size:10px;"><strong>Scope & Remarks:</strong> ${cleanPrintRemarks}</p>
+          <div style="margin-top:30px;display:flex;justify-content:space-between;font-size:10px;">
             <div style="border-top:1px dashed #64748b;width:180px;text-align:center;padding-top:4px;">Client Acceptance Sign & Stamp</div>
             <div style="border-top:1px dashed #64748b;width:180px;text-align:center;padding-top:4px;">For ${compProfile.name}</div>
           </div>
