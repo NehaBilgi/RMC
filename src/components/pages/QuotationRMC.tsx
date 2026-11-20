@@ -153,7 +153,7 @@ const getDefaultTerms = (isGstIncluded: boolean): TermConditionItem[] => [
 ];
 
 const extractCleanSiteName = (name: string): string => {
-  if (!name) return 'BASVARAJ';
+  if (!name) return '';
   let clean = String(name).trim();
   if (clean.includes('(')) clean = clean.split('(')[0].trim();
   return clean.toUpperCase();
@@ -474,6 +474,7 @@ const extractCompactMeasurementLines = (entry: StudioWorkEntry, idx = 0): Measur
 };
 
 const loadStudioWorksForSite = (siteKey: string): StudioWorkEntry[] => {
+  if (!siteKey) return [];
   const results: StudioWorkEntry[] = [];
   const seen = new Set<string>();
 
@@ -545,16 +546,22 @@ const resolveWorkLabel = (it: StudioWorkEntry, idx = 0): string => {
 export const QuotationRMC: React.FC = () => {
   const getActiveSiteKey = () => {
     try {
-      const selected = sessionStorage.getItem('concrete360_selected_site') || localStorage.getItem('concrete360_selected_site');
-      if (selected) return extractCleanSiteName(selected);
-
       const activeRaw = localStorage.getItem('concrete360_active_site');
       if (activeRaw) {
-        const parsed = JSON.parse(activeRaw);
-        return extractCleanSiteName(parsed.name || parsed.siteName || parsed.id);
+        try {
+          const parsed = JSON.parse(activeRaw);
+          const key = extractCleanSiteName(parsed.name || parsed.siteName || parsed.id);
+          if (key) return key;
+        } catch {
+          const key = extractCleanSiteName(activeRaw);
+          if (key) return key;
+        }
       }
+
+      const selected = sessionStorage.getItem('concrete360_selected_site') || localStorage.getItem('concrete360_selected_site');
+      if (selected) return extractCleanSiteName(selected);
     } catch {}
-    return 'SAMEER';
+    return '';
   };
 
   const [currentSiteKey, setCurrentSiteKey] = useState<string>(getActiveSiteKey());
@@ -564,11 +571,11 @@ export const QuotationRMC: React.FC = () => {
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
   const [siteDetails, setSiteDetails] = useState({
-    clientName: 'SAMEER',
+    clientName: '',
     clientAddress: 'Ainapur Site',
     clientGstin: '29UNREGISTERED',
     clientPhone: '',
-    projectSite: 'SAMEER (slab/BEAM)'
+    projectSite: ''
   });
 
   const [selectedWorkId, setSelectedWorkId] = useState<string>('ALL');
@@ -581,7 +588,7 @@ export const QuotationRMC: React.FC = () => {
 
   // Multiple Concrete Grade Line Items
   const [gradeItems, setGradeItems] = useState<GradeLineItem[]>([
-    { id: 'GRADE-1', mixGrade: 'M20', quantityM3: 9, unitRate: 4200 }
+    { id: 'GRADE-1', mixGrade: 'M20', quantityM3: 0, unitRate: 4200 }
   ]);
 
   const [wastagePercent, setWastagePercent] = useState<number | string>(0);
@@ -589,7 +596,7 @@ export const QuotationRMC: React.FC = () => {
   const [pumpRentPerShift, setPumpRentPerShift] = useState<number | string>(5000);
   const [pumpShifts, setPumpShifts] = useState<number | string>(1);
   const [applyGst, setApplyGst] = useState<boolean>(false);
-  const [remarks, setRemarks] = useState<string>('Scope: BEAM + SLAB (9 m³ total). Valid for 15 days.');
+  const [remarks, setRemarks] = useState<string>('Valid for 15 days.');
 
   // Editable, Deletable & Addable General Terms & Conditions
   const [termsList, setTermsList] = useState<TermConditionItem[]>(() => getDefaultTerms(false));
@@ -647,7 +654,7 @@ export const QuotationRMC: React.FC = () => {
         {
           id: `GRADE-${Date.now()}`,
           mixGrade: cleanG,
-          quantityM3: roundedVol > 0 ? roundedVol : 9,
+          quantityM3: roundedVol,
           unitRate: resolveGradeCatalogRate(cleanG),
         },
       ]);
@@ -687,8 +694,8 @@ export const QuotationRMC: React.FC = () => {
     }
   };
 
-  const loadSiteAndQuotes = () => {
-    const siteKey = getActiveSiteKey();
+  const loadSiteAndQuotes = (explicitSiteName?: string) => {
+    const siteKey = explicitSiteName ? extractCleanSiteName(explicitSiteName) : getActiveSiteKey();
     setCurrentSiteKey(siteKey);
 
     try {
@@ -705,7 +712,14 @@ export const QuotationRMC: React.FC = () => {
       }
       if (!foundSite) {
         const activeRaw = localStorage.getItem('concrete360_active_site');
-        if (activeRaw) foundSite = JSON.parse(activeRaw);
+        if (activeRaw) {
+          try {
+            const parsed = JSON.parse(activeRaw);
+            if (extractCleanSiteName(parsed.name || parsed.siteName || parsed.id) === siteKey) {
+              foundSite = parsed;
+            }
+          } catch {}
+        }
       }
 
       if (foundSite) {
@@ -714,7 +728,15 @@ export const QuotationRMC: React.FC = () => {
           clientAddress: foundSite.location || foundSite.address || 'Ainapur Site',
           clientGstin: foundSite.gstin || '29UNREGISTERED',
           clientPhone: foundSite.phone || foundSite.phoneNumber || phoneMap[siteKey] || '',
-          projectSite: foundSite.siteName || foundSite.name || 'SAMEER (slab/BEAM)'
+          projectSite: foundSite.siteName || foundSite.name || siteKey
+        });
+      } else {
+        setSiteDetails({
+          clientName: siteKey,
+          clientAddress: 'Ainapur Site',
+          clientGstin: '29UNREGISTERED',
+          clientPhone: phoneMap[siteKey] || '',
+          projectSite: siteKey
         });
       }
 
@@ -724,62 +746,55 @@ export const QuotationRMC: React.FC = () => {
       const savedQuotes = localStorage.getItem(`concrete360_site_quotations_${siteKey}`);
       if (savedQuotes) {
         const parsed = JSON.parse(savedQuotes);
-        if (Array.isArray(parsed)) setQuotations(parsed);
+        if (Array.isArray(parsed)) {
+          // Only show quotations that belong to the selected site
+          const siteSpecificQuotes = parsed.filter(
+            (q: RMCQuotation) =>
+              !q.projectSite ||
+              extractCleanSiteName(q.projectSite) === siteKey ||
+              extractCleanSiteName(q.clientName) === siteKey
+          );
+          setQuotations(siteSpecificQuotes);
+        } else {
+          setQuotations([]);
+        }
       } else {
-        setQuotations([
-          {
-            id: 'QT-2026-270',
-            quoteNo: 'QT-2026-270',
-            date: '2026-11-12',
-            validUntil: '2026-11-27',
-            clientName: 'SAMEER',
-            clientAddress: 'Ainapur Site',
-            clientGstin: '29UNREGISTERED',
-            clientPhone: '',
-            projectSite: 'SAMEER (slab/BEAM)',
-            workElementId: 'ALL',
-            workElementLabel: 'All Site Structural Works',
-            mixGrade: 'M20',
-            gradeItems: [{ mixGrade: 'M20', quantityM3: 9, unitRate: 4200 }],
-            estimatedQtyM3: 9,
-            unitRate: 4200,
-            includePump: true,
-            pumpRentPerShift: 5000,
-            pumpShifts: 1,
-            applyGst: false,
-            grandTotal: 42800,
-            status: 'SENT',
-            remarks: 'Scope: BEAM + SLAB (9 m³ total). Valid for 15 days.',
-            termsList: getDefaultTerms(false),
-            measurementLines: [
-              { element: 'Slab', dimensionText: '8.38 m³ net volume (incl. all structural works)', quantityM3: 9 }
-            ]
-          }
-        ]);
+        setQuotations([]);
       }
-    } catch {}
+    } catch {
+      setQuotations([]);
+    }
   };
 
   useEffect(() => {
     loadSiteAndQuotes();
-    window.addEventListener('concrete360_site_switched', loadSiteAndQuotes);
-    window.addEventListener('concrete360_measurement_updated', loadSiteAndQuotes);
-    window.addEventListener('storage', loadSiteAndQuotes);
+
+    const handleSiteSwitch = (e?: any) => {
+      const nextSite = e?.detail !== undefined ? String(e.detail) : undefined;
+      loadSiteAndQuotes(nextSite);
+    };
+    const handleSync = () => loadSiteAndQuotes();
+
+    window.addEventListener('concrete360_site_switched', handleSiteSwitch);
+    window.addEventListener('concrete360_measurement_updated', handleSync);
+    window.addEventListener('concrete360_cloud_synced', handleSync);
+    window.addEventListener('storage', handleSync);
     return () => {
-      window.removeEventListener('concrete360_site_switched', loadSiteAndQuotes);
-      window.removeEventListener('concrete360_measurement_updated', loadSiteAndQuotes);
-      window.removeEventListener('storage', loadSiteAndQuotes);
+      window.removeEventListener('concrete360_site_switched', handleSiteSwitch);
+      window.removeEventListener('concrete360_measurement_updated', handleSync);
+      window.removeEventListener('concrete360_cloud_synced', handleSync);
+      window.removeEventListener('storage', handleSync);
     };
   }, []);
 
   const handleOpenCreateModal = () => {
-    loadSiteAndQuotes();
+    const siteKey = getActiveSiteKey();
+    loadSiteAndQuotes(siteKey);
     setSelectedWorkId('ALL');
     setApplyGst(false);
     setTermsList(getDefaultTerms(false));
     setNewConditionTitle('');
     setNewConditionText('');
-    const siteKey = getActiveSiteKey();
     const parsedM = loadStudioWorksForSite(siteKey);
 
     if (parsedM.length > 0) {
@@ -787,9 +802,9 @@ export const QuotationRMC: React.FC = () => {
     } else {
       setWastagePercent(0);
       setGradeItems([
-        { id: `GRADE-${Date.now()}`, mixGrade: 'M20', quantityM3: 9, unitRate: resolveGradeCatalogRate('M20') },
+        { id: `GRADE-${Date.now()}`, mixGrade: 'M20', quantityM3: 0, unitRate: resolveGradeCatalogRate('M20') },
       ]);
-      setRemarks('Scope: BEAM + SLAB (9 m³ total). Valid for 15 days.');
+      setRemarks(`Scope: ${siteKey}. Valid for 15 days.`);
     }
     setIsModalOpen(true);
   };
@@ -952,7 +967,7 @@ export const QuotationRMC: React.FC = () => {
       clientAddress: siteDetails.clientAddress || 'Ainapur Site',
       clientGstin: siteDetails.clientGstin || '29UNREGISTERED',
       clientPhone: siteDetails.clientPhone,
-      projectSite: siteDetails.projectSite || 'SAMEER (slab/BEAM)',
+      projectSite: siteDetails.projectSite || currentSiteKey,
       workElementId: selectedWorkId,
       workElementLabel: selectedItemObj ? resolveWorkLabel(selectedItemObj, idx) : 'All Site Structural Works',
       mixGrade: combinedGradeLabel,
@@ -973,14 +988,14 @@ export const QuotationRMC: React.FC = () => {
       measurementLines:
         collectedMeasurementLines.length > 0
           ? collectedMeasurementLines
-          : [{ element: 'Slab / Beam Works', dimensionText: 'All Site Structural Works', quantityM3: totalQtyNum }],
+          : [{ element: 'Structural Works', dimensionText: siteDetails.projectSite || currentSiteKey, quantityM3: totalQtyNum }],
     };
 
     const updated = [newQuote, ...quotations];
     setQuotations(updated);
     localStorage.setItem(`concrete360_site_quotations_${currentSiteKey}`, JSON.stringify(updated));
     setIsModalOpen(false);
-    setToastMsg(`Quotation ${newQuote.quoteNo} created!`);
+    setToastMsg(`Quotation ${newQuote.quoteNo} created for ${currentSiteKey}!`);
     setTimeout(() => setToastMsg(null), 3500);
   };
 
@@ -1366,7 +1381,7 @@ export const QuotationRMC: React.FC = () => {
           <div>
             <span className="text-slate-400 uppercase text-[10px] font-bold block">Linked Site Inventory Measurements</span>
             <strong className="text-white text-sm">
-              {measurementItems.flatMap((w, i) => extractCompactMeasurementLines(w, i)).length || 1} Measured Item(s)
+              {measurementItems.flatMap((w, i) => extractCompactMeasurementLines(w, i)).length} Measured Item(s)
             </strong>
           </div>
         </div>
@@ -1374,7 +1389,7 @@ export const QuotationRMC: React.FC = () => {
           <div>
             <span className="text-slate-400 uppercase text-[10px] font-bold block">Net Measured Vol</span>
             <strong className="text-cyan-300 text-sm">
-              {(allNetVolume || 8.38).toFixed(2)} m³
+              {allNetVolume.toFixed(2)} m³
             </strong>
           </div>
           {allWastageVolume > 0 && (
@@ -1392,7 +1407,7 @@ export const QuotationRMC: React.FC = () => {
               Total Quotation Vol (Round)
             </span>
             <strong className="text-emerald-300 text-sm">
-              {formatRoundM3(allRoundedVolume || 9)} m³
+              {formatRoundM3(allRoundedVolume)} m³
             </strong>
           </div>
         </div>
@@ -1541,7 +1556,7 @@ export const QuotationRMC: React.FC = () => {
                   className="w-full px-3 py-2.5 bg-[#0b1322] border border-[#1b273d] rounded-xl text-white font-bold outline-none cursor-pointer text-xs"
                 >
                   <option value="ALL">
-                    All Site Elements ({collectedMeasurementLines.length || 1} rows • {(allNetVolume || 8.38).toFixed(2)} m³ → {formatRoundM3(allRoundedVolume || 9)} m³)
+                    All Site Elements ({collectedMeasurementLines.length} rows • {allNetVolume.toFixed(2)} m³ → {formatRoundM3(allRoundedVolume)} m³)
                   </option>
                   {measurementItems.map((it, idx) => {
                     const st = extractEntryWastage(it);
@@ -1566,9 +1581,9 @@ export const QuotationRMC: React.FC = () => {
                     ))}
                   </div>
                 ) : (
-                  <div className="bg-[#0b1322] border border-[#17253e] rounded-xl p-2.5 text-[10px] text-slate-300 flex justify-between items-center">
-                    <span><strong className="text-cyan-300">All Site Structural Works</strong> (BEAM + SLAB)</span>
-                    <span className="text-emerald-400 font-bold">9.00 m³</span>
+                  <div className="bg-[#0b1322] border border-[#17253e] rounded-xl p-2.5 text-[10px] text-slate-400 flex justify-between items-center">
+                    <span>No measurement entries recorded for {currentSiteKey} yet.</span>
+                    <span className="text-cyan-300 font-bold">0.00 m³</span>
                   </div>
                 )}
 
@@ -1588,9 +1603,9 @@ export const QuotationRMC: React.FC = () => {
                     />
                   </div>
                   <div className="text-[10px] text-right text-slate-300">
-                    <span>Net: <strong>{(selectedNetTotal || 8.38).toFixed(2)}</strong> + Wastage: <strong className="text-amber-400">{selectedWastageVol.toFixed(2)}</strong></span>
+                    <span>Net: <strong>{selectedNetTotal.toFixed(2)}</strong> + Wastage: <strong className="text-amber-400">{selectedWastageVol.toFixed(2)}</strong></span>
                     <span className="block text-emerald-400 font-bold">
-                      Gross: {(selectedGrossTotal || 9).toFixed(2)} m³ → {formatRoundM3(roundToHalfM3(selectedGrossTotal || 9))} m³
+                      Gross: {selectedGrossTotal.toFixed(2)} m³ → {formatRoundM3(roundToHalfM3(selectedGrossTotal))} m³
                     </span>
                   </div>
                 </div>
