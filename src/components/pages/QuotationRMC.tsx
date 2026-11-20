@@ -9,7 +9,8 @@ import {
   CheckCircle2,
   Phone,
   Filter,
-  Layers
+  Layers,
+  RotateCcw
 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { cloudStorage } from '../../services/cloudStorage';
@@ -25,6 +26,12 @@ export interface GradeLineItem {
   mixGrade: string;
   quantityM3: number | string;
   unitRate: number | string;
+}
+
+export interface TermConditionItem {
+  id: string;
+  title?: string;
+  text: string;
 }
 
 export interface StudioWorkEntry {
@@ -89,7 +96,7 @@ interface RMCQuotation {
   grandTotal: number;
   status: 'DRAFT' | 'SENT' | 'ACCEPTED' | 'CONVERTED';
   remarks: string;
-  customConditions?: string;
+  termsList?: TermConditionItem[];
   measurementLines?: MeasurementPrintLine[];
 }
 
@@ -104,6 +111,46 @@ const STANDARD_RMC_RATES: Record<string, number> = {
   'M45': 6000,
   'M50': 6500
 };
+
+const getDefaultTerms = (isGstIncluded: boolean): TermConditionItem[] => [
+  {
+    id: 'term-measurement',
+    title: 'Measurement',
+    text: 'All billing is calculated strictly on cubic meter (m³) basis.'
+  },
+  {
+    id: 'term-custom-mix',
+    title: 'Custom Mix Design',
+    text: 'If required, customers can provide their own mix design, and rates will change accordingly.'
+  },
+  {
+    id: 'term-payment',
+    title: 'Payment Terms',
+    text: '100% advance payment required.'
+  },
+  {
+    id: 'term-labor',
+    title: 'Labor',
+    text: 'We do not provide concrete leveling labour, it will be from the client side.'
+  },
+  {
+    id: 'term-leveling',
+    title: 'Leveling & Thickness',
+    text: 'The client shall be responsible for ensuring that the concrete is laid, levelled, and maintained at the required levels and specified thickness as per the approved measurements and calculations. BILGI BUILDCON RMC shall not be held responsible for any variations in concrete levels or thickness resulting from improper levelling or execution at the site.'
+  },
+  {
+    id: 'term-curing',
+    title: 'Curing',
+    text: 'Post concrete curing is mandatory.'
+  },
+  {
+    id: 'term-taxes',
+    title: 'Taxes',
+    text: isGstIncluded
+      ? 'The above rates are inclusive of GST 18%.'
+      : 'The above rates are excluding GST 18% (GST extra as applicable @ 18%).'
+  }
+];
 
 const extractCleanSiteName = (name: string): string => {
   if (!name) return 'BASVARAJ';
@@ -543,7 +590,11 @@ export const QuotationRMC: React.FC = () => {
   const [pumpShifts, setPumpShifts] = useState<number | string>(1);
   const [applyGst, setApplyGst] = useState<boolean>(false);
   const [remarks, setRemarks] = useState<string>('Scope: BEAM + SLAB (9 m³ total). Valid for 15 days.');
-  const [customConditions, setCustomConditions] = useState<string>('');
+
+  // Editable, Deletable & Addable General Terms & Conditions
+  const [termsList, setTermsList] = useState<TermConditionItem[]>(() => getDefaultTerms(false));
+  const [newConditionTitle, setNewConditionTitle] = useState<string>('');
+  const [newConditionText, setNewConditionText] = useState<string>('');
 
   const resolveGradeCatalogRate = (gradeCode: string): number => {
     const cleanGrade = (gradeCode || 'M20').substring(0, 3).toUpperCase();
@@ -699,6 +750,7 @@ export const QuotationRMC: React.FC = () => {
             grandTotal: 42800,
             status: 'SENT',
             remarks: 'Scope: BEAM + SLAB (9 m³ total). Valid for 15 days.',
+            termsList: getDefaultTerms(false),
             measurementLines: [
               { element: 'Slab', dimensionText: '8.38 m³ net volume (incl. all structural works)', quantityM3: 9 }
             ]
@@ -723,7 +775,10 @@ export const QuotationRMC: React.FC = () => {
   const handleOpenCreateModal = () => {
     loadSiteAndQuotes();
     setSelectedWorkId('ALL');
-    setCustomConditions('');
+    setApplyGst(false);
+    setTermsList(getDefaultTerms(false));
+    setNewConditionTitle('');
+    setNewConditionText('');
     const siteKey = getActiveSiteKey();
     const parsedM = loadStudioWorksForSite(siteKey);
 
@@ -751,6 +806,22 @@ export const QuotationRMC: React.FC = () => {
     if (measurementItems.length > 0) {
       applyMeasurementToForm(measurementItems, selectedWorkId, currentSiteKey, numVal);
     }
+  };
+
+  const handleGstToggle = (checked: boolean) => {
+    setApplyGst(checked);
+    setTermsList(prev =>
+      prev.map(term =>
+        term.id === 'term-taxes'
+          ? {
+              ...term,
+              text: checked
+                ? 'The above rates are inclusive of GST 18%.'
+                : 'The above rates are excluding GST 18% (GST extra as applicable @ 18%).',
+            }
+          : term
+      )
+    );
   };
 
   // Handlers for multiple concrete grades
@@ -790,6 +861,31 @@ export const QuotationRMC: React.FC = () => {
         };
       })
     );
+  };
+
+  // Handlers for adding & deleting specific terms/conditions
+  const handleAddCondition = () => {
+    const cleanText = newConditionText.trim();
+    if (!cleanText) return;
+
+    const cleanTitle = newConditionTitle.trim();
+    const newItem: TermConditionItem = {
+      id: `term-custom-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      ...(cleanTitle ? { title: cleanTitle } : {}),
+      text: cleanText,
+    };
+
+    setTermsList(prev => [...prev, newItem]);
+    setNewConditionTitle('');
+    setNewConditionText('');
+  };
+
+  const handleDeleteCondition = (id: string) => {
+    setTermsList(prev => prev.filter(t => t.id !== id));
+  };
+
+  const handleResetDefaultTerms = () => {
+    setTermsList(getDefaultTerms(applyGst));
   };
 
   const totalQtyNum = gradeItems.reduce((sum, g) => sum + (Number(g.quantityM3) || 0), 0);
@@ -837,6 +933,16 @@ export const QuotationRMC: React.FC = () => {
     const combinedGradeLabel = Array.from(new Set(normalizedGrades.map(g => g.mixGrade))).join(' + ');
     const primaryGrade = normalizedGrades[0] || { mixGrade: 'M20', quantityM3: 0, unitRate: 4200 };
 
+    // Include any pending condition typed in the input even if user didn't click "+ Add" first
+    const finalTermsList = [...termsList];
+    if (newConditionText.trim()) {
+      finalTermsList.push({
+        id: `term-custom-${Date.now()}`,
+        ...(newConditionTitle.trim() ? { title: newConditionTitle.trim() } : {}),
+        text: newConditionText.trim(),
+      });
+    }
+
     const newQuote: RMCQuotation = {
       id: `QT-${Date.now()}`,
       quoteNo: `QT-2026-${Math.floor(100 + Math.random() * 900)}`,
@@ -863,7 +969,7 @@ export const QuotationRMC: React.FC = () => {
       grandTotal,
       status: 'SENT',
       remarks,
-      customConditions: customConditions.trim(),
+      termsList: finalTermsList,
       measurementLines:
         collectedMeasurementLines.length > 0
           ? collectedMeasurementLines
@@ -1110,30 +1216,25 @@ export const QuotationRMC: React.FC = () => {
       </div>
     ` : '';
 
-    const extraConditionLines = (q.customConditions || '')
-      .split(/\r?\n/)
-      .map(line => line.trim())
-      .filter(Boolean);
+    const activeTermsToPrint = q.termsList !== undefined ? q.termsList : getDefaultTerms(isGstActive);
 
-    const extraConditionsHtml = extraConditionLines
-      .map(line => `<li><strong>Additional Condition:</strong> ${line}</li>`)
-      .join('');
-
-    const generalTermsHtml = `
-      <div class="terms-section">
-        <div class="terms-title">3. GENERAL TERMS & CONDITIONS</div>
-        <ul class="terms-list">
-          <li><strong>Measurement:</strong> All billing is calculated strictly on cubic meter (m<sup>3</sup>) basis.</li>
-          <li><strong>Custom Mix Design:</strong> If required, customers can provide their own mix design, and rates will change accordingly.</li>
-          <li><strong>Payment Terms:</strong> 100% advance payment required.</li>
-          <li><strong>Labor:</strong> We do not provide concrete leveling labour, it will be from the client side.</li>
-          <li><strong>Leveling & Thickness:</strong> The client shall be responsible for ensuring that the concrete is laid, levelled, and maintained at the required levels and specified thickness as per the approved measurements and calculations. ${compProfile.name} shall not be held responsible for any variations in concrete levels or thickness resulting from improper levelling or execution at the site.</li>
-          <li><strong>Curing:</strong> Post concrete curing is mandatory.</li>
-          <li><strong>Taxes:</strong> ${isGstActive ? 'The above rates are inclusive of GST 18%.' : 'The above rates are excluding GST 18% (GST extra as applicable @ 18%).'}</li>
-          ${extraConditionsHtml}
-        </ul>
-      </div>
-    `;
+    const generalTermsHtml =
+      activeTermsToPrint.length > 0
+        ? `
+          <div class="terms-section">
+            <div class="terms-title">3. GENERAL TERMS & CONDITIONS</div>
+            <ul class="terms-list">
+              ${activeTermsToPrint
+                .map(t =>
+                  t.title
+                    ? `<li><strong>${t.title}:</strong> ${t.text}</li>`
+                    : `<li>${t.text}</li>`
+                )
+                .join('')}
+            </ul>
+          </div>
+        `
+        : '';
 
     win.document.write(`
       <html>
@@ -1634,7 +1735,7 @@ export const QuotationRMC: React.FC = () => {
                 <input
                   type="checkbox"
                   checked={applyGst}
-                  onChange={(e) => setApplyGst(e.target.checked)}
+                  onChange={(e) => handleGstToggle(e.target.checked)}
                   className="w-4 h-4 rounded text-blue-600"
                 />
                 <span>Include GST (18%) in Estimate</span>
@@ -1650,17 +1751,88 @@ export const QuotationRMC: React.FC = () => {
                 />
               </div>
 
-              <div>
-                <label className="text-slate-300 font-bold uppercase text-[10px] block mb-1">
-                  Add / Write Other Conditions (Optional)
-                </label>
-                <textarea
-                  rows={3}
-                  value={customConditions}
-                  onChange={(e) => setCustomConditions(e.target.value)}
-                  placeholder="Write any additional terms & conditions here (each new line prints as a separate bullet point)..."
-                  className="w-full px-3 py-2.5 bg-[#070d1a] border border-[#1b273d] rounded-xl text-slate-200 outline-none font-sans resize-y"
-                />
+              {/* GENERAL TERMS & CONDITIONS MANAGER (ADD / DELETE SPECIFIC CONDITIONS) */}
+              <div className="bg-[#070d1a] border border-[#1b273d] p-3.5 rounded-2xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-300 font-bold uppercase text-[10px]">
+                    General Terms & Conditions ({termsList.length})
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleResetDefaultTerms}
+                    className="inline-flex items-center gap-1 text-[10px] text-cyan-400 hover:text-cyan-300 cursor-pointer font-bold"
+                    title="Restore all default terms"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>Reset Defaults</span>
+                  </button>
+                </div>
+
+                {/* Active Conditions List with Delete Button per Item */}
+                {termsList.length > 0 ? (
+                  <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1 font-sans">
+                    {termsList.map((term) => (
+                      <div
+                        key={term.id}
+                        className="flex items-start justify-between gap-2 bg-[#0b1322] border border-[#17253e] p-2.5 rounded-xl text-[11px] text-slate-300"
+                      >
+                        <div className="leading-snug">
+                          {term.title && <strong className="text-white">{term.title}: </strong>}
+                          <span>{term.text}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteCondition(term.id)}
+                          className="p-1 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 shrink-0 cursor-pointer transition"
+                          title="Delete this condition"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-slate-500 font-sans">
+                    No conditions selected. Add a new condition below or click Reset Defaults.
+                  </p>
+                )}
+
+                {/* Add New Condition Form Row */}
+                <div className="pt-2 border-t border-[#142033] space-y-2">
+                  <span className="text-[9px] font-bold uppercase text-amber-400 block">
+                    + Add New Condition
+                  </span>
+                  <div className="grid grid-cols-12 gap-2">
+                    <input
+                      type="text"
+                      value={newConditionTitle}
+                      onChange={(e) => setNewConditionTitle(e.target.value)}
+                      placeholder="Heading (e.g. Unloading)"
+                      className="col-span-4 px-2.5 py-2 bg-[#0b1322] border border-[#1b273d] rounded-lg text-white outline-none font-sans text-[11px]"
+                    />
+                    <input
+                      type="text"
+                      value={newConditionText}
+                      onChange={(e) => setNewConditionText(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddCondition();
+                        }
+                      }}
+                      placeholder="Write condition details..."
+                      className="col-span-6 px-2.5 py-2 bg-[#0b1322] border border-[#1b273d] rounded-lg text-slate-200 outline-none font-sans text-[11px]"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddCondition}
+                      className="col-span-2 px-2 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-[10px] cursor-pointer transition flex items-center justify-center gap-1"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>Add</span>
+                    </button>
+                  </div>
+                </div>
               </div>
 
               <div className="bg-[#070d1a] border border-[#1b273d] p-4 rounded-2xl space-y-1.5">
