@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Factory, 
   Printer, 
@@ -44,6 +44,7 @@ interface UnitRecipePerM3 {
 
 interface BatchRecord {
   id: string;
+  rawInvoiceId: string;
   indentNo: string;
   invoiceNo: string;
   date: string;
@@ -114,13 +115,11 @@ export const RMCBatchReportPage: React.FC = () => {
   const [isMixerCapModalOpen, setIsMixerCapModalOpen] = useState(false);
   const [tempMixerCap, setTempMixerCap] = useState<string>(String(plantMixerCapacity));
   const [expandedBatchId, setExpandedBatchId] = useState<string | null>(null);
-  const hasAutoExpandedRef = useRef<boolean>(false);
 
   const [batches, setBatches] = useState<BatchRecord[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDate, setSelectedDate] = useState<string>('');
 
-  // Pulls GGBS mix proportions directly from MixDesignModule storage & Rev. 2 QA constants
   const getLinkedMixDesign = (siteKey: string, gradeStr: string) => {
     const gradeKey = (gradeStr || 'M30').substring(0, 3).toUpperCase();
     const fallback = BILGI_QA_REV2_GGBS[gradeKey] || BILGI_QA_REV2_GGBS['M30'];
@@ -197,7 +196,7 @@ export const RMCBatchReportPage: React.FC = () => {
         const recipe = getLinkedMixDesign(siteKey, gradeKey);
         const totalLoadVol = Number(inv.volumeM3) || 5.0;
 
-        // Divide M-Sand into two parts (50% M-Sand 1 + 50% M-Sand 2)
+        // Divide M-Sand into two equal parts (M-Sand 1 + M-Sand 2)
         const mSand1Unit = Number((recipe.mSand / 2).toFixed(1));
         const mSand2Unit = Number((recipe.mSand - mSand1Unit).toFixed(1));
 
@@ -247,8 +246,11 @@ export const RMCBatchReportPage: React.FC = () => {
         const a10Target = Math.round(recipe.agg10 * totalLoadVol);
         const waterTarget = Math.round(recipe.water * totalLoadVol);
 
+        const uniqueRowId = `ROW-${siteKey}-${inv.id || 'NOID'}-${inv.invoiceNo || idx}-${idx}`;
+
         return {
-          id: inv.id || `BATCH-${idx + 1}`,
+          id: uniqueRowId,
+          rawInvoiceId: String(inv.id || ''),
           indentNo: `IND-${siteKey.slice(0, 3)}-${1001 + idx}`,
           invoiceNo: inv.invoiceNo || `INV-2026-${100 + idx}`,
           date: inv.date || new Date().toISOString().split('T')[0],
@@ -265,19 +267,19 @@ export const RMCBatchReportPage: React.FC = () => {
           unitRecipe,
           drops,
           silo1TargetKg: s1Target,
-          silo1ActualKg: s1Target + Math.max(2, Math.round(Math.random() * 6 + 1)),
+          silo1ActualKg: s1Target + 4,
           silo2TargetKg: s2Target,
-          silo2ActualKg: s2Target + Math.round((Math.random() * 6) - 3),
+          silo2ActualKg: s2Target,
           mSand1TargetKg: sand1Target,
-          mSand1ActualKg: sand1Target + Math.round((Math.random() * 8) - 4),
+          mSand1ActualKg: sand1Target + 2,
           mSand2TargetKg: sand2Target,
-          mSand2ActualKg: sand2Target + Math.round((Math.random() * 8) - 4),
+          mSand2ActualKg: sand2Target - 2,
           agg20mmTargetKg: a20Target,
-          agg20mmActualKg: a20Target + Math.round((Math.random() * 12) - 6),
+          agg20mmActualKg: a20Target + 3,
           agg10mmTargetKg: a10Target,
-          agg10mmActualKg: a10Target + Math.round((Math.random() * 10) - 5),
+          agg10mmActualKg: a10Target - 2,
           waterTargetLtr: waterTarget,
-          waterActualLtr: waterTarget + Math.round((Math.random() * 4) - 2),
+          waterActualLtr: waterTarget,
           slumpMm: 120,
           operator: 'adminbilgi'
         };
@@ -286,13 +288,12 @@ export const RMCBatchReportPage: React.FC = () => {
       setBatches(generatedBatches);
 
       const highlightedId = sessionStorage.getItem('concrete360_highlight_invoice_id');
-      if (highlightedId && generatedBatches.some(b => b.id === highlightedId)) {
-        setExpandedBatchId(highlightedId);
-        hasAutoExpandedRef.current = true;
+      if (highlightedId) {
+        const matched = generatedBatches.find(b => b.rawInvoiceId === highlightedId || b.id === highlightedId);
+        if (matched) {
+          setExpandedBatchId(matched.id);
+        }
         sessionStorage.removeItem('concrete360_highlight_invoice_id');
-      } else if (!hasAutoExpandedRef.current && generatedBatches.length > 0) {
-        setExpandedBatchId(generatedBatches[0].id);
-        hasAutoExpandedRef.current = true;
       }
     } catch {}
   };
@@ -302,7 +303,7 @@ export const RMCBatchReportPage: React.FC = () => {
     loadBatchReports();
 
     const handleSiteSwitch = () => {
-      hasAutoExpandedRef.current = false;
+      setExpandedBatchId(null);
       loadBatchReports();
     };
     const handleSync = () => loadBatchReports();
@@ -322,6 +323,12 @@ export const RMCBatchReportPage: React.FC = () => {
       window.removeEventListener('focus', handleSync);
     };
   }, [plantMixerCapacity]);
+
+  const handleToggleDrops = (e: React.MouseEvent, batchId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setExpandedBatchId(prev => (prev === batchId ? null : batchId));
+  };
 
   const handleSaveMixerCap = (e: React.FormEvent) => {
     e.preventDefault();
@@ -579,6 +586,7 @@ export const RMCBatchReportPage: React.FC = () => {
 
           {selectedDate && (
             <button
+              type="button"
               onClick={() => setSelectedDate('')}
               className="px-3 py-2 bg-[#070d1a] hover:bg-[#121c2d] border border-[#1b273d] text-slate-300 rounded-xl transition cursor-pointer flex items-center gap-1.5"
             >
@@ -634,7 +642,7 @@ export const RMCBatchReportPage: React.FC = () => {
                         <td className="py-4 px-4">
                           <button
                             type="button"
-                            onClick={() => setExpandedBatchId(isExpanded ? null : b.id)}
+                            onClick={(e) => handleToggleDrops(e, b.id)}
                             className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#070d1a] border border-[#1b273d] text-cyan-300 hover:text-white transition font-bold text-[11px] cursor-pointer"
                           >
                             <span>{b.totalBatchesCount} Drops</span>
