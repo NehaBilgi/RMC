@@ -698,6 +698,12 @@ export const QuotationRMC: React.FC = () => {
     const siteKey = explicitSiteName ? extractCleanSiteName(explicitSiteName) : getActiveSiteKey();
     setCurrentSiteKey(siteKey);
 
+    if (!siteKey) {
+      setQuotations([]);
+      setMeasurementItems([]);
+      return;
+    }
+
     try {
       const ongoingRaw = localStorage.getItem('concrete360_ongoing_sites') || localStorage.getItem('concrete360_sites');
       const phoneRegRaw = localStorage.getItem('concrete360_site_phone_registry');
@@ -747,10 +753,10 @@ export const QuotationRMC: React.FC = () => {
       if (savedQuotes) {
         const parsed = JSON.parse(savedQuotes);
         if (Array.isArray(parsed)) {
-          // Only show quotations that belong to the selected site
+          // Strict site filter: only show quotations belonging to the active site
           const siteSpecificQuotes = parsed.filter(
             (q: RMCQuotation) =>
-              !q.projectSite ||
+              (!q.projectSite && !q.clientName) ||
               extractCleanSiteName(q.projectSite) === siteKey ||
               extractCleanSiteName(q.clientName) === siteKey
           );
