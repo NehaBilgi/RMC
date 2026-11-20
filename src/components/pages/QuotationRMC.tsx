@@ -20,6 +20,13 @@ export interface MeasurementPrintLine {
   quantityM3: number;
 }
 
+export interface GradeLineItem {
+  id: string;
+  mixGrade: string;
+  quantityM3: number | string;
+  unitRate: number | string;
+}
+
 export interface StudioWorkEntry {
   id: string;
   label?: string;
@@ -69,6 +76,7 @@ interface RMCQuotation {
   workElementId?: string;
   workElementLabel?: string;
   mixGrade: string;
+  gradeItems?: { mixGrade: string; quantityM3: number; unitRate: number }[];
   netVolumeM3?: number;
   wastagePercent?: number;
   wastageVolumeM3?: number;
@@ -81,6 +89,7 @@ interface RMCQuotation {
   grandTotal: number;
   status: 'DRAFT' | 'SENT' | 'ACCEPTED' | 'CONVERTED';
   remarks: string;
+  customConditions?: string;
   measurementLines?: MeasurementPrintLine[];
 }
 
@@ -522,15 +531,19 @@ export const QuotationRMC: React.FC = () => {
     d.setDate(d.getDate() + 15);
     return d.toISOString().split('T')[0];
   });
-  const [mixGrade, setMixGrade] = useState<string>('M20');
+
+  // Multiple Concrete Grade Line Items
+  const [gradeItems, setGradeItems] = useState<GradeLineItem[]>([
+    { id: 'GRADE-1', mixGrade: 'M20', quantityM3: 9, unitRate: 4200 }
+  ]);
+
   const [wastagePercent, setWastagePercent] = useState<number | string>(0);
-  const [estimatedQtyM3, setEstimatedQtyM3] = useState<number | string>(9);
-  const [unitRate, setUnitRate] = useState<number | string>(4100);
   const [includePump, setIncludePump] = useState<boolean>(true);
   const [pumpRentPerShift, setPumpRentPerShift] = useState<number | string>(5000);
   const [pumpShifts, setPumpShifts] = useState<number | string>(1);
   const [applyGst, setApplyGst] = useState<boolean>(false);
   const [remarks, setRemarks] = useState<string>('Scope: BEAM + SLAB (9 m³ total). Valid for 15 days.');
+  const [customConditions, setCustomConditions] = useState<string>('');
 
   const resolveGradeCatalogRate = (gradeCode: string): number => {
     const cleanGrade = (gradeCode || 'M20').substring(0, 3).toUpperCase();
@@ -549,7 +562,7 @@ export const QuotationRMC: React.FC = () => {
         }
       }
     } catch {}
-    return STANDARD_RMC_RATES[cleanGrade] || 4100;
+    return STANDARD_RMC_RATES[cleanGrade] || 4200;
   };
 
   const applyMeasurementToForm = (
@@ -579,9 +592,14 @@ export const QuotationRMC: React.FC = () => {
         'M20';
       const cleanG = explicitGrade.substring(0, 3).toUpperCase();
 
-      setMixGrade(cleanG);
-      setUnitRate(resolveGradeCatalogRate(cleanG));
-      if (roundedVol > 0) setEstimatedQtyM3(roundedVol);
+      setGradeItems([
+        {
+          id: `GRADE-${Date.now()}`,
+          mixGrade: cleanG,
+          quantityM3: roundedVol > 0 ? roundedVol : 9,
+          unitRate: resolveGradeCatalogRate(cleanG),
+        },
+      ]);
 
       const elementNames = items.map((it, idx) => resolveWorkLabel(it, idx)).filter(Boolean).join(', ');
       if (elementNames) {
@@ -605,9 +623,14 @@ export const QuotationRMC: React.FC = () => {
         const cleanG = (found.mixGrade || found.grade || 'M20').substring(0, 3).toUpperCase();
         const label = resolveWorkLabel(found, idx);
 
-        setMixGrade(cleanG);
-        setUnitRate(resolveGradeCatalogRate(cleanG));
-        setEstimatedQtyM3(roundedVol);
+        setGradeItems([
+          {
+            id: `GRADE-${Date.now()}`,
+            mixGrade: cleanG,
+            quantityM3: roundedVol,
+            unitRate: resolveGradeCatalogRate(cleanG),
+          },
+        ]);
         setRemarks(`Work Scope: ${label} (${formatRoundM3(roundedVol)} m³ total). Valid for 15 days.`);
       }
     }
@@ -666,13 +689,14 @@ export const QuotationRMC: React.FC = () => {
             workElementId: 'ALL',
             workElementLabel: 'All Site Structural Works',
             mixGrade: 'M20',
+            gradeItems: [{ mixGrade: 'M20', quantityM3: 9, unitRate: 4200 }],
             estimatedQtyM3: 9,
-            unitRate: 4100,
+            unitRate: 4200,
             includePump: true,
             pumpRentPerShift: 5000,
             pumpShifts: 1,
             applyGst: false,
-            grandTotal: 41900,
+            grandTotal: 42800,
             status: 'SENT',
             remarks: 'Scope: BEAM + SLAB (9 m³ total). Valid for 15 days.',
             measurementLines: [
@@ -699,6 +723,7 @@ export const QuotationRMC: React.FC = () => {
   const handleOpenCreateModal = () => {
     loadSiteAndQuotes();
     setSelectedWorkId('ALL');
+    setCustomConditions('');
     const siteKey = getActiveSiteKey();
     const parsedM = loadStudioWorksForSite(siteKey);
 
@@ -706,9 +731,9 @@ export const QuotationRMC: React.FC = () => {
       applyMeasurementToForm(parsedM, 'ALL', siteKey);
     } else {
       setWastagePercent(0);
-      setMixGrade('M20');
-      setUnitRate(resolveGradeCatalogRate('M20'));
-      setEstimatedQtyM3(9);
+      setGradeItems([
+        { id: `GRADE-${Date.now()}`, mixGrade: 'M20', quantityM3: 9, unitRate: resolveGradeCatalogRate('M20') },
+      ]);
       setRemarks('Scope: BEAM + SLAB (9 m³ total). Valid for 15 days.');
     }
     setIsModalOpen(true);
@@ -728,16 +753,53 @@ export const QuotationRMC: React.FC = () => {
     }
   };
 
-  const handleGradeChange = (g: string) => {
-    setMixGrade(g);
-    setUnitRate(resolveGradeCatalogRate(g));
+  // Handlers for multiple concrete grades
+  const handleAddGradeRow = () => {
+    const usedGrades = new Set(gradeItems.map(g => g.mixGrade));
+    const nextGrade = Object.keys(STANDARD_RMC_RATES).find(g => !usedGrades.has(g)) || 'M25';
+    setGradeItems(prev => [
+      ...prev,
+      {
+        id: `GRADE-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        mixGrade: nextGrade,
+        quantityM3: 5,
+        unitRate: resolveGradeCatalogRate(nextGrade),
+      },
+    ]);
   };
 
-  const qtyNum = Number(estimatedQtyM3) || 0;
-  const rateNum = Number(unitRate) || 0;
+  const handleRemoveGradeRow = (id: string) => {
+    if (gradeItems.length <= 1) return;
+    setGradeItems(prev => prev.filter(item => item.id !== id));
+  };
+
+  const handleUpdateGradeRow = (id: string, field: 'mixGrade' | 'quantityM3' | 'unitRate', rawVal: string) => {
+    setGradeItems(prev =>
+      prev.map(item => {
+        if (item.id !== id) return item;
+        if (field === 'mixGrade') {
+          return {
+            ...item,
+            mixGrade: rawVal,
+            unitRate: resolveGradeCatalogRate(rawVal),
+          };
+        }
+        return {
+          ...item,
+          [field]: rawVal === '' ? '' : Number(rawVal),
+        };
+      })
+    );
+  };
+
+  const totalQtyNum = gradeItems.reduce((sum, g) => sum + (Number(g.quantityM3) || 0), 0);
+  const concreteSubtotalNum = gradeItems.reduce(
+    (sum, g) => sum + (Number(g.quantityM3) || 0) * (Number(g.unitRate) || 0),
+    0
+  );
   const wastagePctNum = Number(wastagePercent) || 0;
   const pumpTotal = includePump ? (Number(pumpRentPerShift) || 0) * (Number(pumpShifts) || 1) : 0;
-  const subtotal = qtyNum * rateNum + pumpTotal;
+  const subtotal = concreteSubtotalNum + pumpTotal;
   const gstAmount = applyGst ? subtotal * 0.18 : 0;
   const grandTotal = Math.round(subtotal + gstAmount);
 
@@ -766,6 +828,15 @@ export const QuotationRMC: React.FC = () => {
     const idx = selectedWorkId !== 'ALL' ? measurementItems.findIndex(it => it.id === selectedWorkId) : -1;
     const selectedItemObj = idx >= 0 ? measurementItems[idx] : null;
 
+    const normalizedGrades = gradeItems.map(g => ({
+      mixGrade: g.mixGrade,
+      quantityM3: Number(g.quantityM3) || 0,
+      unitRate: Number(g.unitRate) || 0,
+    }));
+
+    const combinedGradeLabel = Array.from(new Set(normalizedGrades.map(g => g.mixGrade))).join(' + ');
+    const primaryGrade = normalizedGrades[0] || { mixGrade: 'M20', quantityM3: 0, unitRate: 4200 };
+
     const newQuote: RMCQuotation = {
       id: `QT-${Date.now()}`,
       quoteNo: `QT-2026-${Math.floor(100 + Math.random() * 900)}`,
@@ -778,12 +849,13 @@ export const QuotationRMC: React.FC = () => {
       projectSite: siteDetails.projectSite || 'SAMEER (slab/BEAM)',
       workElementId: selectedWorkId,
       workElementLabel: selectedItemObj ? resolveWorkLabel(selectedItemObj, idx) : 'All Site Structural Works',
-      mixGrade,
+      mixGrade: combinedGradeLabel,
+      gradeItems: normalizedGrades,
       netVolumeM3: selectedNetTotal,
       wastagePercent: wastagePctNum,
       wastageVolumeM3: selectedWastageVol,
-      estimatedQtyM3: qtyNum,
-      unitRate: rateNum,
+      estimatedQtyM3: totalQtyNum,
+      unitRate: primaryGrade.unitRate,
       includePump,
       pumpRentPerShift: Number(pumpRentPerShift) || 0,
       pumpShifts: Number(pumpShifts) || 1,
@@ -791,7 +863,11 @@ export const QuotationRMC: React.FC = () => {
       grandTotal,
       status: 'SENT',
       remarks,
-      measurementLines: collectedMeasurementLines.length > 0 ? collectedMeasurementLines : [{ element: 'Slab / Beam Works', dimensionText: 'All Site Structural Works', quantityM3: qtyNum }]
+      customConditions: customConditions.trim(),
+      measurementLines:
+        collectedMeasurementLines.length > 0
+          ? collectedMeasurementLines
+          : [{ element: 'Slab / Beam Works', dimensionText: 'All Site Structural Works', quantityM3: totalQtyNum }],
     };
 
     const updated = [newQuote, ...quotations];
@@ -807,6 +883,10 @@ export const QuotationRMC: React.FC = () => {
     const existingRaw = localStorage.getItem(invKey);
     const existingInvoices = existingRaw ? JSON.parse(existingRaw) : [];
 
+    const firstItem = q.gradeItems && q.gradeItems.length > 0
+      ? q.gradeItems[0]
+      : { mixGrade: q.mixGrade, quantityM3: q.estimatedQtyM3, unitRate: q.unitRate };
+
     const newInvoice = {
       id: `INV-${Date.now()}`,
       invoiceNo: `INV-2026-${Math.floor(100 + Math.random() * 900)}`,
@@ -818,10 +898,10 @@ export const QuotationRMC: React.FC = () => {
       projectSite: q.projectSite,
       siteAddress: q.clientAddress,
       hsnCode: '38245010 (Ready-Mix Concrete)',
-      mixGrade: q.mixGrade,
+      mixGrade: firstItem.mixGrade,
       vehicleNo: 'KA28AC3087',
       volumeM3: q.estimatedQtyM3,
-      unitRate: q.unitRate,
+      unitRate: firstItem.unitRate,
       applyGst: q.applyGst,
       grandTotal: q.grandTotal,
       date: new Date().toISOString().split('T')[0],
@@ -910,7 +990,15 @@ export const QuotationRMC: React.FC = () => {
       .filter(Boolean)
       .join(' / ');
 
-    const concreteSub = q.estimatedQtyM3 * q.unitRate;
+    const printableGrades =
+      q.gradeItems && q.gradeItems.length > 0
+        ? q.gradeItems
+        : [{ mixGrade: q.mixGrade, quantityM3: q.estimatedQtyM3, unitRate: q.unitRate }];
+
+    const concreteSub = printableGrades.reduce(
+      (sum, item) => sum + (Number(item.quantityM3) || 0) * (Number(item.unitRate) || 0),
+      0
+    );
     const pumpSub = q.includePump ? q.pumpRentPerShift * q.pumpShifts : 0;
     const sub = concreteSub + pumpSub;
     const isGstActive = Boolean(q.applyGst);
@@ -950,6 +1038,37 @@ export const QuotationRMC: React.FC = () => {
     const totalWithWastage = Number((totalNetQty + wastageVol).toFixed(2));
 
     const cleanPrintRemarks = (q.remarks || '').replace(/\s*\(?(\+?[\d.]+\s*%?\s*)?wastage\)?/gi, '').trim();
+
+    const gradeRowsHtml = printableGrades
+      .map(
+        (item, index) => `
+          <tr>
+            <td>${index + 1}</td>
+            <td>
+              <strong>Ready-Mix Concrete (${item.mixGrade} Grade)</strong><br/>
+              <span style="color:#64748b;font-size:9px;">
+                Supply & Transit Mixer Delivery as per IS 456 / IS 4926
+              </span>
+            </td>
+            <td><strong>${formatRoundM3(item.quantityM3)} m³</strong></td>
+            <td>₹${Number(item.unitRate).toLocaleString('en-IN')} / m³</td>
+            <td class="right">₹${Math.round(Number(item.quantityM3) * Number(item.unitRate)).toLocaleString('en-IN')}</td>
+          </tr>
+        `
+      )
+      .join('');
+
+    const pumpRowHtml = q.includePump
+      ? `
+          <tr>
+            <td>${printableGrades.length + 1}</td>
+            <td><strong>Static Concrete Pump Rental</strong><br/><span style="color:#64748b;font-size:9px;">Boom / Line Pump deployment at site</span></td>
+            <td>${q.pumpShifts} Shift(s)</td>
+            <td>₹${q.pumpRentPerShift.toLocaleString('en-IN')} / shift</td>
+            <td class="right">₹${Math.round(pumpSub).toLocaleString('en-IN')}</td>
+          </tr>
+        `
+      : '';
 
     const bottomMeasurementTableHtml = lines.length > 0 ? `
       <div style="margin-top:22px; page-break-inside:avoid;">
@@ -991,6 +1110,15 @@ export const QuotationRMC: React.FC = () => {
       </div>
     ` : '';
 
+    const extraConditionLines = (q.customConditions || '')
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(Boolean);
+
+    const extraConditionsHtml = extraConditionLines
+      .map(line => `<li><strong>Additional Condition:</strong> ${line}</li>`)
+      .join('');
+
     const generalTermsHtml = `
       <div class="terms-section">
         <div class="terms-title">3. GENERAL TERMS & CONDITIONS</div>
@@ -1002,6 +1130,7 @@ export const QuotationRMC: React.FC = () => {
           <li><strong>Leveling & Thickness:</strong> The client shall be responsible for ensuring that the concrete is laid, levelled, and maintained at the required levels and specified thickness as per the approved measurements and calculations. ${compProfile.name} shall not be held responsible for any variations in concrete levels or thickness resulting from improper levelling or execution at the site.</li>
           <li><strong>Curing:</strong> Post concrete curing is mandatory.</li>
           <li><strong>Taxes:</strong> ${isGstActive ? 'The above rates are inclusive of GST 18%.' : 'The above rates are excluding GST 18% (GST extra as applicable @ 18%).'}</li>
+          ${extraConditionsHtml}
         </ul>
       </div>
     `;
@@ -1075,26 +1204,8 @@ export const QuotationRMC: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              <tr>
-                <td>1</td>
-                <td>
-                  <strong>Ready-Mix Concrete (${q.mixGrade} Grade)</strong><br/>
-                  <span style="color:#64748b;font-size:9px;">
-                    Supply & Transit Mixer Delivery as per IS 456 / IS 4926
-                  </span>
-                </td>
-                <td><strong>${formatRoundM3(q.estimatedQtyM3)} m³</strong></td>
-                <td>₹${q.unitRate.toLocaleString('en-IN')} / m³</td>
-                <td class="right">₹${Math.round(concreteSub).toLocaleString('en-IN')}</td>
-              </tr>
-              ${q.includePump ? `
-              <tr>
-                <td>2</td>
-                <td><strong>Static Concrete Pump Rental</strong><br/><span style="color:#64748b;font-size:9px;">Boom / Line Pump deployment at site</span></td>
-                <td>${q.pumpShifts} Shift(s)</td>
-                <td>₹${q.pumpRentPerShift.toLocaleString('en-IN')} / shift</td>
-                <td class="right">₹${Math.round(pumpSub).toLocaleString('en-IN')}</td>
-              </tr>` : ''}
+              ${gradeRowsHtml}
+              ${pumpRowHtml}
             </tbody>
           </table>
 
@@ -1236,7 +1347,11 @@ export const QuotationRMC: React.FC = () => {
                         <div className="text-[10px] text-amber-400">+{q.wastagePercent}% wastage</div>
                       )}
                     </td>
-                    <td className="py-4 px-5">₹{q.unitRate.toLocaleString('en-IN')}</td>
+                    <td className="py-4 px-5">
+                      {q.gradeItems && q.gradeItems.length > 1
+                        ? `${q.gradeItems.length} Grades`
+                        : `₹${q.unitRate.toLocaleString('en-IN')}`}
+                    </td>
                     <td className="py-4 px-5 text-emerald-400 font-extrabold">₹{q.grandTotal.toLocaleString('en-IN')}</td>
                     <td className="py-4 px-5">
                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
@@ -1401,40 +1516,83 @@ export const QuotationRMC: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="text-slate-300 font-bold uppercase text-[10px] block mb-1">Concrete Grade</label>
-                  <select
-                    value={mixGrade}
-                    onChange={(e) => handleGradeChange(e.target.value)}
-                    className="w-full px-3 py-2.5 bg-[#070d1a] border border-[#1b273d] rounded-xl text-cyan-400 font-bold outline-none cursor-pointer"
+              {/* MULTIPLE CONCRETE GRADES SECTION */}
+              <div className="bg-[#070d1a] border border-[#1b273d] p-3.5 rounded-2xl space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-300 font-bold uppercase text-[10px]">
+                    Concrete Grades & Rates ({gradeItems.length} Grade{gradeItems.length > 1 ? 's' : ''})
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleAddGradeRow}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/40 text-blue-300 font-bold text-[10px] cursor-pointer transition"
                   >
-                    {Object.keys(STANDARD_RMC_RATES).map(g => (
-                      <option key={g} value={g}>{g}</option>
-                    ))}
-                  </select>
+                    <Plus className="w-3 h-3" />
+                    <span>Add Grade</span>
+                  </button>
                 </div>
-                <div>
-                  <label className="text-slate-300 font-bold uppercase text-[10px] block mb-1">Total Qty (m³)</label>
-                  <input
-                    type="number"
-                    step="0.5"
-                    required
-                    value={estimatedQtyM3}
-                    onChange={(e) => setEstimatedQtyM3(e.target.value === '' ? '' : Number(e.target.value))}
-                    className="w-full px-3 py-2.5 bg-[#070d1a] border border-[#1b273d] rounded-xl text-cyan-300 font-bold outline-none"
-                  />
+
+                <div className="space-y-2">
+                  {gradeItems.map((item) => (
+                    <div key={item.id} className="grid grid-cols-12 gap-2 items-end bg-[#0b1322] border border-[#17253e] p-2.5 rounded-xl">
+                      <div className="col-span-4">
+                        <label className="text-slate-400 font-bold uppercase text-[9px] block mb-1">Grade</label>
+                        <select
+                          value={item.mixGrade}
+                          onChange={(e) => handleUpdateGradeRow(item.id, 'mixGrade', e.target.value)}
+                          className="w-full px-2.5 py-2 bg-[#070d1a] border border-[#1b273d] rounded-lg text-cyan-400 font-bold outline-none cursor-pointer text-xs"
+                        >
+                          {Object.keys(STANDARD_RMC_RATES).map(g => (
+                            <option key={g} value={g}>{g}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="col-span-3">
+                        <label className="text-slate-400 font-bold uppercase text-[9px] block mb-1">Qty (m³)</label>
+                        <input
+                          type="number"
+                          step="0.5"
+                          required
+                          value={item.quantityM3}
+                          onChange={(e) => handleUpdateGradeRow(item.id, 'quantityM3', e.target.value)}
+                          className="w-full px-2.5 py-2 bg-[#070d1a] border border-[#1b273d] rounded-lg text-cyan-300 font-bold outline-none text-xs"
+                        />
+                      </div>
+
+                      <div className={gradeItems.length > 1 ? 'col-span-4' : 'col-span-5'}>
+                        <label className="text-slate-400 font-bold uppercase text-[9px] block mb-1">Rate (₹/m³)</label>
+                        <input
+                          type="number"
+                          required
+                          value={item.unitRate}
+                          onChange={(e) => handleUpdateGradeRow(item.id, 'unitRate', e.target.value)}
+                          className="w-full px-2.5 py-2 bg-[#070d1a] border border-[#1b273d] rounded-lg text-white font-bold outline-none text-xs"
+                        />
+                      </div>
+
+                      {gradeItems.length > 1 && (
+                        <div className="col-span-1 flex justify-end pb-1">
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveGradeRow(item.id)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 cursor-pointer transition"
+                            title="Remove Grade"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
-                <div>
-                  <label className="text-slate-300 font-bold uppercase text-[10px] block mb-1">Rate (₹ / m³)</label>
-                  <input
-                    type="number"
-                    required
-                    value={unitRate}
-                    onChange={(e) => setUnitRate(e.target.value === '' ? '' : Number(e.target.value))}
-                    className="w-full px-3 py-2.5 bg-[#070d1a] border border-[#1b273d] rounded-xl text-white font-bold outline-none"
-                  />
-                </div>
+
+                {gradeItems.length > 1 && (
+                  <div className="flex justify-between items-center text-[10px] text-slate-400 pt-1 border-t border-[#142033]">
+                    <span>Total Concrete Volume: <strong className="text-cyan-300">{formatRoundM3(totalQtyNum)} m³</strong></span>
+                    <span>Concrete Subtotal: <strong className="text-white">₹{Math.round(concreteSubtotalNum).toLocaleString('en-IN')}</strong></span>
+                  </div>
+                )}
               </div>
 
               <div className="bg-[#070d1a] border border-[#1b273d] p-3 rounded-2xl space-y-2.5">
@@ -1489,6 +1647,19 @@ export const QuotationRMC: React.FC = () => {
                   value={remarks}
                   onChange={(e) => setRemarks(e.target.value)}
                   className="w-full px-3 py-2.5 bg-[#070d1a] border border-[#1b273d] rounded-xl text-slate-200 outline-none font-sans"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-300 font-bold uppercase text-[10px] block mb-1">
+                  Add / Write Other Conditions (Optional)
+                </label>
+                <textarea
+                  rows={3}
+                  value={customConditions}
+                  onChange={(e) => setCustomConditions(e.target.value)}
+                  placeholder="Write any additional terms & conditions here (each new line prints as a separate bullet point)..."
+                  className="w-full px-3 py-2.5 bg-[#070d1a] border border-[#1b273d] rounded-xl text-slate-200 outline-none font-sans resize-y"
                 />
               </div>
 
