@@ -5,12 +5,11 @@ import {
   Truck, 
   FileCheck2, 
   FlaskConical, 
-  Layers, 
   FileSpreadsheet, 
-  ArrowUpRight, 
-  Activity,
-  Ruler
+  ArrowUpRight,
+  Database
 } from 'lucide-react';
+import { BILGI_QA_REV2_GGBS } from './MixDesignModule';
 
 interface Props {
   onNavigate: (tabId: string) => void;
@@ -53,9 +52,14 @@ export const Dashboard: React.FC<Props> = ({ onNavigate }) => {
   const [haulageTripsCount, setHaulageTripsCount] = useState<number>(0);
   const [totalVolumeM3, setTotalVolumeM3] = useState<number>(0);
   const [activeMixersCount, setActiveMixersCount] = useState<number>(0);
-  const [admixtureMode, setAdmixtureMode] = useState<string>('FLY ASH');
 
-  // Load site-scoped dashboard telemetry
+  // Live Silo 1 (OPC 53 Cement) & Silo 2 (GGBS) Stock States
+  const [silo1LeftKg, setSilo1LeftKg] = useState<number>(0);
+  const [silo2LeftKg, setSilo2LeftKg] = useState<number>(0);
+  const [silo1InwardKg, setSilo1InwardKg] = useState<number>(0);
+  const [silo2InwardKg, setSilo2InwardKg] = useState<number>(0);
+
+  // Load site-scoped dashboard telemetry & plant-wide silo stock
   const loadDashboardTelemetry = () => {
     const siteKey = getActiveSiteKey();
     setActiveSiteTitle(siteKey);
@@ -75,11 +79,7 @@ export const Dashboard: React.FC<Props> = ({ onNavigate }) => {
         } catch {}
       }
 
-      // Check current site's mineral admixture mode
-      const savedMode = localStorage.getItem(`concrete360_admixture_mode_${siteKey}`) || localStorage.getItem('concrete360_admixture_mode') || 'FLY_ASH';
-      setAdmixtureMode(savedMode === 'GGBS' ? 'GGBS' : 'FLY ASH');
-
-      // 2. Compute Billed Revenue & Volume ONLY from customer invoices
+      // 2. Compute Billed Revenue & Volume ONLY from customer invoices for active site
       const siteInvoiceRaw = localStorage.getItem(`concrete360_site_invoices_${siteKey}`);
       let invoiceRev = 0;
       let invoiceVol = 0;
@@ -132,6 +132,53 @@ export const Dashboard: React.FC<Props> = ({ onNavigate }) => {
         }
       }
 
+      // 5. Calculate Plant-Wide Silo 1 (OPC 53 Cement) & Silo 2 (GGBS) Remaining Stock
+      const inwardEntries = JSON.parse(localStorage.getItem('concrete360_silo_inward_entries') || '[]');
+      let totalInwardS1 = 0;
+      let totalInwardS2 = 0;
+
+      if (Array.isArray(inwardEntries)) {
+        inwardEntries.forEach((entry: any) => {
+          if (entry.silo === 'SILO_1_CEMENT') {
+            totalInwardS1 += Number(entry.quantityKg) || 0;
+          } else if (entry.silo === 'SILO_2_GGBS') {
+            totalInwardS2 += Number(entry.quantityKg) || 0;
+          }
+        });
+      }
+
+      let totalUsedS1 = 0;
+      let totalUsedS2 = 0;
+
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('concrete360_site_invoices_')) {
+          const sKey = key.replace('concrete360_site_invoices_', '');
+          const invList = JSON.parse(localStorage.getItem(key) || '[]');
+          const customMixes = JSON.parse(localStorage.getItem(`concrete360_mixes_${sKey}_GGBS`) || '{}');
+
+          if (Array.isArray(invList)) {
+            invList.forEach((inv: any) => {
+              const vol = Number(inv.volumeM3) || 0;
+              const gradeKey = String(inv.mixGrade || 'M25').substring(0, 3).toUpperCase();
+              const qaFallback = BILGI_QA_REV2_GGBS[gradeKey] || BILGI_QA_REV2_GGBS['M25'];
+              const customMix = customMixes[gradeKey];
+
+              const cementPerM3 = customMix ? Number(customMix.cementKg) : qaFallback.cementKg;
+              const ggbsPerM3 = customMix ? Number(customMix.mineralAdmixtureKg) : qaFallback.mineralAdmixtureKg;
+
+              totalUsedS1 += vol * cementPerM3;
+              totalUsedS2 += vol * ggbsPerM3;
+            });
+          }
+        }
+      }
+
+      setSilo1InwardKg(Math.round(totalInwardS1));
+      setSilo2InwardKg(Math.round(totalInwardS2));
+      setSilo1LeftKg(Math.round(totalInwardS1 - totalUsedS1));
+      setSilo2LeftKg(Math.round(totalInwardS2 - totalUsedS2));
+
       // Revenue strictly from invoices (haulage trip money excluded)
       setTotalBilledRevenue(invoiceRev);
       setTmTripsCount(invoiceTrips);
@@ -155,6 +202,8 @@ export const Dashboard: React.FC<Props> = ({ onNavigate }) => {
     window.addEventListener('concrete360_trips_updated', handleSync);
     window.addEventListener('concrete360_measurement_updated', handleSync);
     window.addEventListener('concrete360_mix_designs_updated', handleSync);
+    window.addEventListener('concrete360_invoices_updated', handleSync);
+    window.addEventListener('concrete360_silo_updated', handleSync);
     window.addEventListener('storage', handleSync);
     window.addEventListener('focus', handleSync);
 
@@ -165,6 +214,8 @@ export const Dashboard: React.FC<Props> = ({ onNavigate }) => {
       window.removeEventListener('concrete360_trips_updated', handleSync);
       window.removeEventListener('concrete360_measurement_updated', handleSync);
       window.removeEventListener('concrete360_mix_designs_updated', handleSync);
+      window.removeEventListener('concrete360_invoices_updated', handleSync);
+      window.removeEventListener('concrete360_silo_updated', handleSync);
       window.removeEventListener('storage', handleSync);
       window.removeEventListener('focus', handleSync);
     };
@@ -180,7 +231,7 @@ export const Dashboard: React.FC<Props> = ({ onNavigate }) => {
               Active Building Site
             </span>
             <span className="px-2.5 py-1 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/30 text-[10px] font-mono font-bold uppercase tracking-wider">
-              {admixtureMode} BLEND
+              GGBS BLEND (20%)
             </span>
           </div>
           <h2 className="text-2xl font-black text-white mt-2 tracking-tight">{activeSiteTitle}</h2>
@@ -208,8 +259,8 @@ export const Dashboard: React.FC<Props> = ({ onNavigate }) => {
         </div>
       </div>
 
-      {/* Main KPI Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      {/* Main KPI Stats Cards (4 Columns including Silo 1 & Silo 2 Stock) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Total Billed Revenue (Invoices Only) */}
         <div 
           onClick={() => onNavigate('billing')}
@@ -236,7 +287,7 @@ export const Dashboard: React.FC<Props> = ({ onNavigate }) => {
         >
           <div className="flex items-center justify-between">
             <span className="text-[11px] text-slate-400 font-mono uppercase font-bold tracking-wider">
-              Total Haulage &amp; TM Trips
+              Total Haulage & TM Trips
             </span>
             <Truck className="w-4 h-4 text-emerald-400 group-hover:translate-x-0.5 transition" />
           </div>
@@ -266,6 +317,38 @@ export const Dashboard: React.FC<Props> = ({ onNavigate }) => {
             {activeScope}
           </span>
         </div>
+
+        {/* Plant Silo 1 (OPC 53) & Silo 2 (GGBS) Stock Left */}
+        <div 
+          onClick={() => onNavigate('silo_inventory')}
+          className="bg-[#0b1322] border border-[#1b273d] hover:border-cyan-500/50 p-5 rounded-2xl shadow-xl cursor-pointer transition group flex flex-col justify-between"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] text-slate-400 font-mono uppercase font-bold tracking-wider">
+              Plant Silo Stock Left
+            </span>
+            <Database className="w-4 h-4 text-cyan-400 group-hover:translate-x-0.5 transition" />
+          </div>
+
+          <div className="grid grid-cols-2 gap-2.5 mt-2 font-mono">
+            <div>
+              <span className="text-[9px] text-blue-400 font-bold uppercase block">Silo 1 (OPC 53)</span>
+              <span className={`text-lg font-black block ${silo1LeftKg < 5000 && silo1InwardKg > 0 ? 'text-rose-400' : 'text-white'}`}>
+                {(silo1LeftKg / 1000).toFixed(2)} <span className="text-[11px] font-bold">MT</span>
+              </span>
+            </div>
+            <div className="border-l border-[#1b273d] pl-2.5">
+              <span className="text-[9px] text-purple-400 font-bold uppercase block">Silo 2 (GGBS)</span>
+              <span className={`text-lg font-black block ${silo2LeftKg < 3000 && silo2InwardKg > 0 ? 'text-rose-400' : 'text-cyan-300'}`}>
+                {(silo2LeftKg / 1000).toFixed(2)} <span className="text-[11px] font-bold">MT</span>
+              </span>
+            </div>
+          </div>
+
+          <span className="text-[10px] text-slate-500 font-mono mt-1.5 block truncate">
+            {silo1LeftKg.toLocaleString('en-IN')} kg • {silo2LeftKg.toLocaleString('en-IN')} kg
+          </span>
+        </div>
       </div>
 
       {/* Transit Mixer Trips, Delivery Telemetry & Reports Section */}
@@ -279,7 +362,7 @@ export const Dashboard: React.FC<Props> = ({ onNavigate }) => {
               </div>
               <div>
                 <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-                  Transit Mixer Activity &amp; Trips
+                  Transit Mixer Activity & Trips
                 </h3>
                 <p className="text-[11px] text-slate-400">Logistics dispatch docket status for {activeSiteTitle}</p>
               </div>
@@ -319,9 +402,9 @@ export const Dashboard: React.FC<Props> = ({ onNavigate }) => {
               </div>
               <div>
                 <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-                  Site Reports &amp; Material Used
+                  Site Reports & Material Used
                 </h3>
-                <p className="text-[11px] text-slate-400">Ledger accounting &amp; design mix sheets</p>
+                <p className="text-[11px] text-slate-400">Ledger accounting & design mix sheets</p>
               </div>
             </div>
             <button
@@ -351,7 +434,7 @@ export const Dashboard: React.FC<Props> = ({ onNavigate }) => {
             >
               <div className="flex items-center gap-2 font-mono">
                 <span className="w-2 h-2 rounded-full bg-cyan-400" />
-                <span className="text-slate-300 font-bold">Concrete Mix Designs (M15 - M50)</span>
+                <span className="text-slate-300 font-bold">Concrete Mix Designs (M10 - M50)</span>
               </div>
               <span className="text-cyan-400 font-mono text-[11px] font-bold">2400 kg/m³ Yield</span>
             </div>
