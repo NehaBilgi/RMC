@@ -24,7 +24,8 @@ import {
   RefreshCw,
   ArrowLeftRight,
   Factory,
-  Database
+  Database,
+  ClipboardCheck
 } from 'lucide-react';
 import { cloudStorage, SyncStatus } from '../../services/cloudStorage';
 import { SiteMeasurementSession } from '../../types/rmc';
@@ -39,6 +40,7 @@ import { UserManagement } from '../pages/UserManagement';
 import { MixDesignModule } from '../pages/MixDesignModule';
 import { RMCBatchReportPage } from '../pages/RMCBatchReportPage';
 import { SiloInventoryPage } from '../pages/SiloInventoryPage';
+import { TotalWorkDonePage } from '../pages/TotalWorkDonePage';
 import { SiteMaterialReportModule } from '../pages/SiteMaterialReportModule';
 import { TransitMixerPage } from '../pages/TransitMixerPage';
 import { ConcretePumpsPage } from '../pages/ConcretePumpsPage';
@@ -181,6 +183,7 @@ export const Sidebar: React.FC<Props> = ({
     { id: 'quotation', label: 'Estimate / Quotation', icon: FileSpreadsheet, section: 'SITE OPERATIONS', badge: 'Quote' },
     { id: 'billing', label: 'Billing', icon: DollarSign, section: 'SITE OPERATIONS' },
     { id: 'total_bill', label: 'Total Bill of Site', icon: FileText, section: 'SITE OPERATIONS' },
+    { id: 'total_work_done', label: 'Total Work Done', icon: ClipboardCheck, section: 'SITE OPERATIONS' },
     { id: 'site_tests', label: 'At-Site Tests', icon: FlaskConical, section: 'SITE OPERATIONS' },
     { id: 'trips', label: 'Trips', icon: Truck, section: 'SITE OPERATIONS', badge: 'Trips' },
     { id: 'material_category', label: 'Category of Material', icon: Package, section: 'ENGINEERING' },
@@ -197,7 +200,7 @@ export const Sidebar: React.FC<Props> = ({
 
   const visibleNavItems = sidebarNavItems.filter(item =>
     (!item.adminOnly || isAdminUser(currentUser)) &&
-    (item.id === 'quotation' || item.id === 'silo_inventory' || canViewPage(currentUser, item.id))
+    (item.id === 'quotation' || item.id === 'silo_inventory' || item.id === 'total_work_done' || canViewPage(currentUser, item.id))
   );
 
   const activePage = visibleNavItems.some(item => item.id === activeTab)
@@ -231,6 +234,11 @@ export const Sidebar: React.FC<Props> = ({
         break;
       case 'total-bill':
         normalizedTarget = 'total_bill';
+        break;
+      case 'total-work-done':
+      case 'total_work_done':
+      case 'work-done':
+        normalizedTarget = 'total_work_done';
         break;
       case 'transit-mixer':
         normalizedTarget = 'transit_mixer';
@@ -273,7 +281,12 @@ export const Sidebar: React.FC<Props> = ({
         normalizedTarget = 'company_details';
         break;
     }
-    if (normalizedTarget !== 'quotation' && normalizedTarget !== 'silo_inventory' && !canViewPage(currentUser, normalizedTarget)) return;
+    if (
+      normalizedTarget !== 'quotation' &&
+      normalizedTarget !== 'silo_inventory' &&
+      normalizedTarget !== 'total_work_done' &&
+      !canViewPage(currentUser, normalizedTarget)
+    ) return;
     if (normalizedTarget === 'user_management' && !isAdminUser(currentUser)) return;
     
     setActiveTab(normalizedTarget);
@@ -483,6 +496,7 @@ export const Sidebar: React.FC<Props> = ({
           {activePage === 'quotation' && <QuotationRMC />}
           {activePage === 'billing' && <BillingRMC />}
           {activePage === 'total_bill' && <TotalBillPage />}
+          {activePage === 'total_work_done' && <TotalWorkDonePage />}
           {activePage === 'site_tests' && <AtSiteTestsPage />}
           {activePage === 'company_details' && <CompanyDetailsModule />}
           {activePage === 'transit_mixer' && <TransitMixerPage />}
