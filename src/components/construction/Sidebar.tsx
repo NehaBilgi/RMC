@@ -23,7 +23,8 @@ import {
   CloudOff,
   RefreshCw,
   ArrowLeftRight,
-  Factory
+  Factory,
+  Database
 } from 'lucide-react';
 import { cloudStorage, SyncStatus } from '../../services/cloudStorage';
 import { SiteMeasurementSession } from '../../types/rmc';
@@ -37,6 +38,7 @@ import { Dashboard } from '../pages/Dashboard';
 import { UserManagement } from '../pages/UserManagement';
 import { MixDesignModule } from '../pages/MixDesignModule';
 import { RMCBatchReportPage } from '../pages/RMCBatchReportPage';
+import { SiloInventoryPage } from '../pages/SiloInventoryPage';
 import { SiteMaterialReportModule } from '../pages/SiteMaterialReportModule';
 import { TransitMixerPage } from '../pages/TransitMixerPage';
 import { ConcretePumpsPage } from '../pages/ConcretePumpsPage';
@@ -185,6 +187,7 @@ export const Sidebar: React.FC<Props> = ({
     { id: 'transit_mixer', label: 'Transit Mixer', icon: Truck, section: 'ENGINEERING' },
     { id: 'concrete_pumps', label: 'Concrete Pumps', icon: Wrench, section: 'ENGINEERING' },
     { id: 'mix_design', label: 'Mix Design', icon: Layers, section: 'ENGINEERING' },
+    { id: 'silo_inventory', label: 'Silo 1 & 2 Stock', icon: Database, section: 'ENGINEERING', badge: 'Silos' },
     { id: 'rmc_batch_report', label: 'RMC Batch Report (Plant)', icon: Factory, section: 'ENGINEERING' },
     { id: 'site_report', label: 'Report / Material Used', icon: FileBarChart, section: 'ENGINEERING' },
     { id: 'measurements', label: 'Site Inventory Measurements', icon: FileCheck2, section: 'ENGINEERING' },
@@ -193,7 +196,8 @@ export const Sidebar: React.FC<Props> = ({
   ];
 
   const visibleNavItems = sidebarNavItems.filter(item =>
-    (!item.adminOnly || isAdminUser(currentUser)) && (item.id === 'quotation' || canViewPage(currentUser, item.id))
+    (!item.adminOnly || isAdminUser(currentUser)) &&
+    (item.id === 'quotation' || item.id === 'silo_inventory' || canViewPage(currentUser, item.id))
   );
 
   const activePage = visibleNavItems.some(item => item.id === activeTab)
@@ -237,6 +241,12 @@ export const Sidebar: React.FC<Props> = ({
       case 'mix-design':
         normalizedTarget = 'mix_design';
         break;
+      case 'silo-inventory':
+      case 'silo_inventory':
+      case 'silos':
+      case 'silo-stock':
+        normalizedTarget = 'silo_inventory';
+        break;
       case 'rmc-batch-report':
       case 'rmc_batch_report':
       case 'batch-report':
@@ -263,7 +273,7 @@ export const Sidebar: React.FC<Props> = ({
         normalizedTarget = 'company_details';
         break;
     }
-    if (normalizedTarget !== 'quotation' && !canViewPage(currentUser, normalizedTarget)) return;
+    if (normalizedTarget !== 'quotation' && normalizedTarget !== 'silo_inventory' && !canViewPage(currentUser, normalizedTarget)) return;
     if (normalizedTarget === 'user_management' && !isAdminUser(currentUser)) return;
     
     setActiveTab(normalizedTarget);
@@ -478,6 +488,7 @@ export const Sidebar: React.FC<Props> = ({
           {activePage === 'transit_mixer' && <TransitMixerPage />}
           {activePage === 'concrete_pumps' && <ConcretePumpsPage />}
           {activePage === 'mix_design' && <MixDesignModule />}
+          {activePage === 'silo_inventory' && <SiloInventoryPage />}
           {activePage === 'rmc_batch_report' && <RMCBatchReportPage />}
           {activePage === 'site_report' && <SiteMaterialReportModule />}
           {activePage === 'material_category' && <MaterialCategory />}
