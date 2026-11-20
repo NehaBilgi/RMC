@@ -1074,10 +1074,7 @@ export const QuotationRMC: React.FC = () => {
     localStorage.setItem(`concrete360_site_quotations_${currentSiteKey}`, JSON.stringify(updated));
   };
 
-  const handlePrintQuotation = (q: RMCQuotation) => {
-    const win = window.open('', '_blank');
-    if (!win) return;
-
+  const handlePrintQuotation = async (q: RMCQuotation) => {
     let compProfile: Record<string, any> = {
       name: 'BILGI BUILDCON RMC',
       unitSubtitle: 'Unit of M/S MOHAMMED JAFAR BASHEER AHMED BILGI',
@@ -1086,7 +1083,12 @@ export const QuotationRMC: React.FC = () => {
       address: 'SY NO 118/13 AINAPUR GRAM BURNAPUR ROAD, VIJAYAPURA-586104',
       division: 'Commercial Ready-Mix Concrete Batching & Supply Division',
       phonePrimary: '+91 9931175133',
-      phoneSecondary: '+91 9591055133'
+      phoneSecondary: '+91 9591055133',
+      bankName: 'KOTAK MAHINDRA BANK',
+      accountName: 'M/s MOHAMMED JAFAR BASHEER AHMED BILGI',
+      accountNo: '9449817122',
+      ifscSwift: 'KKBK0008234',
+      branch: 'KOTAK MAHINDRA BANK LTD GROUND FLOOR, JALNAGAR, VIJAYAPURA-586101'
     };
 
     try {
@@ -1108,9 +1110,43 @@ export const QuotationRMC: React.FC = () => {
           parsedP.phoneSecondary ||
           parsedP.phone_secondary ||
           parsedPhones.phoneSecondary ||
-          '+91 9591055133'
+          '+91 9591055133',
+        bankName: parsedP.bankName || parsedP.bank_name || compProfile.bankName,
+        accountName: parsedP.accountName || parsedP.account_name || compProfile.accountName,
+        accountNo: parsedP.accountNo || parsedP.account_no || compProfile.accountNo,
+        ifscSwift: parsedP.ifscSwift || parsedP.ifsc_swift || compProfile.ifscSwift,
+        branch: parsedP.branch || compProfile.branch
       };
+
+      if (!savedProf && supabase) {
+        const { data } = await (supabase as any)
+          .from('company_profile')
+          .select('*')
+          .eq('id', 'primary_company')
+          .maybeSingle();
+
+        if (data) {
+          compProfile = {
+            ...compProfile,
+            name: data.name || compProfile.name,
+            gstin: data.gstin || compProfile.gstin,
+            address: data.address || compProfile.address,
+            division: data.division || compProfile.division,
+            phonePrimary: data.phone_primary || compProfile.phonePrimary,
+            phoneSecondary: data.phone_secondary || compProfile.phoneSecondary,
+            bankName: data.bank_name || compProfile.bankName,
+            accountName: data.account_name || compProfile.accountName,
+            accountNo: data.account_no || compProfile.accountNo,
+            ifscSwift: data.ifsc_swift || compProfile.ifscSwift,
+            branch: data.branch || compProfile.branch
+          };
+          localStorage.setItem('concrete360_company_profile', JSON.stringify(compProfile));
+        }
+      }
     } catch {}
+
+    const win = window.open('', '_blank');
+    if (!win) return;
 
     const companyContactNumbers = [compProfile.phonePrimary, compProfile.phoneSecondary]
       .map(n => String(n || '').trim())
@@ -1198,7 +1234,7 @@ export const QuotationRMC: React.FC = () => {
       : '';
 
     const bottomMeasurementTableHtml = lines.length > 0 ? `
-      <div style="margin-top:22px; page-break-inside:avoid;">
+      <div style="margin-top:20px; page-break-inside:avoid;">
         <div style="font-size:10px; font-weight:bold; text-transform:uppercase; color:#0f172a; margin-bottom:6px; letter-spacing:0.4px;">
           Measurement Details
         </div>
@@ -1273,10 +1309,12 @@ export const QuotationRMC: React.FC = () => {
             table.commercial th { background: #0f172a; color: #fff; padding: 6px 8px; text-align: left; font-size: 9px; text-transform: uppercase; }
             table.commercial td { border: 1px solid #cbd5e1; padding: 6px 8px; font-size: 10px; vertical-align: top; }
             .right { text-align: right; }
-            .totals { width: 45%; margin-left: auto; border: 1px solid #cbd5e1; }
+            .summary-section { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
+            .bank-box { width: 55%; border: 1px solid #cbd5e1; padding: 8px 10px; background: #f8fafc; font-size: 9.5px; line-height: 1.45; }
+            .totals { width: 42%; border: 1px solid #cbd5e1; }
             .totals div { display: flex; justify-content: space-between; padding: 5px 8px; border-bottom: 1px solid #cbd5e1; }
             .totals div:last-child { border-bottom: none; background: #f1f5f9; font-weight: bold; font-size: 12px; }
-            .terms-section { margin-top: 20px; page-break-inside: avoid; }
+            .terms-section { margin-top: 18px; page-break-inside: avoid; }
             .terms-title { font-size: 12px; font-weight: 900; text-transform: uppercase; color: #0f172a; border-bottom: 1px solid #94a3b8; padding-bottom: 4px; margin-bottom: 8px; letter-spacing: 0.3px; }
             .terms-list { margin: 0; padding-left: 16px; color: #1e293b; font-size: 10px; line-height: 1.5; }
             .terms-list li { margin-bottom: 4px; }
@@ -1331,10 +1369,19 @@ export const QuotationRMC: React.FC = () => {
             </tbody>
           </table>
 
-          <div class="totals">
-            <div><span>Estimated Subtotal:</span><span>₹${Math.round(sub).toLocaleString('en-IN')}</span></div>
-            ${isGstActive ? `<div><span>GST (18%):</span><span>₹${Math.round(gst).toLocaleString('en-IN')}</span></div>` : ''}
-            <div><span>ESTIMATED GRAND TOTAL:</span><span>₹${q.grandTotal.toLocaleString('en-IN')}</span></div>
+          <div class="summary-section">
+            <div class="bank-box">
+              <strong>COMPANY REMITTANCE BANK ACCOUNT:</strong><br/>
+              Bank Name: <strong>${compProfile.bankName}</strong><br/>
+              Account Name: <strong>${compProfile.accountName}</strong><br/>
+              Account Number: <strong>${compProfile.accountNo}</strong><br/>
+              IFSC / Swift: <strong>${compProfile.ifscSwift}</strong> | Branch: ${compProfile.branch}
+            </div>
+            <div class="totals">
+              <div><span>Estimated Subtotal:</span><span>₹${Math.round(sub).toLocaleString('en-IN')}</span></div>
+              ${isGstActive ? `<div><span>GST (18%):</span><span>₹${Math.round(gst).toLocaleString('en-IN')}</span></div>` : ''}
+              <div><span>ESTIMATED GRAND TOTAL:</span><span>₹${q.grandTotal.toLocaleString('en-IN')}</span></div>
+            </div>
           </div>
 
           ${bottomMeasurementTableHtml}
@@ -1497,7 +1544,7 @@ export const QuotationRMC: React.FC = () => {
                           </button>
                         )}
                         <button
-                          onClick={() => handlePrintQuotation(q)}
+                          onClick={() => void handlePrintQuotation(q)}
                           className="text-slate-400 hover:text-cyan-400 p-1 transition cursor-pointer"
                           title="Print Commercial Quotation"
                         >
