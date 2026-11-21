@@ -16,7 +16,8 @@ const DEDICATED_STORAGE_KEYS = new Set([
   'concrete360_active_site',
   'concrete360_grades',
   'concrete360_raw_materials',
-  'concrete360_mix_designs'
+  'concrete360_mix_designs',
+  'concrete360_silo_inward_entries'
 ]);
 
 class CloudStorageService {
@@ -140,6 +141,8 @@ class CloudStorageService {
             location: s.location || '',
             supervisor: s.supervisor || 'adminbilgi',
             clientName: s.client_name || s.name,
+            phone: s.phone || '',
+            phoneNumber: s.phone || '',
             gstin: s.gstin || '29UNREGISTERED',
             detail: s.scope || 'G + 3 Floors',
             structureScope: s.scope || 'G + 3 Floors',
@@ -165,6 +168,8 @@ class CloudStorageService {
           allKnownSiteNames.add(k.replace('concrete360_site_tests_', '').trim().toUpperCase());
         } else if (k.startsWith('concrete360_advanced_measurements_')) {
           allKnownSiteNames.add(k.replace('concrete360_advanced_measurements_', '').trim().toUpperCase());
+        } else if (k.startsWith('concrete360_site_quotations_')) {
+          allKnownSiteNames.add(k.replace('concrete360_site_quotations_', '').trim().toUpperCase());
         }
       }
 
@@ -301,6 +306,8 @@ class CloudStorageService {
         .maybeSingle();
 
       if (companyData) {
+        const phonePrimary = companyData.phone_primary || companyData.phone || '';
+        const phoneSecondary = companyData.phone_secondary || '';
         window.localStorage.setItem(
           'concrete360_company_profile',
           JSON.stringify({
@@ -308,6 +315,8 @@ class CloudStorageService {
             gstin: companyData.gstin,
             address: companyData.address,
             division: companyData.division,
+            phonePrimary,
+            phoneSecondary,
             bankName: companyData.bank_name,
             accountName: companyData.account_name,
             accountNo: companyData.account_no,
@@ -315,6 +324,12 @@ class CloudStorageService {
             branch: companyData.branch
           })
         );
+        if (phonePrimary || phoneSecondary) {
+          window.localStorage.setItem(
+            'concrete360_company_phones',
+            JSON.stringify({ phonePrimary, phoneSecondary })
+          );
+        }
       }
 
       // 7. PULL DEDICATED SITE MEASUREMENTS TABLE
@@ -451,7 +466,81 @@ class CloudStorageService {
         console.warn('[CloudStorage] app_users pull fallback warning:', e);
       }
 
-      // 9. PULL APP DATA STORE (Auxiliary Keys ONLY, NEVER overwrite dedicated table keys)
+      // 10. PULL DEDICATED SILO INWARD ENTRIES TABLE
+      try {
+        const { data: siloData, error: siloErr } = await (client as any)
+          .from('silo_inward_entries')
+          .select('*')
+          .order('date', { ascending: false });
+
+        if (!siloErr && Array.isArray(siloData) && siloData.length > 0) {
+          const formattedSilo = siloData.map((s: any) => ({
+            id: s.id,
+            date: s.date,
+            silo: s.silo,
+            supplierName: s.supplier_name || '',
+            vehicleOrChallanNo: s.vehicle_or_challan_no || '',
+            quantityKg: Number(s.quantity_kg || 0),
+            ratePerKg: Number(s.rate_per_kg || 0),
+            totalAmount: Number(s.total_amount || 0),
+            remarks: s.remarks || ''
+          }));
+          window.localStorage.setItem('concrete360_silo_inward_entries', JSON.stringify(formattedSilo));
+        }
+      } catch (e) {
+        console.warn('[CloudStorage] silo_inward_entries pull warning:', e);
+      }
+
+      // 11. PULL DEDICATED QUOTATIONS TABLE
+      try {
+        const { data: quoteData, error: quoteErr } = await (client as any)
+          .from('quotations')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (!quoteErr && Array.isArray(quoteData)) {
+          const quotesBySite: Record<string, any[]> = {};
+          allKnownSiteNames.forEach(s => { quotesBySite[s] = []; });
+
+          quoteData.forEach((q: any) => {
+            const sName = (q.site_name || '').trim().toUpperCase();
+            if (!sName) return;
+            if (!quotesBySite[sName]) quotesBySite[sName] = [];
+            quotesBySite[sName].push(q.raw_data || {
+              id: q.id,
+              quoteNo: q.quote_no,
+              date: q.date,
+              validUntil: q.valid_until,
+              clientName: q.client_name,
+              clientAddress: q.client_address,
+              clientGstin: q.client_gstin,
+              clientPhone: q.client_phone,
+              projectSite: q.site_name,
+              mixGrade: q.mix_grade,
+              gradeItems: q.grade_items || [],
+              estimatedQtyM3: Number(q.estimated_qty_m3 || 0),
+              unitRate: Number(q.unit_rate || 0),
+              includePump: Boolean(q.include_pump),
+              pumpRentPerShift: Number(q.pump_rent_per_shift || 0),
+              pumpShifts: Number(q.pump_shifts || 1),
+              applyGst: q.apply_gst !== false,
+              grandTotal: Number(q.grand_total || 0),
+              status: q.status || 'DRAFT',
+              remarks: q.remarks || '',
+              termsList: q.terms_list || [],
+              measurementLines: q.measurement_lines || []
+            });
+          });
+
+          Object.entries(quotesBySite).forEach(([sName, list]) => {
+            window.localStorage.setItem(`concrete360_site_quotations_${sName}`, JSON.stringify(list));
+          });
+        }
+      } catch (e) {
+        console.warn('[CloudStorage] quotations pull warning:', e);
+      }
+
+      // 12. PULL APP DATA STORE (Auxiliary Keys ONLY, NEVER overwrite dedicated table keys)
       const { data: storeData } = await (client as any)
         .from('app_data_store')
         .select('storage_key, data');
@@ -465,7 +554,8 @@ class CloudStorageService {
             !k.startsWith('concrete360_site_invoices_') &&
             !k.startsWith('concrete360_site_haulage_trips_') &&
             !k.startsWith('concrete360_site_tests_') &&
-            !k.startsWith('concrete360_advanced_measurements_')
+            !k.startsWith('concrete360_advanced_measurements_') &&
+            !k.startsWith('concrete360_site_quotations_')
           ) {
             const serialized = typeof row.data === 'string' ? row.data : JSON.stringify(row.data);
             window.localStorage.setItem(k, serialized);
@@ -477,6 +567,8 @@ class CloudStorageService {
 
       // Broadcast synchronized state to all listening components
       window.dispatchEvent(new CustomEvent('concrete360_cloud_synced'));
+      window.dispatchEvent(new CustomEvent('concrete360_silo_updated'));
+      window.dispatchEvent(new CustomEvent('concrete360_invoices_updated'));
       const activeSite =
         sessionStorage.getItem('concrete360_selected_site') ||
         localStorage.getItem('concrete360_selected_site');
@@ -568,7 +660,9 @@ class CloudStorageService {
       key.includes('trip') ||
       key.includes('test') ||
       key.includes('user') ||
-      key.includes('mixer');
+      key.includes('mixer') ||
+      key.includes('silo') ||
+      key.includes('quote');
 
     if (isCritical) {
       if (this.debounceTimer) clearTimeout(this.debounceTimer);
@@ -595,7 +689,9 @@ class CloudStorageService {
           !DEDICATED_STORAGE_KEYS.has(key) &&
           !key.startsWith('concrete360_site_invoices_') &&
           !key.startsWith('concrete360_site_haulage_trips_') &&
-          !key.startsWith('concrete360_site_tests_')
+          !key.startsWith('concrete360_site_tests_') &&
+          !key.startsWith('concrete360_advanced_measurements_') &&
+          !key.startsWith('concrete360_site_quotations_')
       )
       .map(([key, val]) => ({
         storage_key: key,
@@ -642,6 +738,7 @@ class CloudStorageService {
             location: s.location || '',
             supervisor: s.supervisor || 'adminbilgi',
             client_name: s.clientName || '',
+            phone: s.phone || s.phoneNumber || '',
             gstin: s.gstin || '29UNREGISTERED',
             scope: s.detail || s.structureScope || 'G + 3 Floors',
             assigned_fleet: Number(s.assignedFleet || 4),
@@ -773,21 +870,35 @@ class CloudStorageService {
 
       // COMPANY PROFILE
       else if (key === 'concrete360_company_profile') {
-        await (client as any)
-          .from('company_profile')
-          .upsert({
-            id: 'primary_company',
-            name: data.name || 'BILGI RMC',
-            gstin: data.gstin || '29AKMKMJNJN1',
-            address: data.address || '',
-            division: data.division || '',
-            bank_name: data.bankName || '',
-            account_name: data.accountName || '',
-            account_no: data.accountNo || '',
-            ifsc_swift: data.ifscSwift || '',
-            branch: data.branch || '',
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'id' });
+        const payload: Record<string, any> = {
+          id: 'primary_company',
+          name: data.name || 'BILGI RMC',
+          gstin: data.gstin || '29AKMKMJNJN1',
+          address: data.address || '',
+          division: data.division || '',
+          bank_name: data.bankName || '',
+          account_name: data.accountName || '',
+          account_no: data.accountNo || '',
+          ifsc_swift: data.ifscSwift || '',
+          branch: data.branch || '',
+          updated_at: new Date().toISOString()
+        };
+        if (data.phonePrimary) payload.phone_primary = data.phonePrimary;
+        if (data.phoneSecondary) payload.phone_secondary = data.phoneSecondary;
+
+        try {
+          await (client as any)
+            .from('company_profile')
+            .upsert(payload, { onConflict: 'id' });
+        } catch {
+          // Fallback without phone columns if DB schema doesn't have them yet
+          const fallback = { ...payload };
+          delete fallback.phone_primary;
+          delete fallback.phone_secondary;
+          await (client as any)
+            .from('company_profile')
+            .upsert(fallback, { onConflict: 'id' });
+        }
       }
 
       // SITE MEASUREMENTS
@@ -922,6 +1033,97 @@ class CloudStorageService {
           }
         }
       }
+
+      // SILO INWARD ENTRIES
+      else if (key === 'concrete360_silo_inward_entries') {
+        if (Array.isArray(data)) {
+          const siloRows = data.map((entry: any) => ({
+            id: String(entry.id || `silo-${Date.now()}`),
+            date: entry.date || new Date().toISOString().split('T')[0],
+            silo: entry.silo || 'SILO_1_CEMENT',
+            supplier_name: entry.supplierName || '',
+            vehicle_or_challan_no: entry.vehicleOrChallanNo || '',
+            quantity_kg: Number(entry.quantityKg || 0),
+            rate_per_kg: Number(entry.ratePerKg || 0),
+            total_amount: Number(entry.totalAmount || 0),
+            remarks: entry.remarks || '',
+            updated_at: new Date().toISOString()
+          }));
+          if (siloRows.length > 0) {
+            try {
+              await (client as any)
+                .from('silo_inward_entries')
+                .upsert(siloRows, { onConflict: 'id' });
+            } catch (err) {
+              console.warn('[CloudStorage] silo_inward_entries upsert warning, backing up to app_data_store:', err);
+            }
+
+            // Always write dual backup to app_data_store
+            try {
+              await (client as any)
+                .from('app_data_store')
+                .upsert([{
+                  storage_key: 'concrete360_silo_inward_entries',
+                  data: data,
+                  updated_at: new Date().toISOString()
+                }], { onConflict: 'storage_key' });
+            } catch {}
+          }
+        }
+      }
+
+      // ESTIMATE / QUOTATIONS TABLE
+      else if (key.startsWith('concrete360_site_quotations_')) {
+        const siteName = key.replace('concrete360_site_quotations_', '').trim().toUpperCase();
+        if (Array.isArray(data)) {
+          const quoteRows = data.map((q: any) => ({
+            id: String(q.id || `quote-${Date.now()}`),
+            quote_no: String(q.quoteNo || q.id),
+            site_name: siteName,
+            date: q.date || new Date().toISOString().split('T')[0],
+            valid_until: q.validUntil || '',
+            client_name: q.clientName || '',
+            client_address: q.clientAddress || '',
+            client_gstin: q.clientGstin || '',
+            client_phone: q.clientPhone || '',
+            mix_grade: q.mixGrade || 'M25',
+            grade_items: q.gradeItems || [],
+            estimated_qty_m3: Number(q.estimatedQtyM3 || 0),
+            unit_rate: Number(q.unitRate || 0),
+            include_pump: Boolean(q.includePump),
+            pump_rent_per_shift: Number(q.pumpRentPerShift || 0),
+            pump_shifts: Number(q.pumpShifts || 1),
+            apply_gst: q.applyGst !== false,
+            grand_total: Number(q.grandTotal || 0),
+            status: q.status || 'DRAFT',
+            remarks: q.remarks || '',
+            terms_list: q.termsList || [],
+            measurement_lines: q.measurementLines || [],
+            raw_data: q,
+            updated_at: new Date().toISOString()
+          }));
+          if (quoteRows.length > 0) {
+            try {
+              await (client as any)
+                .from('quotations')
+                .upsert(quoteRows, { onConflict: 'id' });
+            } catch (err) {
+              console.warn('[CloudStorage] quotations upsert warning, backing up to app_data_store:', err);
+            }
+
+            // Dual backup to app_data_store
+            try {
+              await (client as any)
+                .from('app_data_store')
+                .upsert([{
+                  storage_key: key,
+                  data: data,
+                  updated_at: new Date().toISOString()
+                }], { onConflict: 'storage_key' });
+            } catch {}
+          }
+        }
+      }
     } catch (e) {
       console.warn('[CloudStorage] Relational sync warning:', e);
     }
@@ -987,6 +1189,8 @@ class CloudStorageService {
         .on('postgres_changes', { event: '*', schema: 'public', table: 'company_profile' }, () => void this.pullFromCloud())
         .on('postgres_changes', { event: '*', schema: 'public', table: 'material_categories' }, () => void this.pullFromCloud())
         .on('postgres_changes', { event: '*', schema: 'public', table: 'mix_designs' }, () => void this.pullFromCloud())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'silo_inward_entries' }, () => void this.pullFromCloud())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'quotations' }, () => void this.pullFromCloud())
         .on('postgres_changes', { event: '*', schema: 'public', table: 'app_users' }, () => void this.pullFromCloud())
         .on('postgres_changes', { event: '*', schema: 'public', table: 'app_data_store' }, () => void this.pullFromCloud())
         .subscribe();
