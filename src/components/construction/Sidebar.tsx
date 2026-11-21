@@ -113,7 +113,7 @@ export const Sidebar: React.FC<Props> = ({
 
   const [currentUser, setCurrentUser] = useState<SessionUser>(() => {
     try {
-      const savedUser = localStorage.getItem('concrete360_user') || sessionStorage.getItem('concrete360_user');
+      const savedUser = sessionStorage.getItem('concrete360_user') || localStorage.getItem('concrete360_user');
       if (savedUser) {
         const parsed = JSON.parse(savedUser);
         return {
@@ -144,7 +144,7 @@ export const Sidebar: React.FC<Props> = ({
 
     const handleUserSync = () => {
       try {
-        const savedUser = localStorage.getItem('concrete360_user') || sessionStorage.getItem('concrete360_user');
+        const savedUser = sessionStorage.getItem('concrete360_user') || localStorage.getItem('concrete360_user');
         if (savedUser) {
           const parsed = JSON.parse(savedUser);
           setCurrentUser({
