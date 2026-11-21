@@ -200,7 +200,7 @@ export const Sidebar: React.FC<Props> = ({
 
   const visibleNavItems = sidebarNavItems.filter(item =>
     (!item.adminOnly || isAdminUser(currentUser)) &&
-    (item.id === 'quotation' || item.id === 'silo_inventory' || item.id === 'total_work_done' || canViewPage(currentUser, item.id))
+    canViewPage(currentUser, item.id)
   );
 
   const activePage = visibleNavItems.some(item => item.id === activeTab)
@@ -281,12 +281,7 @@ export const Sidebar: React.FC<Props> = ({
         normalizedTarget = 'company_details';
         break;
     }
-    if (
-      normalizedTarget !== 'quotation' &&
-      normalizedTarget !== 'silo_inventory' &&
-      normalizedTarget !== 'total_work_done' &&
-      !canViewPage(currentUser, normalizedTarget)
-    ) return;
+    if (!canViewPage(currentUser, normalizedTarget)) return;
     if (normalizedTarget === 'user_management' && !isAdminUser(currentUser)) return;
     
     setActiveTab(normalizedTarget);
