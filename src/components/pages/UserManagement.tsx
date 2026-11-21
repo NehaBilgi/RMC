@@ -135,14 +135,16 @@ function UserForm({
 
       // 3. Update current session if editing own account
       try {
-        const activeUser = JSON.parse(sessionStorage.getItem('concrete360_user') || 'null');
+        const activeUser = JSON.parse(sessionStorage.getItem('concrete360_user') || localStorage.getItem('concrete360_user') || 'null');
         if (activeUser?.username?.toLowerCase() === cleanUsername) {
-          sessionStorage.setItem('concrete360_user', JSON.stringify({
+          const updatedSession = {
             ...activeUser,
             role: f.role,
             name: f.username.trim(),
             pageAccess: pageAccessList
-          }));
+          };
+          sessionStorage.setItem('concrete360_user', JSON.stringify(updatedSession));
+          localStorage.setItem('concrete360_user', JSON.stringify(updatedSession));
         }
       } catch {}
 
@@ -307,7 +309,6 @@ export function UserManagement() {
             created_at: u.created_at
           }));
           setUsers(formatted);
-          localStorage.setItem('concrete360_users', JSON.stringify(formatted));
         }
       } catch (err) {
         console.warn('Error loading users from Supabase:', err);
