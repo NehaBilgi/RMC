@@ -25,6 +25,7 @@ class CloudStorageService {
   private listeners: Set<StatusListener> = new Set();
   private pendingUploads: Map<string, any> = new Map();
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private realtimeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   private initialized = false;
   private isApplyingRemoteUpdate = false;
   private isPulling = false;
@@ -86,10 +87,10 @@ class CloudStorageService {
   private startActivePolling() {
     if (typeof window === 'undefined') return;
 
-    // Background poll every 4 seconds
+    // Calm background poll every 30 seconds (Realtime WebSockets handle live updates)
     setInterval(() => {
       void this.pullFromCloud();
-    }, 4000);
+    }, 30000);
 
     // Immediate sync when tab/window receives focus
     window.addEventListener('focus', () => {
@@ -1134,7 +1135,11 @@ class CloudStorageService {
     const originalRemoveItem = window.localStorage.removeItem.bind(window.localStorage);
 
     window.localStorage.setItem = (key: string, value: string) => {
+      const prev = window.localStorage.getItem(key);
       originalSetItem(key, value);
+
+      // Value didn't actually change — skip queuing cloud save to prevent recursive sync loops
+      if (prev === value) return;
 
       if (
         key.startsWith('concrete360_') &&
@@ -1171,6 +1176,16 @@ class CloudStorageService {
   }
 
   /**
+   * Debounces realtime bursts so multiple table changes collapse into one clean pull
+   */
+  public schedulePullFromCloud(delay = 600) {
+    if (this.realtimeDebounceTimer) clearTimeout(this.realtimeDebounceTimer);
+    this.realtimeDebounceTimer = setTimeout(() => {
+      void this.pullFromCloud();
+    }, delay);
+  }
+
+  /**
    * Realtime subscription for cross-device live sync
    */
   private subscribeRealtime() {
@@ -1180,19 +1195,19 @@ class CloudStorageService {
     try {
       client
         .channel('schema_sync_realtime')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'sites' }, () => void this.pullFromCloud())
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'invoices' }, () => void this.pullFromCloud())
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'haulage_trips' }, () => void this.pullFromCloud())
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'site_tests' }, () => void this.pullFromCloud())
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'transit_mixers' }, () => void this.pullFromCloud())
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'site_measurements' }, () => void this.pullFromCloud())
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'company_profile' }, () => void this.pullFromCloud())
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'material_categories' }, () => void this.pullFromCloud())
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'mix_designs' }, () => void this.pullFromCloud())
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'silo_inward_entries' }, () => void this.pullFromCloud())
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'quotations' }, () => void this.pullFromCloud())
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'app_users' }, () => void this.pullFromCloud())
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'app_data_store' }, () => void this.pullFromCloud())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'sites' }, () => this.schedulePullFromCloud())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'invoices' }, () => this.schedulePullFromCloud())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'haulage_trips' }, () => this.schedulePullFromCloud())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'site_tests' }, () => this.schedulePullFromCloud())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'transit_mixers' }, () => this.schedulePullFromCloud())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'site_measurements' }, () => this.schedulePullFromCloud())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'company_profile' }, () => this.schedulePullFromCloud())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'material_categories' }, () => this.schedulePullFromCloud())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'mix_designs' }, () => this.schedulePullFromCloud())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'silo_inward_entries' }, () => this.schedulePullFromCloud())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'quotations' }, () => this.schedulePullFromCloud())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'app_users' }, () => this.schedulePullFromCloud())
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'app_data_store' }, () => this.schedulePullFromCloud())
         .subscribe();
     } catch (e) {
       console.warn('[CloudStorage] Realtime subscription warning:', e);
