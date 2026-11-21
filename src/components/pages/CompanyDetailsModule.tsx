@@ -94,7 +94,6 @@ export const CompanyDetailsModule: React.FC = () => {
           };
 
           setCompanyData(merged);
-          localStorage.setItem('concrete360_company_profile', JSON.stringify(merged));
         }
       }
     } catch {}
