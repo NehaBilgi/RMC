@@ -13,6 +13,7 @@ import {
   Calendar,
 } from 'lucide-react';
 import { cloudStorage } from '../../services/cloudStorage';
+import { supabase } from '../../lib/supabase';
 import { BILGI_QA_REV2_GGBS } from './MixDesignModule';
 
 export interface SiloInwardEntry {
@@ -212,6 +213,21 @@ export const SiloInventoryPage: React.FC = () => {
     localStorage.setItem(SILO_ENTRIES_STORAGE_KEY, JSON.stringify(updated));
     window.dispatchEvent(new CustomEvent('concrete360_silo_updated'));
 
+    if (supabase) {
+      void (supabase as any).from('silo_inward_entries').upsert({
+        id: newEntry.id,
+        date: newEntry.date,
+        silo: newEntry.silo,
+        supplier_name: newEntry.supplierName,
+        vehicle_or_challan_no: newEntry.vehicleOrChallanNo,
+        quantity_kg: newEntry.quantityKg,
+        rate_per_kg: newEntry.ratePerKg,
+        total_amount: newEntry.totalAmount,
+        remarks: newEntry.remarks || '',
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'id' });
+    }
+
     setIsModalOpen(false);
     setSupplierName('');
     setVehicleOrChallanNo('');
@@ -225,6 +241,10 @@ export const SiloInventoryPage: React.FC = () => {
     setInwardEntries(updated);
     localStorage.setItem(SILO_ENTRIES_STORAGE_KEY, JSON.stringify(updated));
     window.dispatchEvent(new CustomEvent('concrete360_silo_updated'));
+
+    if (supabase) {
+      void (supabase as any).from('silo_inward_entries').delete().eq('id', id);
+    }
   };
 
   const filteredEntries = useMemo(() => {
