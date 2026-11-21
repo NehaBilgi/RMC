@@ -1072,6 +1072,9 @@ export const QuotationRMC: React.FC = () => {
     const updated = quotations.filter(q => q.id !== id);
     setQuotations(updated);
     localStorage.setItem(`concrete360_site_quotations_${currentSiteKey}`, JSON.stringify(updated));
+    if (supabase) {
+      void (supabase as any).from('quotations').delete().eq('id', id);
+    }
   };
 
   const handlePrintQuotation = async (q: RMCQuotation) => {
