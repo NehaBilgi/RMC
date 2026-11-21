@@ -7,6 +7,7 @@ export const PAGE_ACCESS_OPTIONS = [
       { id: 'quotation', label: 'Estimate / Quotation' },
       { id: 'billing', label: 'Billing' },
       { id: 'total_bill', label: 'Total Bill of Site' },
+      { id: 'total_work_done', label: 'Total Work Done' },
       { id: 'site_tests', label: 'At-Site Tests' },
       { id: 'trips', label: 'Trips' }
     ]
@@ -18,6 +19,7 @@ export const PAGE_ACCESS_OPTIONS = [
       { id: 'transit_mixer', label: 'Transit Mixer' },
       { id: 'concrete_pumps', label: 'Concrete Pumps' },
       { id: 'mix_design', label: 'Mix Design' },
+      { id: 'silo_inventory', label: 'Silo 1 & 2 Stock' },
       { id: 'rmc_batch_report', label: 'RMC Batch Report (Plant)' },
       { id: 'site_report', label: 'Report / Material Used' },
       { id: 'measurements', label: 'Site Inventory Measurements' }
